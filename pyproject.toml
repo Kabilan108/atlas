@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools >= 61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "atlask"
+version = "0.1.0"
+description = "ask atlassian"
+readme = "README.md"
+license = "Apache-2.0"
+authors = [
+    {name = "Tony Kabilan Okeke", email = "tonykabilanokeke@gmail.com"},
+]
+requires-python = ">=3.10"
+dependencies = [
+    "click",
+    "requests",
+    "markdownify",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Utilities",
+]
+
+[project.scripts]
+atlask = "atlask:cli"
+
+[project.urls]
+Homepage = "https://github.com/kabilan108/atlask"
+Repository = "https://github.com/kabilan108/atlask"
