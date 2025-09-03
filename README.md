@@ -10,15 +10,15 @@
 ## Requirements
 - Python `>=3.10`.
 - Environment variables:
-  - `CONFLUENCE_TOKEN`: required. API token or PAT.
-  - `CONFLUENCE_EMAIL`: required for `*.atlassian.net` (Atlassian Cloud). Optional for some Server/DC with Bearer PAT.
+  - `ATLASSIAN_TOKEN`: required. API token or PAT.
+  - `ATLASSIAN_EMAIL`: required for `*.atlassian.net` (Atlassian Cloud). Optional for some Server/DC with Bearer PAT.
 
 ## Usage
 
 The following environment variables must be set:
 
-- `CONFLUENCE_EMAIL` for `*.atlassian.net` (Atlassian Cloud).
-- `CONFLUENCE_TOKEN` for Atlassian Cloud.
+- `ATLASSIAN_EMAIL` for `*.atlassian.net` (Atlassian Cloud).
+- `ATLASSIAN_TOKEN` for Atlassian Cloud.
 
 #### Installation
 

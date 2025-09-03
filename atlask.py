@@ -50,14 +50,14 @@ def _extract_confluence_context(page_url: str) -> tuple[str, str]:
 
 
 def _build_auth_headers(rest_base: str) -> dict[str, str]:
-    token = os.environ.get("CONFLUENCE_TOKEN")
+    token = os.environ.get("ATLASSIAN_TOKEN")
     if not token:
         raise click.ClickException(
-            "Missing CONFLUENCE_TOKEN environment variable for authentication."
+            "Missing ATLASSIAN_TOKEN environment variable for authentication."
         )
 
     # Prefer basic auth if email present; otherwise try bearer
-    email = os.environ.get("CONFLUENCE_EMAIL")
+    email = os.environ.get("ATLASSIAN_EMAIL")
     if email:
         userpass = f"{email}:{token}".encode()
         basic = base64.b64encode(userpass).decode()
@@ -70,7 +70,7 @@ def _build_auth_headers(rest_base: str) -> dict[str, str]:
         host = ""
     if host.endswith("atlassian.net"):
         raise click.ClickException(
-            "CONFLUENCE_EMAIL is required for Atlassian Cloud (Basic auth with API token)."
+            "ATLASSIAN_EMAIL is required for Atlassian Cloud (Basic auth with API token)."
         )
 
     # Some server/DC deployments support PAT via Bearer
@@ -94,7 +94,7 @@ def _fetch_confluence_content(
     resp = requests.get(url, params=params, headers=headers, timeout=timeout)
     if resp.status_code == 401:
         raise click.ClickException(
-            "Authentication failed (401). Check CONFLUENCE_TOKEN/EMAIL."
+            "Authentication failed (401). Check ATLASSIAN_EMAIL/TOKEN."
         )
     if resp.status_code == 403:
         raise click.ClickException(
