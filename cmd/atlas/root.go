@@ -6,10 +6,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const (
-	version            = "0.1.0"
-	defaultConcurrency = 5
-)
+const defaultConcurrency = 5
+
+// NOTE: this is intentionally a var so the flake/Makefile can
+// override it via: -ldflags "-X main.version=$VERSION"
+var version = "0.1.0"
 
 var (
 	wrapFormat  string

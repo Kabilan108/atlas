@@ -1,3 +1,5 @@
+.PHONY: build install deps clean test fmt run
+
 VERSION ?= $(shell git describe --tags --always --dirty)
 LDFLAGS := -ldflags "-s -w -X main.version=$(VERSION)"
 
@@ -22,5 +24,8 @@ test:
 
 fmt:
 	go fmt ./...
+
+check:
+	go vet ./...
 
 run: build
