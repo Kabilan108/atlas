@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 
@@ -87,10 +86,7 @@ func NewClient(baseURL string) (*Client, error) {
 	}
 
 	if baseURL == "" {
-		baseURL = os.Getenv("ATLAS_BITBUCKET_BASE_URL")
-		if baseURL == "" {
-			baseURL = "https://api.bitbucket.org/2.0"
-		}
+		baseURL = "https://api.bitbucket.org/2.0"
 	}
 
 	return &Client{

@@ -12,6 +12,8 @@ type Config struct {
 	Workspace      string `mapstructure:"workspace"`
 	ConfluenceSite string `mapstructure:"confluence_site"`
 	Space          string `mapstructure:"space"`
+	AtlassianEmail string `mapstructure:"atlassian_email"`
+	AtlassianToken string `mapstructure:"atlassian_token"`
 }
 
 func LoadConfig() (*Config, error) {
@@ -67,16 +69,20 @@ func LoadConfig() (*Config, error) {
 }
 
 func GetAtlassianCredentials() (email, token string, err error) {
+	// Prefer credentials from config file
+	if cfg, cfgErr := LoadConfig(); cfgErr == nil && cfg != nil {
+		if cfg.AtlassianEmail != "" && cfg.AtlassianToken != "" {
+			return cfg.AtlassianEmail, cfg.AtlassianToken, nil
+		}
+	}
+
+	// Fallback to environment variables
 	email = os.Getenv("ATLASSIAN_EMAIL")
 	token = os.Getenv("ATLASSIAN_TOKEN")
 
-	if email == "" {
-		return "", "", fmt.Errorf("ATLASSIAN_EMAIL environment variable is required")
+	if email != "" && token != "" {
+		return email, token, nil
 	}
 
-	if token == "" {
-		return "", "", fmt.Errorf("ATLASSIAN_TOKEN environment variable is required")
-	}
-
-	return email, token, nil
+	return "", "", fmt.Errorf("missing credentials: set atlassian_email and atlassian_token in config file or ATLASSIAN_EMAIL and ATLASSIAN_TOKEN environment variables")
 }

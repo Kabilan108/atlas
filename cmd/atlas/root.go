@@ -31,9 +31,13 @@ Configuration is loaded from:
 - ~/.config/atlas/config.json
 - ./atlas.json
 
-Authentication requires:
-- ATLASSIAN_EMAIL environment variable
-- ATLASSIAN_TOKEN environment variable
+Authentication requires setting credentials in config file:
+- atlassian_email
+- atlassian_token
+
+Optionally, you may override via environment variables for one-off runs:
+- ATLASSIAN_EMAIL
+- ATLASSIAN_TOKEN
 
 Examples:
   atlas confluence get https://company.atlassian.net/wiki/pages/123456

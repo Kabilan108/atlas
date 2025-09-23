@@ -30,7 +30,7 @@ go run ./cmd/atlas --help
 
 ## Configuration
 
-### Config Files (Optional)
+### Config Files
 
 Atlas checks for configuration in the following locations (in order):
 1. `$XDG_CONFIG_HOME/atlas/config.json`
@@ -40,18 +40,18 @@ Atlas checks for configuration in the following locations (in order):
 Example config file:
 ```json
 {
+  "atlassian_email": "you@example.com",
+  "atlassian_token": "your-api-token",
   "workspace": "my-workspace",
   "confluence_site": "https://company.atlassian.net",
   "space": "DEV"
 }
 ```
 
-### Environment Variables (Required)
+### Environment Variables (Optional)
 
-- `ATLASSIAN_EMAIL`: Your Atlassian account email
-- `ATLASSIAN_TOKEN`: Your Atlassian API token
-- `ATLAS_CONFLUENCE_BASE_URL`: Override Confluence base URL (for testing)
-- `ATLAS_BITBUCKET_BASE_URL`: Override Bitbucket base URL (for testing)
+- `ATLASSIAN_EMAIL`: Overrides `atlassian_email` from config
+- `ATLASSIAN_TOKEN`: Overrides `atlassian_token` from config
 
 ## Usage
 
@@ -170,7 +170,11 @@ gofmt -w .
 # Vet code
 go vet ./...
 
-# Run locally with debug
+# Run locally
+# Ensure your config file has atlassian_email and atlassian_token set
+go run ./cmd/atlas --help
+
+# Or override via environment variables for a one-off run
 ATLASSIAN_EMAIL=test@example.com ATLASSIAN_TOKEN=fake-token go run ./cmd/atlas --help
 ```
 

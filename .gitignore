@@ -1,31 +1,17 @@
-# Go build artifacts
 vendor/
+.gocache/
 bin/
 /atlas
 *.exe
-
-# Environment files
 .env
 .envrc
-
-# Cache directories
 .cache/
-
-# IDE files
 .vscode/
 .idea/
-
-# OS files
 .DS_Store
 Thumbs.db
-
-# Testing
 coverage.out
-
-# Python artifacts (keep existing)
 __pycache__/
 *.egg-info/
-
-# Project specific
 .worktrees
 build/

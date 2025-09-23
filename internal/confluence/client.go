@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
 	"strconv"
 
 	"github.com/kabilan108/atlas/internal/convert"
@@ -68,10 +67,6 @@ func NewClient(baseURL string) (*Client, error) {
 	httpClient, err := httpclient.NewClient()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create HTTP client: %w", err)
-	}
-
-	if baseURL == "" {
-		baseURL = os.Getenv("ATLAS_CONFLUENCE_BASE_URL")
 	}
 
 	return &Client{
