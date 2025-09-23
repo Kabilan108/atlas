@@ -15,20 +15,11 @@
         let
           pkgs = import nixpkgs { inherit system; };
           lib = pkgs.lib;
-          # prefer tag/rev when available; fall back to a datestamped dev marker.
-          version =
-            if self ? rev then
-              # optionally trim to shortRev; using full rev is ok too
-              self.rev
-            else if self ? lastModifiedDate then
-              "dev-${self.lastModifiedDate}"
-            else
-              "dev-unknown";
         in
         {
-          default = pkgs.buildGoModule {
+          default = pkgs.buildGoModule rec {
             pname = "atlas";
-            version = version;
+            version = "0.0.1";
             src = ./.;
             vendorHash = "sha256-wZFWVVXNPOjF6S9midTi/xB/+kN6svZnPUXdWSFomYE=";
 
