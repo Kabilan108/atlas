@@ -20,4 +20,7 @@ clean:
 test:
 	go test -v -cover ./...
 
+fmt:
+	go fmt ./...
+
 run: build
