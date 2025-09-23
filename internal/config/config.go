@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -19,53 +20,49 @@ type Config struct {
 func LoadConfig() (*Config, error) {
 	v := viper.New()
 
-	// Set config name and type
-	v.SetConfigName("config")
+	// We only support these two locations, in this priority:
+	// 1) ~/.config/atlas/config.json
+	// 2) $XDG_CONFIG_HOME/atlas/config.json
+
+	var candidates []string
+
+	if homeDir, err := os.UserHomeDir(); err == nil && homeDir != "" {
+		candidates = append(candidates, filepath.Join(homeDir, ".config", "atlas", "config.json"))
+	}
+	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
+		candidates = append(candidates, filepath.Join(xdg, "atlas", "config.json"))
+	}
+
+	var chosen string
+	for _, p := range candidates {
+		if fi, err := os.Stat(p); err == nil && !fi.IsDir() {
+			chosen = p
+			break
+		}
+	}
+
+	if chosen == "" {
+		// Exit early if config cannot be found in supported locations
+		return nil, errors.New("config file not found; expected at ~/.config/atlas/config.json or $XDG_CONFIG_HOME/atlas/config.json")
+	}
+
+	v.SetConfigFile(chosen)
 	v.SetConfigType("json")
 
-	// Add config paths in order of preference
-	configPaths := []string{}
-
-	// 1. $XDG_CONFIG_HOME/atlas/config.json
-	if xdgConfigHome := os.Getenv("XDG_CONFIG_HOME"); xdgConfigHome != "" {
-		configPaths = append(configPaths, filepath.Join(xdgConfigHome, "atlas"))
-	}
-
-	// 2. ~/.config/atlas/config.json
-	if homeDir, err := os.UserHomeDir(); err == nil {
-		configPaths = append(configPaths, filepath.Join(homeDir, ".config", "atlas"))
-	}
-
-	// 3. ./atlas.json (current directory, different name)
-	configPaths = append(configPaths, ".")
-
-	// Add all paths to viper
-	for _, path := range configPaths {
-		v.AddConfigPath(path)
-	}
-
-	// Also check for atlas.json in current directory
-	v.SetConfigName("atlas")
-	v.AddConfigPath(".")
-
-	// Read environment variables
+	// Environment variables can override values in the file
 	v.SetEnvPrefix("ATLAS")
 	v.AutomaticEnv()
 
-	// Attempt to read config file
 	if err := v.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-			return nil, fmt.Errorf("error reading config file: %w", err)
-		}
-		// Config file not found is okay, we'll use defaults and env vars
+		return nil, fmt.Errorf("error reading config file %s: %w", chosen, err)
 	}
 
-	config := &Config{}
-	if err := v.Unmarshal(config); err != nil {
+	cfg := &Config{}
+	if err := v.Unmarshal(cfg); err != nil {
 		return nil, fmt.Errorf("error unmarshaling config: %w", err)
 	}
 
-	return config, nil
+	return cfg, nil
 }
 
 func GetAtlassianCredentials() (email, token string, err error) {

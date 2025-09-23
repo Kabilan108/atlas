@@ -28,9 +28,8 @@ output formats, and built-in retry logic.
 Content is written to stdout, while messages and errors go to stderr.
 
 Configuration is loaded from:
-- $XDG_CONFIG_HOME/atlas/config.json
 - ~/.config/atlas/config.json
-- ./atlas.json
+- $XDG_CONFIG_HOME/atlas/config.json
 
 Authentication requires setting credentials in config file:
 - atlassian_email

@@ -32,10 +32,9 @@ go run ./cmd/atlas --help
 
 ### Config Files
 
-Atlas checks for configuration in the following locations (in order):
-1. `$XDG_CONFIG_HOME/atlas/config.json`
-2. `~/.config/atlas/config.json`
-3. `./atlas.json`
+Atlas loads configuration from the following locations (in order):
+1. `~/.config/atlas/config.json`
+2. `$XDG_CONFIG_HOME/atlas/config.json`
 
 Example config file:
 ```json
