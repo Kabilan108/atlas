@@ -1,0 +1,17 @@
+vendor/
+.gocache/
+bin/
+/atlas
+*.exe
+.env
+.envrc
+.cache/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+coverage.out
+__pycache__/
+*.egg-info/
+.worktrees
+build/

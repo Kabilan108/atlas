@@ -1,0 +1,109 @@
+name: Release on Version Change
+
+on:
+  push:
+    branches: [ master ]
+  workflow_dispatch:
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      current_version: ${{ steps.get_version.outputs.version }}
+      should_release: ${{ steps.check.outputs.should_release }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v4
+
+      - name: Get current version from flake
+        id: get_version
+        run: |
+          VERSION=$(nix eval .#default.version --raw)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Current version: $VERSION"
+
+      - name: Get latest tag
+        id: get_tag
+        run: |
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+          echo "Latest tag: $LATEST_TAG"
+
+      - name: Check if version changed
+        id: check
+        run: |
+          CURRENT="${{ steps.get_version.outputs.version }}"
+          LATEST="${{ steps.get_tag.outputs.latest_tag }}"
+
+          # Remove 'v' prefix from tag if present
+          LATEST=${LATEST#v}
+
+          if [ "$CURRENT" != "$LATEST" ]; then
+            echo "should_release=true" >> $GITHUB_OUTPUT
+            echo "Version changed: $LATEST -> $CURRENT"
+          else
+            echo "should_release=false" >> $GITHUB_OUTPUT
+            echo "No version change detected"
+          fi
+
+  build-and-release:
+    needs: check-version
+    if: needs.check-version.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v4
+
+      - name: Build binary with Nix
+        run: |
+          nix build .#default -L
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release-assets
+          cp result/bin/atlas release-assets/atlas-x86_64-linux
+          chmod +x release-assets/atlas-x86_64-linux
+
+      - name: Create and push tag
+        run: |
+          VERSION="${{ needs.check-version.outputs.current_version }}"
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git tag -a "v$VERSION" -m "Release v$VERSION"
+          git push origin "v$VERSION"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ needs.check-version.outputs.current_version }}
+          name: Release v${{ needs.check-version.outputs.current_version }}
+          body: |
+            Automated release for version ${{ needs.check-version.outputs.current_version }}
+
+            ## Changes
+            - Built with Nix flake
+            - x86_64-linux binary included
+
+            ## Installation
+            Download the `atlas-x86_64-linux` binary and place it in your PATH.
+          files: |
+            release-assets/atlas-x86_64-linux
+          draft: false
+          prerelease: false
