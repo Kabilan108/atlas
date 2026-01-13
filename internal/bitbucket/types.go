@@ -143,3 +143,18 @@ type Task struct {
 func (t *Task) IsResolved() bool {
 	return t.State == "RESOLVED"
 }
+
+type Snippet struct {
+	ID        string                 `json:"id"`
+	Title     string                 `json:"title"`
+	IsPrivate bool                   `json:"is_private"`
+	Owner     User                   `json:"owner"`
+	Files     map[string]SnippetFile `json:"files"`
+	CreatedOn time.Time              `json:"created_on"`
+	UpdatedOn time.Time              `json:"updated_on"`
+	Links     Links                  `json:"links"`
+}
+
+type SnippetFile struct {
+	Links Links `json:"links"`
+}

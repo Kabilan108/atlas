@@ -1,9 +1,11 @@
 package bitbucket
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"strconv"
 	"strings"
@@ -414,4 +416,171 @@ func extractNextPath(nextURL string) string {
 		return nextURL[len(baseURL):]
 	}
 	return ""
+}
+
+func (c *Client) ListSnippets(workspace string) ([]Snippet, error) {
+	var snippets []Snippet
+	path := fmt.Sprintf("/snippets/%s", workspace)
+
+	for path != "" {
+		data, err := c.get(path)
+		if err != nil {
+			return nil, err
+		}
+
+		var page PaginatedResponse[Snippet]
+		if err := json.Unmarshal(data, &page); err != nil {
+			return nil, fmt.Errorf("failed to parse snippets response: %w", err)
+		}
+
+		snippets = append(snippets, page.Values...)
+		path = extractNextPath(page.Next)
+	}
+
+	return snippets, nil
+}
+
+func (c *Client) GetSnippet(workspace, id string) (*Snippet, error) {
+	path := fmt.Sprintf("/snippets/%s/%s", workspace, id)
+	data, err := c.get(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var snippet Snippet
+	if err := json.Unmarshal(data, &snippet); err != nil {
+		return nil, fmt.Errorf("failed to parse snippet response: %w", err)
+	}
+
+	return &snippet, nil
+}
+
+func (c *Client) GetSnippetFileContent(workspace, id, filename string) ([]byte, error) {
+	path := fmt.Sprintf("/snippets/%s/%s/files/%s", workspace, id, filename)
+	return c.getRaw(path)
+}
+
+func (c *Client) CreateSnippet(workspace, title string, files map[string][]byte, isPrivate bool) (*Snippet, error) {
+	url := baseURL + fmt.Sprintf("/snippets/%s", workspace)
+
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+
+	if err := writer.WriteField("title", title); err != nil {
+		return nil, fmt.Errorf("failed to write title field: %w", err)
+	}
+
+	if err := writer.WriteField("is_private", strconv.FormatBool(isPrivate)); err != nil {
+		return nil, fmt.Errorf("failed to write is_private field: %w", err)
+	}
+
+	for filename, content := range files {
+		part, err := writer.CreateFormFile("file", filename)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create form file: %w", err)
+		}
+		if _, err := part.Write(content); err != nil {
+			return nil, fmt.Errorf("failed to write file content: %w", err)
+		}
+	}
+
+	if err := writer.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close multipart writer: %w", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, url, &buf)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	resp, err := c.do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := checkResponse(resp, body); err != nil {
+		return nil, err
+	}
+
+	var snippet Snippet
+	if err := json.Unmarshal(body, &snippet); err != nil {
+		return nil, fmt.Errorf("failed to parse snippet response: %w", err)
+	}
+
+	return &snippet, nil
+}
+
+func (c *Client) UpdateSnippet(workspace, id string, addFiles map[string][]byte, removeFiles []string) error {
+	url := baseURL + fmt.Sprintf("/snippets/%s/%s", workspace, id)
+
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+
+	for filename, content := range addFiles {
+		part, err := writer.CreateFormFile("file", filename)
+		if err != nil {
+			return fmt.Errorf("failed to create form file: %w", err)
+		}
+		if _, err := part.Write(content); err != nil {
+			return fmt.Errorf("failed to write file content: %w", err)
+		}
+	}
+
+	for _, filename := range removeFiles {
+		if err := writer.WriteField("files", filename); err != nil {
+			return fmt.Errorf("failed to write file removal field: %w", err)
+		}
+	}
+
+	if err := writer.Close(); err != nil {
+		return fmt.Errorf("failed to close multipart writer: %w", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPut, url, &buf)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	resp, err := c.do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+
+	return checkResponse(resp, body)
+}
+
+func (c *Client) DeleteSnippet(workspace, id string) error {
+	url := baseURL + fmt.Sprintf("/snippets/%s/%s", workspace, id)
+
+	req, err := http.NewRequest(http.MethodDelete, url, nil)
+	if err != nil {
+		return err
+	}
+
+	resp, err := c.do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+
+	return checkResponse(resp, body)
 }

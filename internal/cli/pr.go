@@ -272,12 +272,76 @@ func newPRCheckoutCmd() *cobra.Command {
 		Use:   "checkout <id|branch>",
 		Short: "Checkout a PR branch locally",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return nil
-		},
+		RunE:  runPRCheckout,
 	}
 
 	cmd.Flags().String("repo", "", "Target repository")
 
 	return cmd
+}
+
+func runPRCheckout(cmd *cobra.Command, args []string) error {
+	repoFlag, _ := cmd.Flags().GetString("repo")
+
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	workspace := cfg.Workspace
+	repo := repoFlag
+
+	if repo == "" {
+		inferredWS, inferredRepo, err := git.InferRepository()
+		if err != nil {
+			return fmt.Errorf("could not infer repository: %w\nUse --repo to specify", err)
+		}
+		if workspace == "" {
+			workspace = inferredWS
+		}
+		repo = inferredRepo
+		if verbose {
+			fmt.Fprintf(os.Stderr, "Using repository: %s/%s\n", workspace, repo)
+		}
+	}
+
+	if workspace == "" {
+		return fmt.Errorf("workspace not configured. Run 'atlas config set workspace <name>'")
+	}
+
+	client, err := bitbucket.NewClient(
+		bitbucket.WithNoCache(noCache),
+	)
+	if err != nil {
+		return err
+	}
+
+	pr, err := resolvePR(client, workspace, repo, args[0])
+	if err != nil {
+		return err
+	}
+
+	sourceRepo := pr.Source.Repository.FullName
+	destRepo := pr.Destination.Repository.FullName
+
+	if sourceRepo != destRepo {
+		sourceOwner := strings.Split(sourceRepo, "/")[0]
+		return fmt.Errorf(`PR #%d is from a fork and cannot be checked out automatically.
+To checkout manually:
+  git remote add %s git@bitbucket.org:%s.git
+  git fetch %s
+  git checkout -b pr-%d %s/%s`,
+			pr.ID,
+			sourceOwner, sourceRepo,
+			sourceOwner,
+			pr.ID, sourceOwner, pr.Source.Branch.Name)
+	}
+
+	branch := pr.Source.Branch.Name
+	if err := git.FetchAndCheckout("origin", branch); err != nil {
+		return err
+	}
+
+	fmt.Printf("Switched to branch '%s'\n", branch)
+	return nil
 }
