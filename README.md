@@ -12,13 +12,16 @@ Add to your flake inputs:
 inputs.atlas.url = "github:kabilan108/atlas";
 ```
 
-Then either:
+Install the package:
 
 ```nix
-# Option A: Direct package reference
-home.packages = [ inputs.atlas.packages.${system}.default ];
+# In environment.systemPackages or home.packages:
+inputs.atlas.packages.${system}.default
+```
 
-# Option B: Home-manager module (generates config file for you)
+Optionally use the home-manager module for config file generation:
+
+```nix
 imports = [ inputs.atlas.homeManagerModules.default ];
 programs.atlas = {
   enable = true;

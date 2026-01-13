@@ -14,9 +14,9 @@ in
     enable = lib.mkEnableOption "atlas CLI for Bitbucket";
 
     package = lib.mkOption {
-      type = lib.types.package;
-      default = pkgs.atlas;
-      description = "The atlas package to use.";
+      type = lib.types.nullOr lib.types.package;
+      default = null;
+      description = "The atlas package to install. If null, the package must be installed separately.";
     };
 
     settings = lib.mkOption {
@@ -34,7 +34,7 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    home.packages = [ cfg.package ];
+    home.packages = lib.mkIf (cfg.package != null) [ cfg.package ];
 
     xdg.configFile."atlas/config.toml" = lib.mkIf (cfg.settings != { }) {
       source = tomlFormat.generate "atlas-config" cfg.settings;
