@@ -151,6 +151,8 @@ func newPRViewCmd() *cobra.Command {
 
 func runPRView(cmd *cobra.Command, args []string) error {
 	repoFlag, _ := cmd.Flags().GetString("repo")
+	showComments, _ := cmd.Flags().GetBool("comments")
+	includeResolved, _ := cmd.Flags().GetBool("all")
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -191,7 +193,24 @@ func runPRView(cmd *cobra.Command, args []string) error {
 	}
 
 	mdWriter := output.NewPRMarkdownWriter(os.Stdout)
-	return mdWriter.WritePR(pr)
+	if err := mdWriter.WritePR(pr); err != nil {
+		return err
+	}
+
+	if showComments {
+		comments, err := client.ListPullRequestComments(workspace, repo, pr.ID)
+		if err != nil {
+			return fmt.Errorf("failed to fetch comments: %w", err)
+		}
+
+		fmt.Println()
+		commentWriter := output.NewCommentWriter(os.Stdout, pr.Author.UUID)
+		if err := commentWriter.WriteComments(comments, includeResolved); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func resolvePR(client *bitbucket.Client, workspace, repo, ref string) (*bitbucket.PullRequest, error) {

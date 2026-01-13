@@ -86,15 +86,26 @@ type PullRequestLinks struct {
 }
 
 type Comment struct {
-	ID        int       `json:"id"`
-	Content   Content   `json:"content"`
-	User      User      `json:"user"`
-	CreatedOn time.Time `json:"created_on"`
-	UpdatedOn time.Time `json:"updated_on"`
-	Inline    *Inline   `json:"inline,omitempty"`
-	Parent    *Parent   `json:"parent,omitempty"`
-	Deleted   bool      `json:"deleted"`
-	Links     Links     `json:"links"`
+	ID         int          `json:"id"`
+	Content    Content      `json:"content"`
+	User       User         `json:"user"`
+	CreatedOn  time.Time    `json:"created_on"`
+	UpdatedOn  time.Time    `json:"updated_on"`
+	Inline     *Inline      `json:"inline,omitempty"`
+	Parent     *Parent      `json:"parent,omitempty"`
+	Deleted    bool         `json:"deleted"`
+	Pending    bool         `json:"pending"`
+	Resolution *Resolution  `json:"resolution,omitempty"`
+	Links      Links        `json:"links"`
+}
+
+type Resolution struct {
+	User User      `json:"user"`
+	Date time.Time `json:"date"`
+}
+
+func (c *Comment) IsResolved() bool {
+	return c.Resolution != nil
 }
 
 type Content struct {
