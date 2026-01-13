@@ -26,7 +26,7 @@
           installPhase = ''
             runHook preInstall
 
-            install -Dm755 build/atlas $out/bin/atlas
+            install -Dm755 bin/atlas $out/bin/atlas
 
             # Shell completions (Cobra-generated)
             install -d $out/share/bash-completion/completions
@@ -87,6 +87,9 @@
               git
               gnumake
             ];
+            shellHook = ''
+              export PATH="$PWD/bin:$PATH"
+            '';
           };
         }
       );
