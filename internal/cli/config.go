@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/kabilan108/atlas/internal/bitbucket"
 	"github.com/kabilan108/atlas/internal/config"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -164,16 +165,16 @@ func newConfigVerifyCmd() *cobra.Command {
 }
 
 func runConfigVerify(cmd *cobra.Command, args []string) error {
-	cfg, err := config.Load()
+	client, err := bitbucket.NewClient(bitbucket.WithNoCache(true))
 	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
+		return fmt.Errorf("authentication failed: %w\nRun 'atlas config set username' and 'atlas config set app_password' to configure credentials", err)
 	}
 
-	if cfg.Username == "" || cfg.AppPassword == "" {
-		return fmt.Errorf("credentials not configured. Run 'atlas config set username' and 'atlas config set app_password'")
+	user, err := client.GetCurrentUser()
+	if err != nil {
+		return fmt.Errorf("authentication failed: %w", err)
 	}
 
-	fmt.Println("Credentials loaded successfully.")
-	fmt.Println("Note: Full verification requires the Bitbucket API client (Phase 2).")
+	fmt.Printf("Authenticated as %s (%s)\n", user.DisplayName, user.Username)
 	return nil
 }
