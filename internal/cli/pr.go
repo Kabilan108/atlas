@@ -1,6 +1,14 @@
 package cli
 
 import (
+	"fmt"
+	"os"
+	"strings"
+
+	"github.com/kabilan108/atlas/internal/bitbucket"
+	"github.com/kabilan108/atlas/internal/config"
+	"github.com/kabilan108/atlas/internal/git"
+	"github.com/kabilan108/atlas/internal/output"
 	"github.com/spf13/cobra"
 )
 
@@ -21,9 +29,7 @@ func newPRListCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List pull requests",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return nil
-		},
+		RunE:  runPRList,
 	}
 
 	cmd.Flags().String("repo", "", "Target repository")
@@ -33,6 +39,98 @@ func newPRListCmd() *cobra.Command {
 	cmd.Flags().String("reviewer", "", "Filter by reviewer username")
 
 	return cmd
+}
+
+func runPRList(cmd *cobra.Command, args []string) error {
+	allRepos, _ := cmd.Flags().GetBool("all")
+	repoFlag, _ := cmd.Flags().GetString("repo")
+	state, _ := cmd.Flags().GetString("state")
+	author, _ := cmd.Flags().GetString("author")
+	reviewer, _ := cmd.Flags().GetString("reviewer")
+
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	workspace := cfg.Workspace
+	repo := repoFlag
+
+	if !allRepos && repo == "" {
+		inferredWS, inferredRepo, err := git.InferRepository()
+		if err != nil {
+			return fmt.Errorf("could not infer repository: %w\nUse --repo to specify or --all for all repos", err)
+		}
+		if workspace == "" {
+			workspace = inferredWS
+		}
+		repo = inferredRepo
+		if verbose {
+			fmt.Fprintf(os.Stderr, "Using repository: %s/%s\n", workspace, repo)
+		}
+	}
+
+	if workspace == "" {
+		return fmt.Errorf("workspace not configured. Run 'atlas config set workspace <name>' or use --all")
+	}
+
+	client, err := bitbucket.NewClient(
+		bitbucket.WithNoCache(noCache),
+	)
+	if err != nil {
+		return err
+	}
+
+	opts := &bitbucket.PRListOptions{
+		State:    strings.ToUpper(state),
+		Author:   author,
+		Reviewer: reviewer,
+	}
+
+	var prs []bitbucket.PullRequest
+	if allRepos {
+		prs, err = client.ListAllPullRequests(workspace, opts)
+	} else {
+		prs, err = client.ListPullRequests(workspace, repo, opts)
+	}
+	if err != nil {
+		return err
+	}
+
+	if len(prs) == 0 {
+		fmt.Println("No pull requests found.")
+		return nil
+	}
+
+	hasComments := false
+	for _, pr := range prs {
+		if pr.CommentCount > 0 {
+			hasComments = true
+			break
+		}
+	}
+
+	headers := []string{"ID", "Title", "Author", "State", "Updated"}
+	if hasComments {
+		headers = append(headers, "Comments")
+	}
+
+	tw := output.NewTableWriter(os.Stdout, headers...)
+	for _, pr := range prs {
+		row := []string{
+			fmt.Sprintf("#%d", pr.ID),
+			output.Truncate(pr.Title, 50),
+			pr.Author.DisplayName,
+			pr.State,
+			output.FormatRelativeTime(pr.UpdatedOn),
+		}
+		if hasComments {
+			row = append(row, fmt.Sprintf("%d", pr.CommentCount))
+		}
+		tw.AddRow(row...)
+	}
+
+	return tw.Flush()
 }
 
 func newPRViewCmd() *cobra.Command {

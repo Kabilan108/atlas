@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/kabilan108/atlas/internal/config"
@@ -236,9 +237,19 @@ func (c *Client) ListRepositories(workspace string) ([]Repository, error) {
 	return repos, nil
 }
 
-func (c *Client) ListPullRequests(workspace, repo string) ([]PullRequest, error) {
+func (c *Client) ListPullRequests(workspace, repo string, opts *PRListOptions) ([]PullRequest, error) {
 	var prs []PullRequest
 	path := fmt.Sprintf("/repositories/%s/%s/pullrequests", workspace, repo)
+
+	var queryParams []string
+	if opts != nil {
+		if opts.State != "" {
+			queryParams = append(queryParams, "state="+opts.State)
+		}
+	}
+	if len(queryParams) > 0 {
+		path += "?" + strings.Join(queryParams, "&")
+	}
 
 	for path != "" {
 		data, err := c.get(path)
@@ -251,11 +262,51 @@ func (c *Client) ListPullRequests(workspace, repo string) ([]PullRequest, error)
 			return nil, fmt.Errorf("failed to parse pull requests response: %w", err)
 		}
 
-		prs = append(prs, page.Values...)
+		for _, pr := range page.Values {
+			if opts != nil && opts.Author != "" && pr.Author.Username != opts.Author {
+				continue
+			}
+			if opts != nil && opts.Reviewer != "" && !hasReviewer(pr, opts.Reviewer) {
+				continue
+			}
+			prs = append(prs, pr)
+		}
 		path = extractNextPath(page.Next)
 	}
 
 	return prs, nil
+}
+
+func hasReviewer(pr PullRequest, reviewer string) bool {
+	for _, r := range pr.Reviewers {
+		if r.Username == reviewer {
+			return true
+		}
+	}
+	for _, p := range pr.Participants {
+		if p.Role == "REVIEWER" && p.User.Username == reviewer {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *Client) ListAllPullRequests(workspace string, opts *PRListOptions) ([]PullRequest, error) {
+	repos, err := c.ListRepositories(workspace)
+	if err != nil {
+		return nil, err
+	}
+
+	var allPRs []PullRequest
+	for _, repo := range repos {
+		prs, err := c.ListPullRequests(workspace, repo.Name, opts)
+		if err != nil {
+			continue
+		}
+		allPRs = append(allPRs, prs...)
+	}
+
+	return allPRs, nil
 }
 
 func (c *Client) GetPullRequest(workspace, repo string, id int) (*PullRequest, error) {

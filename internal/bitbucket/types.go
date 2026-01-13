@@ -33,18 +33,26 @@ type Repository struct {
 }
 
 type PullRequest struct {
-	ID          int              `json:"id"`
-	Title       string           `json:"title"`
-	Description string           `json:"description"`
-	State       string           `json:"state"`
-	Author      User             `json:"author"`
-	Source      PullRequestRef   `json:"source"`
-	Destination PullRequestRef   `json:"destination"`
-	Reviewers   []User           `json:"reviewers"`
-	Participants []Participant   `json:"participants"`
-	CreatedOn   time.Time        `json:"created_on"`
-	UpdatedOn   time.Time        `json:"updated_on"`
-	Links       PullRequestLinks `json:"links"`
+	ID           int              `json:"id"`
+	Title        string           `json:"title"`
+	Description  string           `json:"description"`
+	State        string           `json:"state"`
+	Author       User             `json:"author"`
+	Source       PullRequestRef   `json:"source"`
+	Destination  PullRequestRef   `json:"destination"`
+	Reviewers    []User           `json:"reviewers"`
+	Participants []Participant    `json:"participants"`
+	CreatedOn    time.Time        `json:"created_on"`
+	UpdatedOn    time.Time        `json:"updated_on"`
+	Links        PullRequestLinks `json:"links"`
+	CommentCount int              `json:"comment_count"`
+	TaskCount    int              `json:"task_count"`
+}
+
+type PRListOptions struct {
+	State    string
+	Author   string
+	Reviewer string
 }
 
 type PullRequestRef struct {
