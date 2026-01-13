@@ -309,6 +309,36 @@ func (c *Client) ListAllPullRequests(workspace string, opts *PRListOptions) ([]P
 	return allPRs, nil
 }
 
+func (c *Client) FindPullRequestByBranch(workspace, repo, branch string) (*PullRequest, error) {
+	path := fmt.Sprintf("/repositories/%s/%s/pullrequests?q=source.branch.name=\"%s\"", workspace, repo, branch)
+	data, err := c.get(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var page PaginatedResponse[PullRequest]
+	if err := json.Unmarshal(data, &page); err != nil {
+		return nil, fmt.Errorf("failed to parse pull requests response: %w", err)
+	}
+
+	if len(page.Values) == 0 {
+		return nil, NewNotFoundError("pull request", fmt.Sprintf("branch %s", branch))
+	}
+
+	var selected *PullRequest
+	for i := range page.Values {
+		pr := &page.Values[i]
+		if pr.State == "OPEN" {
+			return pr, nil
+		}
+		if selected == nil || pr.UpdatedOn.After(selected.UpdatedOn) {
+			selected = pr
+		}
+	}
+
+	return selected, nil
+}
+
 func (c *Client) GetPullRequest(workspace, repo string, id int) (*PullRequest, error) {
 	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d", workspace, repo, id)
 	data, err := c.get(path)

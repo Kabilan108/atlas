@@ -138,9 +138,7 @@ func newPRViewCmd() *cobra.Command {
 		Use:   "view <id|branch>",
 		Short: "View a pull request",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return nil
-		},
+		RunE:  runPRView,
 	}
 
 	cmd.Flags().String("repo", "", "Target repository")
@@ -149,6 +147,65 @@ func newPRViewCmd() *cobra.Command {
 	cmd.Flags().Bool("json", false, "Output as JSON")
 
 	return cmd
+}
+
+func runPRView(cmd *cobra.Command, args []string) error {
+	repoFlag, _ := cmd.Flags().GetString("repo")
+
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	workspace := cfg.Workspace
+	repo := repoFlag
+
+	if repo == "" {
+		inferredWS, inferredRepo, err := git.InferRepository()
+		if err != nil {
+			return fmt.Errorf("could not infer repository: %w\nUse --repo to specify", err)
+		}
+		if workspace == "" {
+			workspace = inferredWS
+		}
+		repo = inferredRepo
+		if verbose {
+			fmt.Fprintf(os.Stderr, "Using repository: %s/%s\n", workspace, repo)
+		}
+	}
+
+	if workspace == "" {
+		return fmt.Errorf("workspace not configured. Run 'atlas config set workspace <name>'")
+	}
+
+	client, err := bitbucket.NewClient(
+		bitbucket.WithNoCache(noCache),
+	)
+	if err != nil {
+		return err
+	}
+
+	pr, err := resolvePR(client, workspace, repo, args[0])
+	if err != nil {
+		return err
+	}
+
+	mdWriter := output.NewPRMarkdownWriter(os.Stdout)
+	return mdWriter.WritePR(pr)
+}
+
+func resolvePR(client *bitbucket.Client, workspace, repo, ref string) (*bitbucket.PullRequest, error) {
+	var prID int
+	if _, err := fmt.Sscanf(ref, "%d", &prID); err == nil {
+		return client.GetPullRequest(workspace, repo, prID)
+	}
+
+	ref = strings.TrimPrefix(ref, "#")
+	if _, err := fmt.Sscanf(ref, "%d", &prID); err == nil {
+		return client.GetPullRequest(workspace, repo, prID)
+	}
+
+	return client.FindPullRequestByBranch(workspace, repo, ref)
 }
 
 func newPRCheckoutCmd() *cobra.Command {
