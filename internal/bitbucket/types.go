@@ -132,3 +132,14 @@ type PaginatedResponse[T any] struct {
 	Previous string `json:"previous,omitempty"`
 	Values   []T    `json:"values"`
 }
+
+type Task struct {
+	ID      int     `json:"id"`
+	Content Content `json:"content"`
+	State   string  `json:"state"`
+	Comment Comment `json:"comment"`
+}
+
+func (t *Task) IsResolved() bool {
+	return t.State == "RESOLVED"
+}

@@ -15,6 +15,7 @@ type CommentWriter struct {
 	w          io.Writer
 	prAuthorID string
 	converter  *md.Converter
+	diffParser *DiffParser
 }
 
 func NewCommentWriter(w io.Writer, prAuthorID string) *CommentWriter {
@@ -23,6 +24,11 @@ func NewCommentWriter(w io.Writer, prAuthorID string) *CommentWriter {
 		prAuthorID: prAuthorID,
 		converter:  md.NewConverter("", true, nil),
 	}
+}
+
+func (cw *CommentWriter) SetDiff(diff []byte) {
+	cw.diffParser = NewDiffParser()
+	cw.diffParser.Parse(diff)
 }
 
 func (cw *CommentWriter) WriteComments(comments []bitbucket.Comment, includeResolved bool) error {
@@ -109,12 +115,16 @@ func (cw *CommentWriter) writeGroupedComments(grouped map[locationKey][]bitbucke
 		comments := grouped[key]
 
 		if key.path != "" {
-			fmt.Fprintf(cw.w, "#### `%s", key.path)
-			if key.line > 0 {
-				fmt.Fprintf(cw.w, ":%d", key.line)
-			}
-			fmt.Fprintln(cw.w, "`")
+			fmt.Fprint(cw.w, FormatFileLineHeader(key.path, key.line))
 			fmt.Fprintln(cw.w)
+
+			if cw.diffParser != nil && key.line > 0 {
+				hunk := cw.diffParser.GetHunkForLine(key.path, key.line)
+				if hunk != nil {
+					fmt.Fprint(cw.w, hunk.FormatContext(key.line, 3))
+					fmt.Fprintln(cw.w)
+				}
+			}
 		}
 
 		for _, parent := range comments {

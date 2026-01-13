@@ -381,6 +381,31 @@ func (c *Client) GetPullRequestDiff(workspace, repo string, id int) ([]byte, err
 	return c.getRaw(path)
 }
 
+func (c *Client) ListPullRequestTasks(workspace, repo string, id int) ([]Task, error) {
+	var tasks []Task
+	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d/tasks", workspace, repo, id)
+
+	for path != "" {
+		data, err := c.get(path)
+		if err != nil {
+			if apiErr, ok := err.(*APIError); ok && apiErr.StatusCode == 404 {
+				return []Task{}, nil
+			}
+			return nil, err
+		}
+
+		var page PaginatedResponse[Task]
+		if err := json.Unmarshal(data, &page); err != nil {
+			return nil, fmt.Errorf("failed to parse tasks response: %w", err)
+		}
+
+		tasks = append(tasks, page.Values...)
+		path = extractNextPath(page.Next)
+	}
+
+	return tasks, nil
+}
+
 func extractNextPath(nextURL string) string {
 	if nextURL == "" {
 		return ""

@@ -37,6 +37,7 @@ func newPRListCmd() *cobra.Command {
 	cmd.Flags().String("state", "open", "Filter by state: open, merged, declined, superseded")
 	cmd.Flags().String("author", "", "Filter by author username")
 	cmd.Flags().String("reviewer", "", "Filter by reviewer username")
+	cmd.Flags().Bool("json", false, "Output as JSON")
 
 	return cmd
 }
@@ -47,6 +48,7 @@ func runPRList(cmd *cobra.Command, args []string) error {
 	state, _ := cmd.Flags().GetString("state")
 	author, _ := cmd.Flags().GetString("author")
 	reviewer, _ := cmd.Flags().GetString("reviewer")
+	jsonOutput, _ := cmd.Flags().GetBool("json")
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -95,6 +97,10 @@ func runPRList(cmd *cobra.Command, args []string) error {
 	}
 	if err != nil {
 		return err
+	}
+
+	if jsonOutput {
+		return output.WriteJSON(os.Stdout, prs)
 	}
 
 	if len(prs) == 0 {
@@ -149,10 +155,16 @@ func newPRViewCmd() *cobra.Command {
 	return cmd
 }
 
+type PRViewJSON struct {
+	*bitbucket.PullRequest
+	Comments []bitbucket.Comment `json:"comments,omitempty"`
+}
+
 func runPRView(cmd *cobra.Command, args []string) error {
 	repoFlag, _ := cmd.Flags().GetString("repo")
 	showComments, _ := cmd.Flags().GetBool("comments")
 	includeResolved, _ := cmd.Flags().GetBool("all")
+	jsonOutput, _ := cmd.Flags().GetBool("json")
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -192,6 +204,16 @@ func runPRView(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	if jsonOutput {
+		result := PRViewJSON{PullRequest: pr}
+		comments, err := client.ListPullRequestComments(workspace, repo, pr.ID)
+		if err != nil {
+			return fmt.Errorf("failed to fetch comments: %w", err)
+		}
+		result.Comments = comments
+		return output.WriteJSON(os.Stdout, result)
+	}
+
 	mdWriter := output.NewPRMarkdownWriter(os.Stdout)
 	if err := mdWriter.WritePR(pr); err != nil {
 		return err
@@ -203,10 +225,28 @@ func runPRView(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("failed to fetch comments: %w", err)
 		}
 
+		diff, _ := client.GetPullRequestDiff(workspace, repo, pr.ID)
+
 		fmt.Println()
 		commentWriter := output.NewCommentWriter(os.Stdout, pr.Author.UUID)
+		if len(diff) > 0 {
+			commentWriter.SetDiff(diff)
+		}
 		if err := commentWriter.WriteComments(comments, includeResolved); err != nil {
 			return err
+		}
+
+		tasks, err := client.ListPullRequestTasks(workspace, repo, pr.ID)
+		if err != nil {
+			return fmt.Errorf("failed to fetch tasks: %w", err)
+		}
+
+		if len(tasks) > 0 {
+			fmt.Println()
+			taskWriter := output.NewTaskWriter(os.Stdout)
+			if err := taskWriter.WriteTasks(tasks); err != nil {
+				return err
+			}
 		}
 	}
 
