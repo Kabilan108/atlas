@@ -15,7 +15,7 @@
           pname = "atlas";
           version = "0.0.1";
           src = self;
-          vendorHash = "sha256-wZFWVVXNPOjF6S9midTi/xB/+kN6svZnPUXdWSFomYE=";
+          vendorHash = "sha256-gEMzw1zfgXLlfwkSydNbZ8b4A/6FanI8tsdhSu3vhmE=";
 
           buildPhase = ''
             runHook preBuild
