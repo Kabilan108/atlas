@@ -160,6 +160,34 @@ type PRViewJSON struct {
 	Comments []bitbucket.Comment `json:"comments,omitempty"`
 }
 
+func newUserResolver(client *bitbucket.Client, users ...bitbucket.User) func(string) (bitbucket.User, bool) {
+	cache := make(map[string]bitbucket.User)
+
+	addUser := func(user bitbucket.User) {
+		if user.AccountID != "" {
+			cache[user.AccountID] = user
+		}
+	}
+
+	for _, user := range users {
+		addUser(user)
+	}
+
+	return func(accountID string) (bitbucket.User, bool) {
+		if user, ok := cache[accountID]; ok {
+			return user, true
+		}
+
+		user, err := client.GetUser(accountID)
+		if err != nil {
+			return bitbucket.User{}, false
+		}
+
+		cache[accountID] = *user
+		return *user, true
+	}
+}
+
 func runPRView(cmd *cobra.Command, args []string) error {
 	repoFlag, _ := cmd.Flags().GetString("repo")
 	showComments, _ := cmd.Flags().GetBool("comments")
@@ -215,6 +243,12 @@ func runPRView(cmd *cobra.Command, args []string) error {
 	}
 
 	mdWriter := output.NewPRMarkdownWriter(os.Stdout)
+	knownUsers := append([]bitbucket.User{pr.Author}, pr.Reviewers...)
+	for _, participant := range pr.Participants {
+		knownUsers = append(knownUsers, participant.User)
+	}
+	resolveUser := newUserResolver(client, knownUsers...)
+	mdWriter.SetUserResolver(resolveUser)
 	if err := mdWriter.WritePR(pr); err != nil {
 		return err
 	}
@@ -229,6 +263,7 @@ func runPRView(cmd *cobra.Command, args []string) error {
 
 		fmt.Println()
 		commentWriter := output.NewCommentWriter(os.Stdout, pr.Author)
+		commentWriter.SetUserResolver(resolveUser)
 		if len(diff) > 0 {
 			commentWriter.SetDiff(diff)
 		}

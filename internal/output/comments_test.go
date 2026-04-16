@@ -85,6 +85,42 @@ func TestCommentWriterEscapesMarkdownNamesAndUsesStableAuthorFallback(t *testing
 	}
 }
 
+func TestCommentWriterResolvesMentionsAndStripsZeroWidthCharacters(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	writer := NewCommentWriter(&buf, bitbucket.User{})
+	writer.SetUserResolver(func(accountID string) (bitbucket.User, bool) {
+		if accountID == "acct-123" {
+			return bitbucket.User{DisplayName: "Hiep Nguyen"}, true
+		}
+		return bitbucket.User{}, false
+	})
+
+	comments := []bitbucket.Comment{
+		{
+			ID: 1,
+			User: bitbucket.User{
+				DisplayName: "Reviewer",
+			},
+			Content:   bitbucket.Content{Raw: "Please check @{acct-123}\n\u200c"},
+			CreatedOn: time.Date(2026, time.March, 10, 14, 3, 0, 0, time.UTC),
+		},
+	}
+
+	if err := writer.WriteComments(comments, false); err != nil {
+		t.Fatalf("WriteComments() error = %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Please check @Hiep Nguyen") {
+		t.Fatalf("output missing resolved mention:\n%s", output)
+	}
+	if strings.Contains(output, "\u200c") {
+		t.Fatalf("output still contains zero-width character:\n%q", output)
+	}
+}
+
 func intPtr(value int) *int {
 	return &value
 }

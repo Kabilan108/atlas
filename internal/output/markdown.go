@@ -10,11 +10,16 @@ import (
 )
 
 type PRMarkdownWriter struct {
-	w io.Writer
+	w              io.Writer
+	resolveMention func(string) (bitbucket.User, bool)
 }
 
 func NewPRMarkdownWriter(w io.Writer) *PRMarkdownWriter {
 	return &PRMarkdownWriter{w: w}
+}
+
+func (m *PRMarkdownWriter) SetUserResolver(resolveMention func(string) (bitbucket.User, bool)) {
+	m.resolveMention = resolveMention
 }
 
 func (m *PRMarkdownWriter) WritePR(pr *bitbucket.PullRequest) error {
@@ -33,7 +38,7 @@ func (m *PRMarkdownWriter) WritePR(pr *bitbucket.PullRequest) error {
 	if pr.Description != "" {
 		fmt.Fprintln(m.w, "## Description")
 		fmt.Fprintln(m.w)
-		fmt.Fprintln(m.w, pr.Description)
+		fmt.Fprintln(m.w, normalizeMarkdownText(pr.Description, m.resolveMention))
 		fmt.Fprintln(m.w)
 	}
 

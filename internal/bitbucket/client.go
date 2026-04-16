@@ -7,6 +7,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -205,6 +206,21 @@ func extractResource(path string) string {
 
 func (c *Client) GetCurrentUser() (*User, error) {
 	data, err := c.get("/user")
+	if err != nil {
+		return nil, err
+	}
+
+	var user User
+	if err := json.Unmarshal(data, &user); err != nil {
+		return nil, fmt.Errorf("failed to parse user response: %w", err)
+	}
+
+	return &user, nil
+}
+
+func (c *Client) GetUser(identifier string) (*User, error) {
+	path := "/users/" + url.PathEscape(identifier)
+	data, err := c.get(path)
 	if err != nil {
 		return nil, err
 	}

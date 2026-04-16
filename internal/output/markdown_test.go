@@ -95,3 +95,78 @@ func TestPRMarkdownWriterEscapesMarkdownNames(t *testing.T) {
 		}
 	}
 }
+
+func TestPRMarkdownWriterResolvesMentionsAndStripsZeroWidthCharacters(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	writer := NewPRMarkdownWriter(&buf)
+	writer.SetUserResolver(func(accountID string) (bitbucket.User, bool) {
+		if accountID == "acct-123" {
+			return bitbucket.User{DisplayName: "Hiep Nguyen"}, true
+		}
+		return bitbucket.User{}, false
+	})
+
+	pr := &bitbucket.PullRequest{
+		ID:          1,
+		Title:       "Normalize description",
+		State:       "OPEN",
+		Description: "\nReview @{acct-123}\n\u200c\n",
+		Author:      bitbucket.User{DisplayName: "Tony Okeke"},
+		Source:      bitbucket.PullRequestRef{Branch: bitbucket.Branch{Name: "feature"}},
+		Destination: bitbucket.PullRequestRef{Branch: bitbucket.Branch{Name: "main"}},
+	}
+
+	if err := writer.WritePR(pr); err != nil {
+		t.Fatalf("WritePR() error = %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Review @Hiep Nguyen") {
+		t.Fatalf("output missing resolved mention:\n%s", output)
+	}
+	if strings.Contains(output, "\u200c") {
+		t.Fatalf("output still contains zero-width character:\n%q", output)
+	}
+	if !strings.Contains(output, "\n\nReview @Hiep Nguyen\n\n") {
+		t.Fatalf("output did not preserve description whitespace:\n%q", output)
+	}
+}
+
+func TestPRMarkdownWriterDoesNotResolveMentionsInsideCode(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	writer := NewPRMarkdownWriter(&buf)
+	writer.SetUserResolver(func(accountID string) (bitbucket.User, bool) {
+		if accountID == "acct-123" {
+			return bitbucket.User{DisplayName: "Hiep Nguyen"}, true
+		}
+		return bitbucket.User{}, false
+	})
+
+	pr := &bitbucket.PullRequest{
+		ID:          1,
+		Title:       "Code mention preservation",
+		State:       "OPEN",
+		Description: "Plain @{acct-123}\n`inline @{acct-123}`\n```txt\nblock @{acct-123}\n```\n",
+		Author:      bitbucket.User{DisplayName: "Tony Okeke"},
+		Source:      bitbucket.PullRequestRef{Branch: bitbucket.Branch{Name: "feature"}},
+		Destination: bitbucket.PullRequestRef{Branch: bitbucket.Branch{Name: "main"}},
+	}
+
+	if err := writer.WritePR(pr); err != nil {
+		t.Fatalf("WritePR() error = %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Plain @Hiep Nguyen") {
+		t.Fatalf("plain mention was not resolved:\n%s", output)
+	}
+	for _, expected := range []string{"`inline @{acct-123}`", "block @{acct-123}"} {
+		if !strings.Contains(output, expected) {
+			t.Fatalf("output missing code literal %q:\n%s", expected, output)
+		}
+	}
+}

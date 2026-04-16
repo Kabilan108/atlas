@@ -12,18 +12,24 @@ import (
 )
 
 type CommentWriter struct {
-	w          io.Writer
-	prAuthor   bitbucket.User
-	converter  *md.Converter
-	diffParser *DiffParser
+	w              io.Writer
+	prAuthor       bitbucket.User
+	converter      *md.Converter
+	diffParser     *DiffParser
+	resolveMention func(string) (bitbucket.User, bool)
 }
 
 func NewCommentWriter(w io.Writer, prAuthor bitbucket.User) *CommentWriter {
 	return &CommentWriter{
-		w:         w,
-		prAuthor:  prAuthor,
-		converter: md.NewConverter("", true, nil),
+		w:              w,
+		prAuthor:       prAuthor,
+		converter:      md.NewConverter("", true, nil),
+		resolveMention: nil,
 	}
+}
+
+func (cw *CommentWriter) SetUserResolver(resolveMention func(string) (bitbucket.User, bool)) {
+	cw.resolveMention = resolveMention
 }
 
 func (cw *CommentWriter) SetDiff(diff []byte) {
@@ -172,11 +178,11 @@ func (cw *CommentWriter) convertContent(content bitbucket.Content) string {
 	if content.HTML != "" {
 		converted, err := cw.converter.ConvertString(content.HTML)
 		if err == nil {
-			return strings.TrimSpace(converted)
+			return strings.TrimSpace(normalizeMarkdownText(converted, cw.resolveMention))
 		}
 	}
 	if content.Raw != "" {
-		return strings.TrimSpace(content.Raw)
+		return strings.TrimSpace(normalizeMarkdownText(content.Raw, cw.resolveMention))
 	}
 	return ""
 }
