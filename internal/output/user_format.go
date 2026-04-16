@@ -25,8 +25,12 @@ var markdownTextEscaper = strings.NewReplacer(
 	">", "\\>",
 )
 
+func rawUserMention(user bitbucket.User) string {
+	return "@" + user.Handle()
+}
+
 func formatUserMention(user bitbucket.User) string {
-	return "@" + escapeMarkdownText(user.Handle())
+	return escapeMarkdownText(rawUserMention(user))
 }
 
 func escapeMarkdownText(text string) string {
@@ -121,10 +125,8 @@ func backtickRunLength(text string) int {
 
 func findClosingBackticks(text string, start, delimiterLen int) int {
 	for i := start; i < len(text); {
-		if text[i] == '`' {
-			if backtickRunLength(text[i:]) == delimiterLen {
-				return i
-			}
+		if text[i] == '`' && backtickRunLength(text[i:]) == delimiterLen {
+			return i
 		}
 
 		_, width := utf8.DecodeRuneInString(text[i:])

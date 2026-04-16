@@ -21,10 +21,9 @@ type CommentWriter struct {
 
 func NewCommentWriter(w io.Writer, prAuthor bitbucket.User) *CommentWriter {
 	return &CommentWriter{
-		w:              w,
-		prAuthor:       prAuthor,
-		converter:      md.NewConverter("", true, nil),
-		resolveMention: nil,
+		w:         w,
+		prAuthor:  prAuthor,
+		converter: md.NewConverter("", true, nil),
 	}
 }
 
@@ -51,14 +50,14 @@ func (cw *CommentWriter) WriteComments(comments []bitbucket.Comment, includeReso
 
 func (cw *CommentWriter) filterComments(comments []bitbucket.Comment, includeResolved bool) []bitbucket.Comment {
 	var filtered []bitbucket.Comment
-	for _, c := range comments {
-		if c.Deleted {
+	for _, comment := range comments {
+		if comment.Deleted {
 			continue
 		}
-		if !includeResolved && c.IsResolved() {
+		if !includeResolved && comment.IsResolved() {
 			continue
 		}
-		filtered = append(filtered, c)
+		filtered = append(filtered, comment)
 	}
 	return filtered
 }
@@ -71,41 +70,31 @@ type locationKey struct {
 func (cw *CommentWriter) groupByLocation(comments []bitbucket.Comment) map[locationKey][]bitbucket.Comment {
 	grouped := make(map[locationKey][]bitbucket.Comment)
 
-	commentMap := make(map[int]bitbucket.Comment)
-	for _, c := range comments {
-		commentMap[c.ID] = c
-	}
-
-	for _, c := range comments {
-		if c.Parent != nil {
+	for _, comment := range comments {
+		if comment.Parent != nil {
 			continue
 		}
 
 		key := locationKey{}
-		if c.Inline != nil {
-			key.path = c.Inline.Path
-			if c.Inline.To != nil {
-				key.line = *c.Inline.To
-			} else if c.Inline.From != nil {
-				key.line = *c.Inline.From
+		if comment.Inline != nil {
+			key.path = comment.Inline.Path
+			if comment.Inline.To != nil {
+				key.line = *comment.Inline.To
+			} else if comment.Inline.From != nil {
+				key.line = *comment.Inline.From
 			}
 		}
 
-		grouped[key] = append(grouped[key], c)
+		grouped[key] = append(grouped[key], comment)
 	}
 
 	return grouped
 }
 
 func (cw *CommentWriter) writeGroupedComments(grouped map[locationKey][]bitbucket.Comment, allComments []bitbucket.Comment) {
-	commentMap := make(map[int]bitbucket.Comment)
-	for _, c := range allComments {
-		commentMap[c.ID] = c
-	}
-
 	var keys []locationKey
-	for k := range grouped {
-		keys = append(keys, k)
+	for key := range grouped {
+		keys = append(keys, key)
 	}
 	sort.Slice(keys, func(i, j int) bool {
 		if keys[i].path != keys[j].path {
@@ -117,61 +106,126 @@ func (cw *CommentWriter) writeGroupedComments(grouped map[locationKey][]bitbucke
 	fmt.Fprintln(cw.w, "## Comments")
 	fmt.Fprintln(cw.w)
 
-	for _, key := range keys {
-		comments := grouped[key]
-
-		if key.path != "" {
-			fmt.Fprint(cw.w, FormatFileLineHeader(key.path, key.line))
+	for index, key := range keys {
+		if index > 0 {
+			fmt.Fprintln(cw.w, "---")
 			fmt.Fprintln(cw.w)
+		}
 
-			if cw.diffParser != nil && key.line > 0 {
-				hunk := cw.diffParser.GetHunkForLine(key.path, key.line)
-				if hunk != nil {
-					fmt.Fprint(cw.w, hunk.FormatContext(key.line, 3))
-					fmt.Fprintln(cw.w)
-				}
+		parents := grouped[key]
+		sort.Slice(parents, func(i, j int) bool {
+			if !parents[i].CreatedOn.Equal(parents[j].CreatedOn) {
+				return parents[i].CreatedOn.Before(parents[j].CreatedOn)
+			}
+			return parents[i].ID < parents[j].ID
+		})
+
+		fmt.Fprintln(cw.w, cw.threadHeader(key, parents))
+		fmt.Fprintln(cw.w)
+
+		if key.path != "" && cw.diffParser != nil && key.line > 0 {
+			hunk := cw.diffParser.GetHunkForLine(key.path, key.line)
+			if hunk != nil {
+				fmt.Fprint(cw.w, hunk.FormatContext(key.line, 3))
+				fmt.Fprintln(cw.w)
 			}
 		}
 
-		for _, parent := range comments {
-			cw.writeComment(parent, 0)
+		for parentIndex, parent := range parents {
+			if parentIndex > 0 {
+				fmt.Fprintln(cw.w)
+			}
+			cw.writeComment(parent, false)
 
-			for _, c := range allComments {
-				if c.Parent != nil && c.Parent.ID == parent.ID {
-					cw.writeComment(c, 1)
-				}
+			for _, reply := range cw.repliesFor(parent.ID, allComments) {
+				fmt.Fprintln(cw.w)
+				cw.writeComment(reply, true)
 			}
 		}
 	}
 }
 
-func (cw *CommentWriter) writeComment(c bitbucket.Comment, depth int) {
-	indent := ""
-	if depth > 0 {
-		indent = "> "
+func (cw *CommentWriter) repliesFor(parentID int, comments []bitbucket.Comment) []bitbucket.Comment {
+	var replies []bitbucket.Comment
+	for _, comment := range comments {
+		if comment.Parent != nil && comment.Parent.ID == parentID {
+			replies = append(replies, comment)
+		}
+	}
+
+	sort.Slice(replies, func(i, j int) bool {
+		if !replies[i].CreatedOn.Equal(replies[j].CreatedOn) {
+			return replies[i].CreatedOn.Before(replies[j].CreatedOn)
+		}
+		return replies[i].ID < replies[j].ID
+	})
+
+	return replies
+}
+
+func (cw *CommentWriter) threadHeader(key locationKey, comments []bitbucket.Comment) string {
+	location := "General"
+	if key.path != "" {
+		if key.line > 0 {
+			location = fmt.Sprintf("`%s:%d`", key.path, key.line)
+		} else {
+			location = fmt.Sprintf("`%s`", key.path)
+		}
+	}
+
+	return fmt.Sprintf("### Thread: %s [%s]", location, threadStatus(comments))
+}
+
+func threadStatus(comments []bitbucket.Comment) string {
+	hasResolved := false
+	for _, comment := range comments {
+		if comment.IsResolved() {
+			hasResolved = true
+			continue
+		}
+		if comment.Inline != nil {
+			return "UNRESOLVED"
+		}
+	}
+	if hasResolved {
+		return "RESOLVED"
+	}
+	return "OPEN"
+}
+
+func (cw *CommentWriter) writeComment(comment bitbucket.Comment, isReply bool) {
+	commentType := "comment"
+	if isReply {
+		commentType = "reply"
 	}
 
 	authorIndicator := ""
-	if c.User.SharesStableIdentity(cw.prAuthor) {
+	if comment.User.SharesStableIdentity(cw.prAuthor) {
 		authorIndicator = " (author)"
 	}
 
-	status := ""
-	if c.IsResolved() {
-		status = " [RESOLVED]"
-	} else if c.Inline != nil {
-		status = " [UNRESOLVED]"
-	}
-
-	timestamp := cw.formatTimestamp(c.CreatedOn)
-
-	fmt.Fprintf(cw.w, "%s**%s**%s (%s)%s:\n", indent, formatUserMention(c.User), authorIndicator, timestamp, status)
-
-	content := cw.convertContent(c.Content)
-	for _, line := range strings.Split(content, "\n") {
-		fmt.Fprintf(cw.w, "%s%s\n", indent, line)
+	fmt.Fprintf(cw.w, "Type: %s\n", commentType)
+	fmt.Fprintf(cw.w, "Author: %s%s\n", formatUserMention(comment.User), authorIndicator)
+	fmt.Fprintf(cw.w, "When: %s\n", cw.formatTimestamp(comment.CreatedOn))
+	if status := commentStatus(comment); status != "" {
+		fmt.Fprintf(cw.w, "Status: %s\n", status)
 	}
 	fmt.Fprintln(cw.w)
+
+	content := cw.convertContent(comment.Content)
+	for _, line := range strings.Split(content, "\n") {
+		fmt.Fprintln(cw.w, line)
+	}
+}
+
+func commentStatus(comment bitbucket.Comment) string {
+	if comment.IsResolved() {
+		return "RESOLVED"
+	}
+	if comment.Inline != nil {
+		return "UNRESOLVED"
+	}
+	return ""
 }
 
 func (cw *CommentWriter) convertContent(content bitbucket.Content) string {
@@ -187,8 +241,8 @@ func (cw *CommentWriter) convertContent(content bitbucket.Content) string {
 	return ""
 }
 
-func (cw *CommentWriter) formatTimestamp(t time.Time) string {
-	relative := FormatRelativeTime(t)
-	absolute := t.Format("2006-01-02 15:04")
+func (cw *CommentWriter) formatTimestamp(timestamp time.Time) string {
+	relative := FormatRelativeTime(timestamp)
+	absolute := timestamp.Format("2006-01-02 15:04")
 	return fmt.Sprintf("%s - %s", relative, absolute)
 }

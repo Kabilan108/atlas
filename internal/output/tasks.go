@@ -9,11 +9,16 @@ import (
 )
 
 type TaskWriter struct {
-	w io.Writer
+	w              io.Writer
+	resolveMention func(string) (bitbucket.User, bool)
 }
 
 func NewTaskWriter(w io.Writer) *TaskWriter {
 	return &TaskWriter{w: w}
+}
+
+func (tw *TaskWriter) SetUserResolver(resolveMention func(string) (bitbucket.User, bool)) {
+	tw.resolveMention = resolveMention
 }
 
 func (tw *TaskWriter) WriteTasks(tasks []bitbucket.Task) error {
@@ -24,13 +29,32 @@ func (tw *TaskWriter) WriteTasks(tasks []bitbucket.Task) error {
 	fmt.Fprintln(tw.w, "## Tasks")
 	fmt.Fprintln(tw.w)
 
-	for _, task := range tasks {
-		checkbox := "[ ]"
-		if task.IsResolved() {
-			checkbox = "[x]"
+	for index, task := range tasks {
+		if index > 0 {
+			fmt.Fprintln(tw.w, "---")
+			fmt.Fprintln(tw.w)
 		}
-		content := tw.formatContent(task.Content)
-		fmt.Fprintf(tw.w, "- %s %s\n", checkbox, content)
+
+		status := "OPEN"
+		if task.IsResolved() {
+			status = "RESOLVED"
+		}
+
+		fmt.Fprintf(tw.w, "### Task #%d [%s]\n\n", task.ID, status)
+		if task.Comment.User.IdentityKey() != "" {
+			fmt.Fprintf(tw.w, "Author: %s\n", formatUserMention(task.Comment.User))
+		}
+		if task.Comment.Inline != nil && task.Comment.Inline.Path != "" {
+			thread := task.Comment.Inline.Path
+			if task.Comment.Inline.To != nil {
+				thread = fmt.Sprintf("%s:%d", task.Comment.Inline.Path, *task.Comment.Inline.To)
+			} else if task.Comment.Inline.From != nil {
+				thread = fmt.Sprintf("%s:%d", task.Comment.Inline.Path, *task.Comment.Inline.From)
+			}
+			fmt.Fprintf(tw.w, "Thread: `%s`\n", thread)
+		}
+		fmt.Fprintln(tw.w)
+		fmt.Fprintln(tw.w, tw.formatContent(task.Content))
 	}
 
 	return nil
@@ -41,7 +65,7 @@ func (tw *TaskWriter) formatContent(content bitbucket.Content) string {
 	if text == "" {
 		text = content.HTML
 	}
-	text = strings.TrimSpace(text)
+	text = strings.TrimSpace(normalizeMarkdownText(text, tw.resolveMention))
 	text = strings.ReplaceAll(text, "\n", " ")
 	return text
 }

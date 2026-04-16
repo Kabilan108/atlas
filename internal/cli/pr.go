@@ -242,25 +242,47 @@ func runPRView(cmd *cobra.Command, args []string) error {
 		return output.WriteJSON(os.Stdout, result)
 	}
 
+	var comments []bitbucket.Comment
+	var tasks []bitbucket.Task
+	var diff []byte
+	commentsLoaded := false
+	tasksLoaded := false
+
+	if showComments {
+		comments, err = client.ListPullRequestComments(workspace, repo, pr.ID)
+		if err != nil {
+			return fmt.Errorf("failed to fetch comments: %w", err)
+		}
+		commentsLoaded = true
+
+		tasks, err = client.ListPullRequestTasks(workspace, repo, pr.ID)
+		if err != nil {
+			return fmt.Errorf("failed to fetch tasks: %w", err)
+		}
+		tasksLoaded = true
+
+		diff, _ = client.GetPullRequestDiff(workspace, repo, pr.ID)
+	}
+
 	mdWriter := output.NewPRMarkdownWriter(os.Stdout)
 	knownUsers := append([]bitbucket.User{pr.Author}, pr.Reviewers...)
 	for _, participant := range pr.Participants {
 		knownUsers = append(knownUsers, participant.User)
 	}
+	for _, comment := range comments {
+		knownUsers = append(knownUsers, comment.User)
+	}
+	for _, task := range tasks {
+		knownUsers = append(knownUsers, task.Comment.User)
+	}
 	resolveUser := newUserResolver(client, knownUsers...)
 	mdWriter.SetUserResolver(resolveUser)
+	mdWriter.SetContext(workspace, repo, comments, commentsLoaded, tasks, tasksLoaded)
 	if err := mdWriter.WritePR(pr); err != nil {
 		return err
 	}
 
 	if showComments {
-		comments, err := client.ListPullRequestComments(workspace, repo, pr.ID)
-		if err != nil {
-			return fmt.Errorf("failed to fetch comments: %w", err)
-		}
-
-		diff, _ := client.GetPullRequestDiff(workspace, repo, pr.ID)
-
 		fmt.Println()
 		commentWriter := output.NewCommentWriter(os.Stdout, pr.Author)
 		commentWriter.SetUserResolver(resolveUser)
@@ -271,14 +293,10 @@ func runPRView(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
-		tasks, err := client.ListPullRequestTasks(workspace, repo, pr.ID)
-		if err != nil {
-			return fmt.Errorf("failed to fetch tasks: %w", err)
-		}
-
 		if len(tasks) > 0 {
 			fmt.Println()
 			taskWriter := output.NewTaskWriter(os.Stdout)
+			taskWriter.SetUserResolver(resolveUser)
 			if err := taskWriter.WriteTasks(tasks); err != nil {
 				return err
 			}
