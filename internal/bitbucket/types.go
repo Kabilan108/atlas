@@ -1,13 +1,75 @@
 package bitbucket
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 type User struct {
 	UUID        string `json:"uuid"`
 	Username    string `json:"username"`
+	Nickname    string `json:"nickname"`
 	DisplayName string `json:"display_name"`
 	AccountID   string `json:"account_id"`
 	Links       Links  `json:"links"`
+}
+
+func (u User) IdentityKey() string {
+	for _, value := range []string{u.UUID, u.AccountID, u.Username, u.Nickname, u.DisplayName} {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
+func (u User) Handle() string {
+	for _, value := range []string{u.Username, u.Nickname, u.DisplayName, u.AccountID, strings.Trim(u.UUID, "{}")} {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return "unknown"
+}
+
+func (u User) MatchesStableIdentifier(identifier string) bool {
+	target := normalizeUserIdentifier(identifier)
+	if target == "" {
+		return false
+	}
+
+	for _, candidate := range u.stableIdentifiers() {
+		if normalizeUserIdentifier(candidate) == target {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (u User) SharesStableIdentity(other User) bool {
+	for _, candidate := range u.stableIdentifiers() {
+		if other.MatchesStableIdentifier(candidate) {
+			return true
+		}
+	}
+	return false
+}
+
+func (u User) stableIdentifiers() []string {
+	return []string{
+		u.UUID,
+		strings.Trim(u.UUID, "{}"),
+		u.AccountID,
+		u.Username,
+	}
+}
+
+func normalizeUserIdentifier(value string) string {
+	normalized := strings.TrimSpace(value)
+	normalized = strings.TrimPrefix(normalized, "@")
+	normalized = strings.Trim(normalized, "{}")
+	return strings.ToLower(normalized)
 }
 
 type Links struct {
@@ -86,17 +148,17 @@ type PullRequestLinks struct {
 }
 
 type Comment struct {
-	ID         int          `json:"id"`
-	Content    Content      `json:"content"`
-	User       User         `json:"user"`
-	CreatedOn  time.Time    `json:"created_on"`
-	UpdatedOn  time.Time    `json:"updated_on"`
-	Inline     *Inline      `json:"inline,omitempty"`
-	Parent     *Parent      `json:"parent,omitempty"`
-	Deleted    bool         `json:"deleted"`
-	Pending    bool         `json:"pending"`
-	Resolution *Resolution  `json:"resolution,omitempty"`
-	Links      Links        `json:"links"`
+	ID         int         `json:"id"`
+	Content    Content     `json:"content"`
+	User       User        `json:"user"`
+	CreatedOn  time.Time   `json:"created_on"`
+	UpdatedOn  time.Time   `json:"updated_on"`
+	Inline     *Inline     `json:"inline,omitempty"`
+	Parent     *Parent     `json:"parent,omitempty"`
+	Deleted    bool        `json:"deleted"`
+	Pending    bool        `json:"pending"`
+	Resolution *Resolution `json:"resolution,omitempty"`
+	Links      Links       `json:"links"`
 }
 
 type Resolution struct {

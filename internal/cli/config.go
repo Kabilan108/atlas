@@ -175,6 +175,14 @@ func runConfigVerify(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("authentication failed: %w", err)
 	}
 
-	fmt.Printf("Authenticated as %s (%s)\n", user.DisplayName, user.Username)
+	fmt.Print(formatVerifiedUser(*user))
 	return nil
+}
+
+func formatVerifiedUser(user bitbucket.User) string {
+	if user.DisplayName != "" && user.DisplayName != user.Handle() {
+		return fmt.Sprintf("Authenticated as %s (%s)\n", user.DisplayName, user.Handle())
+	}
+
+	return fmt.Sprintf("Authenticated as %s\n", user.Handle())
 }

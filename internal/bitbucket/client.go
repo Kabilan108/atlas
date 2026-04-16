@@ -265,7 +265,7 @@ func (c *Client) ListPullRequests(workspace, repo string, opts *PRListOptions) (
 		}
 
 		for _, pr := range page.Values {
-			if opts != nil && opts.Author != "" && pr.Author.Username != opts.Author {
+			if opts != nil && opts.Author != "" && !pr.Author.MatchesStableIdentifier(opts.Author) {
 				continue
 			}
 			if opts != nil && opts.Reviewer != "" && !hasReviewer(pr, opts.Reviewer) {
@@ -281,12 +281,12 @@ func (c *Client) ListPullRequests(workspace, repo string, opts *PRListOptions) (
 
 func hasReviewer(pr PullRequest, reviewer string) bool {
 	for _, r := range pr.Reviewers {
-		if r.Username == reviewer {
+		if r.MatchesStableIdentifier(reviewer) {
 			return true
 		}
 	}
 	for _, p := range pr.Participants {
-		if p.Role == "REVIEWER" && p.User.Username == reviewer {
+		if p.Role == "REVIEWER" && p.User.MatchesStableIdentifier(reviewer) {
 			return true
 		}
 	}

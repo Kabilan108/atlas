@@ -13,16 +13,16 @@ import (
 
 type CommentWriter struct {
 	w          io.Writer
-	prAuthorID string
+	prAuthor   bitbucket.User
 	converter  *md.Converter
 	diffParser *DiffParser
 }
 
-func NewCommentWriter(w io.Writer, prAuthorID string) *CommentWriter {
+func NewCommentWriter(w io.Writer, prAuthor bitbucket.User) *CommentWriter {
 	return &CommentWriter{
-		w:          w,
-		prAuthorID: prAuthorID,
-		converter:  md.NewConverter("", true, nil),
+		w:         w,
+		prAuthor:  prAuthor,
+		converter: md.NewConverter("", true, nil),
 	}
 }
 
@@ -146,7 +146,7 @@ func (cw *CommentWriter) writeComment(c bitbucket.Comment, depth int) {
 	}
 
 	authorIndicator := ""
-	if c.User.UUID == cw.prAuthorID || c.User.AccountID == cw.prAuthorID {
+	if c.User.SharesStableIdentity(cw.prAuthor) {
 		authorIndicator = " (author)"
 	}
 
@@ -159,7 +159,7 @@ func (cw *CommentWriter) writeComment(c bitbucket.Comment, depth int) {
 
 	timestamp := cw.formatTimestamp(c.CreatedOn)
 
-	fmt.Fprintf(cw.w, "%s**@%s**%s (%s)%s:\n", indent, c.User.Username, authorIndicator, timestamp, status)
+	fmt.Fprintf(cw.w, "%s**%s**%s (%s)%s:\n", indent, formatUserMention(c.User), authorIndicator, timestamp, status)
 
 	content := cw.convertContent(c.Content)
 	for _, line := range strings.Split(content, "\n") {

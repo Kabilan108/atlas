@@ -3,6 +3,7 @@ package output
 import (
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	"github.com/kabilan108/atlas/internal/bitbucket"
@@ -18,7 +19,7 @@ func NewPRMarkdownWriter(w io.Writer) *PRMarkdownWriter {
 
 func (m *PRMarkdownWriter) WritePR(pr *bitbucket.PullRequest) error {
 	fmt.Fprintf(m.w, "# PR #%d: %s\n\n", pr.ID, pr.Title)
-	fmt.Fprintf(m.w, "**Author**: @%s\n", pr.Author.Username)
+	fmt.Fprintf(m.w, "**Author**: %s\n", formatUserMention(pr.Author))
 	fmt.Fprintf(m.w, "**State**: %s\n", pr.State)
 	fmt.Fprintf(m.w, "**Branch**: %s → %s\n", pr.Source.Branch.Name, pr.Destination.Branch.Name)
 
@@ -41,10 +42,22 @@ func (m *PRMarkdownWriter) WritePR(pr *bitbucket.PullRequest) error {
 }
 
 func (m *PRMarkdownWriter) formatReviewers(pr *bitbucket.PullRequest) string {
-	reviewerMap := make(map[string]string)
+	type reviewerEntry struct {
+		label  string
+		status string
+	}
+
+	reviewerMap := make(map[string]reviewerEntry)
 
 	for _, r := range pr.Reviewers {
-		reviewerMap[r.Username] = "pending"
+		key := r.IdentityKey()
+		if key == "" {
+			continue
+		}
+		reviewerMap[key] = reviewerEntry{
+			label:  formatUserMention(r),
+			status: "pending",
+		}
 	}
 
 	for _, p := range pr.Participants {
@@ -57,16 +70,31 @@ func (m *PRMarkdownWriter) formatReviewers(pr *bitbucket.PullRequest) string {
 		} else if p.State == "changes_requested" {
 			status = "changes_requested"
 		}
-		reviewerMap[p.User.Username] = status
+		key := p.User.IdentityKey()
+		if key == "" {
+			continue
+		}
+		reviewerMap[key] = reviewerEntry{
+			label:  formatUserMention(p.User),
+			status: status,
+		}
 	}
 
 	if len(reviewerMap) == 0 {
 		return ""
 	}
 
+	entries := make([]reviewerEntry, 0, len(reviewerMap))
+	for _, entry := range reviewerMap {
+		entries = append(entries, entry)
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].label < entries[j].label
+	})
+
 	var parts []string
-	for username, status := range reviewerMap {
-		parts = append(parts, fmt.Sprintf("@%s (%s)", username, status))
+	for _, entry := range entries {
+		parts = append(parts, fmt.Sprintf("%s (%s)", entry.label, entry.status))
 	}
 
 	return strings.Join(parts, ", ")

@@ -228,7 +228,7 @@ func runPRView(cmd *cobra.Command, args []string) error {
 		diff, _ := client.GetPullRequestDiff(workspace, repo, pr.ID)
 
 		fmt.Println()
-		commentWriter := output.NewCommentWriter(os.Stdout, pr.Author.UUID)
+		commentWriter := output.NewCommentWriter(os.Stdout, pr.Author)
 		if len(diff) > 0 {
 			commentWriter.SetDiff(diff)
 		}
