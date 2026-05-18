@@ -345,6 +345,9 @@ func runSnippetEdit(cmd *cobra.Command, args []string) error {
 	if filename == "" && len(args) == 2 {
 		filename = args[1]
 	}
+	if filename != "" && title != "" && addFile == "" && removeFile == "" {
+		return fmt.Errorf("filename cannot be used with --title unless editing file contents or adding a file")
+	}
 
 	client, err := bitbucket.NewClient(bitbucket.WithNoCache(noCache))
 	if err != nil {
@@ -359,7 +362,13 @@ func runSnippetEdit(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("failed to read file %s: %w", addFile, err)
 		}
-		addFiles[snippetLocalFilename(addFile)] = content
+		targetFilename := filename
+		if targetFilename == "" {
+			targetFilename = snippetLocalFilename(addFile)
+		}
+		if err := addSnippetFileContent(addFiles, targetFilename, content, addFile); err != nil {
+			return err
+		}
 	}
 
 	if removeFile != "" {
@@ -530,13 +539,14 @@ func parseSnippetRef(raw, fallbackWorkspace string) (snippetRef, error) {
 
 	parsed, err := url.Parse(raw)
 	if err == nil && parsed.Host != "" {
+		host := parsed.Hostname()
 		parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
 		switch {
-		case parsed.Host == "bitbucket.org" && len(parts) >= 3 && parts[0] == "snippets":
+		case host == "bitbucket.org" && len(parts) >= 3 && parts[0] == "snippets":
 			return snippetRefFromURLParts(parts[1], parts[2])
-		case parsed.Host == "bitbucket.org" && len(parts) >= 4 && parts[1] == "workspace" && parts[2] == "snippets":
+		case host == "bitbucket.org" && len(parts) >= 4 && parts[1] == "workspace" && parts[2] == "snippets":
 			return snippetRefFromURLParts(parts[0], parts[3])
-		case strings.HasSuffix(parsed.Host, "bitbucket.org") && len(parts) >= 4 && parts[0] == "2.0" && parts[1] == "snippets":
+		case isBitbucketHost(host) && len(parts) >= 4 && parts[0] == "2.0" && parts[1] == "snippets":
 			return snippetRefFromURLParts(parts[2], parts[3])
 		default:
 			return snippetRef{}, fmt.Errorf("unsupported snippet URL: %s", raw)
@@ -547,6 +557,10 @@ func parseSnippetRef(raw, fallbackWorkspace string) (snippetRef, error) {
 		return snippetRef{}, fmt.Errorf("workspace not configured. Run 'atlas config set workspace <name>' or use --workspace")
 	}
 	return snippetRef{Workspace: fallbackWorkspace, ID: raw}, nil
+}
+
+func isBitbucketHost(host string) bool {
+	return host == "bitbucket.org" || strings.HasSuffix(host, ".bitbucket.org")
 }
 
 func snippetRefFromURLParts(workspacePart, idPart string) (snippetRef, error) {
@@ -632,7 +646,10 @@ func readSnippetCreateFiles(args []string, stdinFilename string) (map[string][]b
 		if err != nil {
 			return nil, fmt.Errorf("failed to read file %s: %w", arg, err)
 		}
-		files[snippetLocalFilename(arg)] = content
+		filename := snippetLocalFilename(arg)
+		if err := addSnippetFileContent(files, filename, content, arg); err != nil {
+			return nil, err
+		}
 	}
 
 	if len(args) == 0 && !term.IsTerminal(int(os.Stdin.Fd())) {
@@ -647,13 +664,23 @@ func readSnippetCreateFiles(args []string, stdinFilename string) (map[string][]b
 		if err != nil {
 			return nil, fmt.Errorf("failed to read standard input: %w", err)
 		}
-		files[stdinFilename] = content
+		if err := addSnippetFileContent(files, stdinFilename, content, "standard input"); err != nil {
+			return nil, err
+		}
 	}
 
 	if len(files) == 0 {
 		return nil, fmt.Errorf("at least one filename or - is required")
 	}
 	return files, nil
+}
+
+func addSnippetFileContent(files map[string][]byte, filename string, content []byte, source string) error {
+	if _, exists := files[filename]; exists {
+		return fmt.Errorf("duplicate snippet filename %q from %s", filename, source)
+	}
+	files[filename] = content
+	return nil
 }
 
 func snippetLocalFilename(filePath string) string {

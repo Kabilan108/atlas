@@ -15,6 +15,16 @@ func TestSnippetListPath(t *testing.T) {
 	}
 }
 
+func TestSnippetListPathClampsPageLen(t *testing.T) {
+	t.Parallel()
+
+	got := snippetListPath("team", &SnippetListOptions{Limit: 150})
+	want := "/snippets/team?pagelen=100"
+	if got != want {
+		t.Fatalf("snippetListPath() = %q, want %q", got, want)
+	}
+}
+
 func TestSnippetListPathOmitsEmptyOptions(t *testing.T) {
 	t.Parallel()
 

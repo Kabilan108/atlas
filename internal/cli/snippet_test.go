@@ -82,6 +82,14 @@ func TestParseSnippetRefRejectsUnsupportedURL(t *testing.T) {
 	}
 }
 
+func TestParseSnippetRefRejectsSuffixSpoofedHost(t *testing.T) {
+	t.Parallel()
+
+	if _, err := parseSnippetRef("https://evilbitbucket.org/2.0/snippets/team/abc123", "team"); err == nil {
+		t.Fatal("parseSnippetRef() error = nil, want unsupported URL error")
+	}
+}
+
 func TestSnippetCloneURL(t *testing.T) {
 	t.Parallel()
 
@@ -131,6 +139,19 @@ func TestSnippetLocalFilename(t *testing.T) {
 
 	if got := snippetLocalFilename("src/auth.go"); got != "src/auth.go" {
 		t.Fatalf("snippetLocalFilename() = %q, want %q", got, "src/auth.go")
+	}
+}
+
+func TestAddSnippetFileContentRejectsDuplicates(t *testing.T) {
+	t.Parallel()
+
+	files := map[string][]byte{"same.txt": []byte("first")}
+	err := addSnippetFileContent(files, "same.txt", []byte("second"), "second source")
+	if err == nil {
+		t.Fatal("addSnippetFileContent() error = nil, want duplicate filename error")
+	}
+	if string(files["same.txt"]) != "first" {
+		t.Fatalf("duplicate write changed existing content to %q", files["same.txt"])
 	}
 }
 

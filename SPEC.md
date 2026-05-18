@@ -55,7 +55,7 @@ atlas config verify  # calls /user endpoint to verify auth works
 atlas pr list [--repo <repo>] [--all] [--state <state>] [--author <author>] [--reviewer <reviewer>]
 atlas pr view <id|branch> [--repo <repo>] [--comments] [--all] [--json]
 atlas pr checkout <id|branch> [--repo <repo>]
-atlas snippet list [--workspace <workspace>] [--role <role>] [--public|--private] [-L <limit>]
+atlas snippet list [--workspace <workspace>] [--role <role>] [--public|--private] [-L <limit>] [--json]
 atlas snippet view [<id|url>] [--filename <file>] [--files] [--raw] [--web] [--json]
 atlas snippet create [<file>... | -] --title <title> [--filename <file>] [--public] [--json]
 atlas snippet edit <id|url> [<filename>] [--title <title>] [--add <file>] [--remove <file>]

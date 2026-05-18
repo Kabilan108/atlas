@@ -464,7 +464,11 @@ func snippetListPath(workspace string, opts *SnippetListOptions) string {
 	values := url.Values{}
 	if opts != nil {
 		if opts.Limit > 0 {
-			values.Set("pagelen", strconv.Itoa(opts.Limit))
+			pageLen := opts.Limit
+			if pageLen > 100 {
+				pageLen = 100
+			}
+			values.Set("pagelen", strconv.Itoa(pageLen))
 		}
 		if opts.Role != "" {
 			values.Set("role", opts.Role)
