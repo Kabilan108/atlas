@@ -80,8 +80,10 @@ atlas pr checkout 123
 
 # Snippets
 atlas snippet list
-atlas snippet create --title "My snippet" -f file.go
-atlas snippet view abc123 --contents
+atlas snippet create --title "My snippet" file.go
+atlas snippet view abc123
+atlas snippet edit abc123 file.go
+atlas snippet clone abc123
 ```
 
 **Flags:** `--json` for structured output, `--no-cache` to bypass cache, `-v` for verbose.
