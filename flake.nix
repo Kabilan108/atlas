@@ -87,9 +87,6 @@
               git
               gnumake
             ];
-            shellHook = ''
-              export PATH="$PWD/bin:$PATH"
-            '';
           };
         }
       );
