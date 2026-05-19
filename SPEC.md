@@ -55,11 +55,13 @@ atlas config verify  # calls /user endpoint to verify auth works
 atlas pr list [--repo <repo>] [--all] [--state <state>] [--author <author>] [--reviewer <reviewer>]
 atlas pr view <id|branch> [--repo <repo>] [--comments] [--all] [--json]
 atlas pr checkout <id|branch> [--repo <repo>]
-atlas snippet list [--workspace <workspace>]
-atlas snippet view <id> [--contents]
-atlas snippet create --title <title> -f <file> [-f <file>...]
-atlas snippet update <id> [-f <file>...] [-r <file>...]
-atlas snippet delete <id>
+atlas snippet list [--workspace <workspace>] [--role <role>] [--public|--private] [-L <limit>] [--json]
+atlas snippet view [<id|url>] [--filename <file>] [--files] [--raw] [--web] [--json]
+atlas snippet create [<file>... | -] --title <title> [--filename <file>] [--public] [--json]
+atlas snippet edit <id|url> [<filename>] [--title <title>] [--add <file>] [--remove <file>]
+atlas snippet rename <id|url> <old-filename> <new-filename>
+atlas snippet clone <id|url> [<directory>] [--protocol ssh|https] [-- <gitflags>...]
+atlas snippet delete [<id|url>] [--yes]
 atlas config set <key> [<value>]
 atlas config get <key> [--verbose]
 atlas config verify
@@ -258,37 +260,74 @@ Status only (no attribution for who completed).
 
 ### List
 
-`atlas snippet list` shows user's own snippets (not all workspace snippets).
+`atlas snippet list` shows snippets for the configured workspace.
+
+- `-L, --limit <n>`: Maximum snippets to fetch (default 10)
+- `--role owner|contributor|member`: Filter snippets by Bitbucket role
+- `--public`: Show only public snippets
+- `--private`: Show only private snippets
+- `--json`: Emit structured output
 
 ### View
 
-`atlas snippet view <id>` shows snippet metadata by default.
+`atlas snippet view <id|url>` displays snippet file contents by default.
 
-Add `--contents` flag to display file contents.
+- Uses `bat` as the pager when available, then `less`, then stdout
+- `-f, --filename <file>`: Display a single file
+- `--files`: List file names only
+- `-r, --raw`: Print raw contents without paging
+- `-w, --web`: Open the snippet in a browser
+- `--json`: Emit metadata and file contents as structured output
 
 ### Create
 
 ```bash
-atlas snippet create --title "Auth helpers" -f src/auth.go -f src/auth_test.go
+atlas snippet create --title "Auth helpers" src/auth.go src/auth_test.go
+cat src/auth.go | atlas snippet create --title "Auth helper" --filename auth.go
 ```
 
-- Requires `-f` flags (no stdin support)
-- `--private` flag (default): visible to workspace members only
+- Files are positional
+- `-` or piped input reads from standard input
+- Snippets are private by default; `--public` lists the snippet publicly
 
-### Update
+### Edit
 
 ```bash
-atlas snippet update <id> -f src/auth.go -r old_file.go
+atlas snippet edit <id|url> auth.go
+atlas snippet edit <id|url> --title "Auth helpers"
+atlas snippet edit <id|url> --add src/auth.go --remove old_file.go
 ```
 
-- `-f <file>`: Add or update files (merge behavior)
-- `-r <file>`: Remove files from snippet
+- With no add/remove/title flags, Atlas opens the selected snippet file in `$VISUAL` or `$EDITOR`
+- If no filename is provided for a multi-file snippet, Atlas prompts for a file in interactive terminals
+- `-a, --add <file>`: Add or replace a snippet file from a local file
+- `-r, --remove <file>`: Remove a file from the snippet
+
+### Rename
+
+```bash
+atlas snippet rename <id|url> old_file.go new_file.go
+```
+
+Renames by fetching the old file content, adding it under the new filename, and removing the old filename.
+
+### Clone
+
+```bash
+atlas snippet clone <id|url>
+atlas snippet clone <id|url> ./local-dir -- --depth 1
+atlas snippet clone <id|url> --protocol https
+```
+
+Clone uses SSH by default. Use `--protocol https` when SSH is not configured.
 
 ### Delete
 
 ```bash
-atlas snippet delete <id>
+atlas snippet delete <id|url> --yes
 ```
+
+Without `--yes`, Atlas asks for confirmation in interactive terminals.
 
 ---
 
@@ -501,16 +540,19 @@ Retry with backoff based on `--retry` flag, then fail with actionable suggestion
 
 ### Phase 11: Snippets
 
-**Goal**: Create, view, update, and delete Bitbucket snippets.
+**Goal**: Create, view, edit, clone, rename, and delete Bitbucket snippets.
 
 **Deliverables**:
-- `atlas snippet list` shows user's own snippets
-- `atlas snippet view <id>` displays metadata (add `--contents` for files)
-- `atlas snippet create --title <title> -f <file> [-f <file>...]` creates snippet
-- `atlas snippet update <id> -f <file>` adds/updates files (merge behavior)
-- `atlas snippet update <id> -r <file>` removes files
-- `atlas snippet delete <id>` removes snippet
-- `--private` flag (default): visible to workspace members only
+- `atlas snippet list` supports limit, visibility filters, role filters, and JSON output
+- `atlas snippet view [<id|url>]` displays file contents through `bat`/`less` when available
+- `atlas snippet create [<file>... | -] --title <title>` creates private snippets by default
+- `atlas snippet edit <id|url>` opens snippet files in `$VISUAL` or `$EDITOR`
+- `atlas snippet edit <id|url> --add <file>` adds/updates files
+- `atlas snippet edit <id|url> --remove <file>` removes files
+- `atlas snippet rename <id|url> <old> <new>` renames snippet files
+- `atlas snippet clone <id|url>` clones via SSH by default
+- `atlas snippet delete [<id|url>]` removes snippet
+- `--public` opt-in: snippets are private by default
 
 **Endpoints needed**:
 - `GET /snippets/{workspace}` - list snippets
@@ -520,7 +562,7 @@ Retry with backoff based on `--retry` flag, then fail with actionable suggestion
 - `PUT /snippets/{workspace}/{id}` - update snippet
 - `DELETE /snippets/{workspace}/{id}` - delete snippet
 
-**Testable outcome**: `atlas snippet create --title test -f README.md` creates a snippet and returns its ID.
+**Testable outcome**: `atlas snippet create --title test README.md` creates a private snippet and returns its ID.
 
 ---
 

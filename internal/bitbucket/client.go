@@ -434,9 +434,57 @@ func extractNextPath(nextURL string) string {
 	return ""
 }
 
-func (c *Client) ListSnippets(workspace string) ([]Snippet, error) {
+func escapePathPreservingSlashes(path string) (string, error) {
+	if path == "" {
+		return "", fmt.Errorf("snippet filename cannot be empty")
+	}
+	if strings.HasPrefix(path, "/") {
+		return "", fmt.Errorf("snippet filename %q cannot be absolute", path)
+	}
+
+	parts := strings.Split(path, "/")
+	for i, part := range parts {
+		if part == "" {
+			return "", fmt.Errorf("snippet filename %q cannot contain empty path segments", path)
+		}
+		if part == "." || part == ".." {
+			return "", fmt.Errorf("snippet filename %q cannot contain dot segments", path)
+		}
+		parts[i] = url.PathEscape(part)
+	}
+	return strings.Join(parts, "/"), nil
+}
+
+type SnippetListOptions struct {
+	Limit int
+	Role  string
+}
+
+func snippetListPath(workspace string, opts *SnippetListOptions) string {
+	values := url.Values{}
+	if opts != nil {
+		if opts.Limit > 0 {
+			pageLen := opts.Limit
+			if pageLen > 100 {
+				pageLen = 100
+			}
+			values.Set("pagelen", strconv.Itoa(pageLen))
+		}
+		if opts.Role != "" {
+			values.Set("role", opts.Role)
+		}
+	}
+
+	path := fmt.Sprintf("/snippets/%s", url.PathEscape(workspace))
+	if encoded := values.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	return path
+}
+
+func (c *Client) ListSnippets(workspace string, opts *SnippetListOptions) ([]Snippet, error) {
 	var snippets []Snippet
-	path := fmt.Sprintf("/snippets/%s", workspace)
+	path := snippetListPath(workspace, opts)
 
 	for path != "" {
 		data, err := c.get(path)
@@ -450,6 +498,9 @@ func (c *Client) ListSnippets(workspace string) ([]Snippet, error) {
 		}
 
 		snippets = append(snippets, page.Values...)
+		if opts != nil && opts.Limit > 0 && len(snippets) >= opts.Limit {
+			return snippets[:opts.Limit], nil
+		}
 		path = extractNextPath(page.Next)
 	}
 
@@ -457,7 +508,7 @@ func (c *Client) ListSnippets(workspace string) ([]Snippet, error) {
 }
 
 func (c *Client) GetSnippet(workspace, id string) (*Snippet, error) {
-	path := fmt.Sprintf("/snippets/%s/%s", workspace, id)
+	path := fmt.Sprintf("/snippets/%s/%s", url.PathEscape(workspace), url.PathEscape(id))
 	data, err := c.get(path)
 	if err != nil {
 		return nil, err
@@ -472,12 +523,16 @@ func (c *Client) GetSnippet(workspace, id string) (*Snippet, error) {
 }
 
 func (c *Client) GetSnippetFileContent(workspace, id, filename string) ([]byte, error) {
-	path := fmt.Sprintf("/snippets/%s/%s/files/%s", workspace, id, filename)
+	escapedFilename, err := escapePathPreservingSlashes(filename)
+	if err != nil {
+		return nil, err
+	}
+	path := fmt.Sprintf("/snippets/%s/%s/files/%s", url.PathEscape(workspace), url.PathEscape(id), escapedFilename)
 	return c.getRaw(path)
 }
 
 func (c *Client) CreateSnippet(workspace, title string, files map[string][]byte, isPrivate bool) (*Snippet, error) {
-	url := baseURL + fmt.Sprintf("/snippets/%s", workspace)
+	url := baseURL + fmt.Sprintf("/snippets/%s", url.PathEscape(workspace))
 
 	var buf bytes.Buffer
 	writer := multipart.NewWriter(&buf)
@@ -533,11 +588,17 @@ func (c *Client) CreateSnippet(workspace, title string, files map[string][]byte,
 	return &snippet, nil
 }
 
-func (c *Client) UpdateSnippet(workspace, id string, addFiles map[string][]byte, removeFiles []string) error {
-	url := baseURL + fmt.Sprintf("/snippets/%s/%s", workspace, id)
+func (c *Client) UpdateSnippet(workspace, id, title string, addFiles map[string][]byte, removeFiles []string) error {
+	url := baseURL + fmt.Sprintf("/snippets/%s/%s", url.PathEscape(workspace), url.PathEscape(id))
 
 	var buf bytes.Buffer
 	writer := multipart.NewWriter(&buf)
+
+	if title != "" {
+		if err := writer.WriteField("title", title); err != nil {
+			return fmt.Errorf("failed to write title field: %w", err)
+		}
+	}
 
 	for filename, content := range addFiles {
 		part, err := writer.CreateFormFile("file", filename)
@@ -580,7 +641,7 @@ func (c *Client) UpdateSnippet(workspace, id string, addFiles map[string][]byte,
 }
 
 func (c *Client) DeleteSnippet(workspace, id string) error {
-	url := baseURL + fmt.Sprintf("/snippets/%s/%s", workspace, id)
+	url := baseURL + fmt.Sprintf("/snippets/%s/%s", url.PathEscape(workspace), url.PathEscape(id))
 
 	req, err := http.NewRequest(http.MethodDelete, url, nil)
 	if err != nil {
