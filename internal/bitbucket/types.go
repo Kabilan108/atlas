@@ -89,6 +89,7 @@ type Repository struct {
 	Description string    `json:"description"`
 	IsPrivate   bool      `json:"is_private"`
 	Owner       User      `json:"owner"`
+	MainBranch  Branch    `json:"mainbranch"`
 	CreatedOn   time.Time `json:"created_on"`
 	UpdatedOn   time.Time `json:"updated_on"`
 	Links       Links     `json:"links"`
@@ -121,6 +122,30 @@ type PullRequestRef struct {
 	Branch     Branch     `json:"branch"`
 	Commit     Commit     `json:"commit"`
 	Repository Repository `json:"repository"`
+}
+
+type PullRequestRefInput struct {
+	Branch     Branch           `json:"branch"`
+	Repository *RepositoryInput `json:"repository,omitempty"`
+}
+
+type RepositoryInput struct {
+	FullName string `json:"full_name,omitempty"`
+	UUID     string `json:"uuid,omitempty"`
+}
+
+type PullRequestCreate struct {
+	Title       string              `json:"title"`
+	Description string              `json:"description,omitempty"`
+	Source      PullRequestRefInput `json:"source"`
+	Destination PullRequestRefInput `json:"destination"`
+	Reviewers   []User              `json:"reviewers,omitempty"`
+}
+
+type PullRequestUpdate struct {
+	Title       *string `json:"title,omitempty"`
+	Description *string `json:"description,omitempty"`
+	Reviewers   *[]User `json:"reviewers,omitempty"`
 }
 
 type Branch struct {

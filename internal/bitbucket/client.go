@@ -156,6 +156,48 @@ func (c *Client) getRaw(path string) ([]byte, error) {
 	return body, nil
 }
 
+func (c *Client) post(path string, body any) ([]byte, error) {
+	return c.sendJSON(http.MethodPost, path, body)
+}
+
+func (c *Client) put(path string, body any) ([]byte, error) {
+	return c.sendJSON(http.MethodPut, path, body)
+}
+
+func (c *Client) sendJSON(method, path string, body any) ([]byte, error) {
+	var payload io.Reader
+	if body != nil {
+		data, err := json.Marshal(body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to encode request body: %w", err)
+		}
+		payload = bytes.NewReader(data)
+	}
+
+	req, err := http.NewRequest(method, baseURL+path, payload)
+	if err != nil {
+		return nil, err
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	resp, err := c.do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkResponse(resp, data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
 func checkResponse(resp *http.Response, body []byte) error {
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		return nil
@@ -253,6 +295,21 @@ func (c *Client) ListRepositories(workspace string) ([]Repository, error) {
 	}
 
 	return repos, nil
+}
+
+func (c *Client) GetRepository(workspace, repo string) (*Repository, error) {
+	path := fmt.Sprintf("/repositories/%s/%s", workspace, repo)
+	data, err := c.get(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var repository Repository
+	if err := json.Unmarshal(data, &repository); err != nil {
+		return nil, fmt.Errorf("failed to parse repository response: %w", err)
+	}
+
+	return &repository, nil
 }
 
 func (c *Client) ListPullRequests(workspace, repo string, opts *PRListOptions) ([]PullRequest, error) {
@@ -372,6 +429,51 @@ func (c *Client) GetPullRequest(workspace, repo string, id int) (*PullRequest, e
 	return &pr, nil
 }
 
+func (c *Client) CreatePullRequest(workspace, repo string, input PullRequestCreate) (*PullRequest, error) {
+	path := fmt.Sprintf("/repositories/%s/%s/pullrequests", workspace, repo)
+	data, err := c.post(path, input)
+	if err != nil {
+		return nil, err
+	}
+
+	var pr PullRequest
+	if err := json.Unmarshal(data, &pr); err != nil {
+		return nil, fmt.Errorf("failed to parse pull request response: %w", err)
+	}
+
+	return &pr, nil
+}
+
+func (c *Client) UpdatePullRequest(workspace, repo string, id int, update PullRequestUpdate) (*PullRequest, error) {
+	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d", workspace, repo, id)
+	data, err := c.put(path, update)
+	if err != nil {
+		return nil, err
+	}
+
+	var pr PullRequest
+	if err := json.Unmarshal(data, &pr); err != nil {
+		return nil, fmt.Errorf("failed to parse pull request response: %w", err)
+	}
+
+	return &pr, nil
+}
+
+func (c *Client) DeclinePullRequest(workspace, repo string, id int) (*PullRequest, error) {
+	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d/decline", workspace, repo, id)
+	data, err := c.post(path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var pr PullRequest
+	if err := json.Unmarshal(data, &pr); err != nil {
+		return nil, fmt.Errorf("failed to parse pull request response: %w", err)
+	}
+
+	return &pr, nil
+}
+
 func (c *Client) ListPullRequestComments(workspace, repo string, id int) ([]Comment, error) {
 	var comments []Comment
 	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d/comments", workspace, repo, id)
@@ -392,6 +494,24 @@ func (c *Client) ListPullRequestComments(workspace, repo string, id int) ([]Comm
 	}
 
 	return comments, nil
+}
+
+func (c *Client) CreatePullRequestComment(workspace, repo string, id int, body string) (*Comment, error) {
+	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d/comments", workspace, repo, id)
+	payload := map[string]any{
+		"content": map[string]string{"raw": body},
+	}
+	data, err := c.post(path, payload)
+	if err != nil {
+		return nil, err
+	}
+
+	var comment Comment
+	if err := json.Unmarshal(data, &comment); err != nil {
+		return nil, fmt.Errorf("failed to parse comment response: %w", err)
+	}
+
+	return &comment, nil
 }
 
 func (c *Client) GetPullRequestDiff(workspace, repo string, id int) ([]byte, error) {

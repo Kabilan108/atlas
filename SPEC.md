@@ -23,7 +23,7 @@ Location: `~/.config/atlas/config.toml`
 ```toml
 workspace = "mycompany"
 username = "user@example.com"
-app_password = "${env:ATLAS_APP_PASSWORD}"
+app_password = "${env:ATLAS_API_TOKEN}"
 ```
 
 ### Config Precedence
@@ -52,9 +52,14 @@ atlas config verify  # calls /user endpoint to verify auth works
 ## Command Structure
 
 ```
-atlas pr list [--repo <repo>] [--all] [--state <state>] [--author <author>] [--reviewer <reviewer>]
-atlas pr view <id|branch> [--repo <repo>] [--comments] [--all] [--json]
-atlas pr checkout <id|branch> [--repo <repo>]
+atlas pr list [-R <workspace/repo|repo>] [--all] [--state <state>] [--author <author>] [--reviewer <reviewer>] [--json]
+atlas pr status [-R <workspace/repo|repo>] [--json]
+atlas pr create [-R <workspace/repo|repo>] [--base <branch>] [--head <branch>] --title <title> [--body <body>|--body-file <file>|--editor] [--reviewer <id>] [--push] [--dry-run] [--web]
+atlas pr view [<id|url|branch>] [-R <workspace/repo|repo>] [--comments] [--all] [--json] [--raw] [--web]
+atlas pr diff [<id|url|branch>] [-R <workspace/repo|repo>] [--name-only] [--patch] [-s|--structured]
+atlas pr edit [<id|url|branch>] [-R <workspace/repo|repo>] [--title <title>] [--body <body>|--body-file <file>] [--add-reviewer <id>] [--remove-reviewer <id>]
+atlas pr close <id|url|branch> [-R <workspace/repo|repo>] [--comment <text>]
+atlas pr checkout <id|url|branch> [-R <workspace/repo|repo>] [--branch <name>] [--detach] [--force] [--recurse-submodules]
 atlas snippet list [--workspace <workspace>] [--role <role>] [--public|--private] [-L <limit>] [--json]
 atlas snippet view [<id|url>] [--filename <file>] [--files] [--raw] [--web] [--json]
 atlas snippet create [<file>... | -] --title <title> [--filename <file>] [--public] [--json]
@@ -78,12 +83,13 @@ atlas config verify
 
 ### Repository Inference
 
-When `--repo` is omitted, Atlas walks up from CWD to find `.git` directory and extracts workspace/repo from the `origin` remote. Use `-v` to see what was inferred.
+When `-R, --repo` is omitted, Atlas walks up from CWD to find `.git` directory and extracts workspace/repo from the `origin` remote. `-R` accepts either `workspace/repo` or `repo` when workspace is configured. Use `-v` to see what was inferred.
 
 ### Branch Name Resolution
 
 PR commands accept branch names in addition to numeric IDs:
 - `atlas pr view feature/auth` resolves to the PR for that branch
+- `atlas pr view`, `atlas pr diff`, and `atlas pr edit` without an argument resolve the PR for the current branch
 - When multiple PRs exist for a branch, prefers most recent open PR
 
 ### Output Format
@@ -124,7 +130,7 @@ Auto-detected when stdin is not a TTY. Interactive prompts are disabled; command
 
 ### Flags
 
-- `--repo <repo>`: Target repository (inferred from git if omitted)
+- `-R, --repo <workspace/repo|repo>`: Target repository (inferred from git if omitted)
 - `--all`: List PRs across all repos in workspace (ignores --repo)
 - `--state <state>`: Filter by state: `open` (default), `merged`, `declined`, `superseded`
 - `--author <author>`: Filter by author username
@@ -140,16 +146,20 @@ Comments column only appears if any PR has unresolved comments, showing `total/u
 
 ## PR View Command
 
-`atlas pr view <id|branch>` shows PR details.
+`atlas pr view [<id|url|branch>]` shows PR details. With no argument, it shows the PR for the current branch.
 
 ### Flags
 
-- `--repo <repo>`: Target repository
+- `-R, --repo <workspace/repo|repo>`: Target repository
 - `--comments`: Include all comments
 - `--all`: Include resolved comments (only with --comments)
 - `--json`: Output as JSON
+- `--raw`: Print raw markdown to stdout
+- `--web`: Open the PR in Bitbucket
 
 ### Output Format (Markdown)
+
+Interactive output is sent through `bat` when available, then `less`, then stdout. Non-interactive output prints raw markdown.
 
 ```markdown
 # PR #123: Fix authentication bug
@@ -249,10 +259,66 @@ Status only (no attribution for who completed).
 
 ## PR Checkout
 
-`atlas pr checkout <id|branch>` fetches and checks out a PR branch locally.
+`atlas pr checkout <id|url|branch>` fetches and checks out a PR branch locally.
 
-- Uses the remote branch name as-is (no prefixing)
-- Same-repo PRs only; fork PRs show error with manual instructions
+- Uses the remote branch name as-is unless `--branch` is passed
+- Supports fork PRs by adding/fetching the source workspace remote
+- Supports `--detach`, `--force`, and `--recurse-submodules`
+
+---
+
+## PR Create
+
+`atlas pr create` creates a Bitbucket pull request without interactive prompts.
+
+- Requires `--title` or `--fill`
+- Uses current branch as `--head` by default
+- Uses the repository main branch as `--base` by default
+- Fails if the head branch is not pushed unless `--push` is passed
+- Supports `--body`, `--body-file`, `--reviewer`, `--dry-run`, and `--web`
+- `-e, --editor` opens `$EDITOR`, then `nvim`, then `vi` to write the PR body
+
+---
+
+## PR Diff
+
+`atlas pr diff [<id|url|branch>]` shows a PR diff. With no argument, it uses the current branch PR.
+
+- Uses `delta` by default when available
+- `-s, --structured` uses `difft` when available, then falls back to the normal diff path
+- `--name-only` prints changed file names
+- `--patch` prints the raw patch
+
+---
+
+## PR Edit
+
+`atlas pr edit [<id|url|branch>]` edits a PR. With no argument, it edits the current branch PR.
+
+- `--title` updates the title
+- `--body` sets the body directly
+- `--body-file` reads the body from a file or stdin with `-`
+- If neither body flag is passed, Atlas opens the existing PR body in `$EDITOR`, then `nvim`, then `vi`
+- `--add-reviewer` and `--remove-reviewer` update reviewers without replacing unrelated reviewers
+
+---
+
+## PR Close
+
+`atlas pr close <id|url|branch>` declines a Bitbucket pull request.
+
+- `--comment` posts a closing comment before declining
+- Branch deletion is not supported
+
+---
+
+## PR Status
+
+`atlas pr status` shows gh-like groups for the selected repository:
+
+- Current branch
+- Created by you
+- Requesting your review
 
 ---
 
@@ -665,7 +731,7 @@ in
         {
           workspace = "mycompany";
           username = "user@example.com";
-          app_password = "\${env:ATLAS_APP_PASSWORD}";
+          app_password = "\${env:ATLAS_API_TOKEN}";
         }
       '';
       description = "Configuration written to ~/.config/atlas/config.toml";
@@ -693,7 +759,7 @@ in
     settings = {
       workspace = "mycompany";
       username = "user@example.com";
-      app_password = "\${env:ATLAS_APP_PASSWORD}";
+      app_password = "\${env:ATLAS_API_TOKEN}";
     };
   };
 }

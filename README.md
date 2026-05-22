@@ -28,7 +28,7 @@ programs.atlas = {
   settings = {
     workspace = "my-workspace";
     username = "user@example.com";
-    app_password = "\${env:ATLAS_APP_PASSWORD}";
+    app_password = "\${env:ATLAS_API_TOKEN}";
   };
 };
 ```
@@ -55,11 +55,11 @@ Create a Bitbucket API token at **Personal settings → App passwords** with sco
 If not using the home-manager module, configure manually:
 
 ```bash
-export ATLAS_APP_PASSWORD="your-token"
+export ATLAS_API_TOKEN="your-token"
 
 atlas config set workspace my-workspace
 atlas config set username user@example.com
-atlas config set app_password '${env:ATLAS_APP_PASSWORD}'
+atlas config set app_password '${env:ATLAS_API_TOKEN}'
 
 atlas config verify
 ```
@@ -71,12 +71,17 @@ atlas config verify
 atlas pr list
 atlas pr list --state merged --author johndoe
 
-# View PR with comments
-atlas pr view 123 --comments
-atlas pr view feature/auth --comments --all  # include resolved
+# Create, inspect, and update PRs
+atlas pr create --title "Fix auth flow" --body-file PR.md --reviewer alice --push
+atlas pr status
+atlas pr view --comments              # current branch PR
+atlas pr view --raw                   # raw markdown, no pager
+atlas pr diff -s                      # difftastic when available, delta fallback
+atlas pr edit --title "Fix auth flow" # opens body in $EDITOR/nvim when no body flag is passed
 
 # Checkout PR branch locally
 atlas pr checkout 123
+atlas pr close 123 --comment "Closing in favor of a newer PR"
 
 # Snippets
 atlas snippet list

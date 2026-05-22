@@ -26,7 +26,7 @@ in
         {
           workspace = "mycompany";
           username = "user@example.com";
-          app_password = "\''${env:ATLAS_APP_PASSWORD}";
+          app_password = "\''${env:ATLAS_API_TOKEN}";
         }
       '';
       description = "Configuration written to ~/.config/atlas/config.toml";

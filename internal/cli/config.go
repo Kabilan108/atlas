@@ -67,7 +67,7 @@ func runConfigSet(cmd *cobra.Command, args []string) error {
 
 	if key == "app_password" && !config.IsEnvReference(value) {
 		fmt.Fprintln(os.Stderr, "Warning: Storing app_password directly in config file.")
-		fmt.Fprintln(os.Stderr, "Consider using ${env:ATLAS_APP_PASSWORD} syntax instead.")
+		fmt.Fprintln(os.Stderr, "Consider using ${env:ATLAS_API_TOKEN} syntax instead.")
 	}
 
 	fmt.Printf("Set %s\n", key)
