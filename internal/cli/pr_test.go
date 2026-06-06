@@ -151,6 +151,86 @@ func TestShouldEditBodyInEditor(t *testing.T) {
 	}
 }
 
+func TestNormalizePRDescriptionMarkdownAddsBlankLinesBeforeLists(t *testing.T) {
+	t.Parallel()
+
+	body := "Description/Summary of Changes:\n- Add reusable CNS Events.xml annotation import logic.\n- Deduplicate imports by CNS event fingerprint.\n\nTo-Do:\n- [ ] Code review\n- [ ] Address feedback\n\nTesting Steps:\n1. Run `pytest ...`.\n"
+	want := "Description/Summary of Changes:\n\n- Add reusable CNS Events.xml annotation import logic.\n- Deduplicate imports by CNS event fingerprint.\n\nTo-Do:\n\n- [ ] Code review\n- [ ] Address feedback\n\nTesting Steps:\n\n1. Run `pytest ...`.\n"
+
+	if got := normalizePRDescriptionMarkdown(body); got != want {
+		t.Fatalf("normalizePRDescriptionMarkdown() = %q, want %q", got, want)
+	}
+}
+
+func TestNormalizePRDescriptionMarkdownPreservesExistingBlankLinesAndCodeFences(t *testing.T) {
+	t.Parallel()
+
+	body := "Description:\n\n- Already separated\n\n```md\nExample:\n- Not a real list block\n```\n\nChecklist:\n\t- Tab-indented task\n"
+	want := "Description:\n\n- Already separated\n\n```md\nExample:\n- Not a real list block\n```\n\nChecklist:\n\n\t- Tab-indented task\n"
+
+	if got := normalizePRDescriptionMarkdown(body); got != want {
+		t.Fatalf("normalizePRDescriptionMarkdown() = %q, want %q", got, want)
+	}
+}
+
+func TestNormalizePRDescriptionMarkdownPreservesCRLF(t *testing.T) {
+	t.Parallel()
+
+	body := "To-Do:\r\n- [ ] Review\r\n"
+	want := "To-Do:\r\n\r\n- [ ] Review\r\n"
+
+	if got := normalizePRDescriptionMarkdown(body); got != want {
+		t.Fatalf("normalizePRDescriptionMarkdown() = %q, want %q", got, want)
+	}
+}
+
+func TestNormalizePRDescriptionMarkdownPreservesLongFenceWithShortFenceInside(t *testing.T) {
+	t.Parallel()
+
+	body := "````md\n```md\nExample:\n- Not a real list block\n```\nStill fenced:\n- Also not a real list block\n````\nReal section:\n- Real list block\n"
+	want := "````md\n```md\nExample:\n- Not a real list block\n```\nStill fenced:\n- Also not a real list block\n````\nReal section:\n\n- Real list block\n"
+
+	if got := normalizePRDescriptionMarkdown(body); got != want {
+		t.Fatalf("normalizePRDescriptionMarkdown() = %q, want %q", got, want)
+	}
+}
+
+func TestBuildPRCreateInputNormalizesDescription(t *testing.T) {
+	t.Parallel()
+
+	input := buildPRCreateInput("Title", "Checklist:\n- Review\n", "feature", "main", nil)
+	want := "Checklist:\n\n- Review\n"
+
+	if input.Description != want {
+		t.Fatalf("Description = %q, want %q", input.Description, want)
+	}
+	if input.Title != "Title" || input.Source.Branch.Name != "feature" || input.Destination.Branch.Name != "main" {
+		t.Fatalf("buildPRCreateInput() returned unexpected refs: %#v", input)
+	}
+}
+
+func TestBuildPRDescriptionUpdate(t *testing.T) {
+	t.Parallel()
+
+	if description, changed := buildPRDescriptionUpdate("Existing description", "", false); changed || description != nil {
+		t.Fatalf("buildPRDescriptionUpdate() changed title-only edit: description=%#v changed=%v", description, changed)
+	}
+
+	description, changed := buildPRDescriptionUpdate("Existing description", "Checklist:\n- Review\n", true)
+	if !changed || description == nil {
+		t.Fatalf("buildPRDescriptionUpdate() changed = %v, description = %#v", changed, description)
+	}
+	want := "Checklist:\n\n- Review\n"
+	if *description != want {
+		t.Fatalf("description = %q, want %q", *description, want)
+	}
+
+	description, changed = buildPRDescriptionUpdate(want, "Checklist:\n- Review\n", true)
+	if changed || description != nil {
+		t.Fatalf("buildPRDescriptionUpdate() changed equivalent body: description=%#v changed=%v", description, changed)
+	}
+}
+
 func TestReviewerSummary(t *testing.T) {
 	t.Parallel()
 

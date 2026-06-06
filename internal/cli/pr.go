@@ -588,6 +588,7 @@ func runPREdit(cmd *cobra.Command, args []string) error {
 
 	update := bitbucket.PullRequestUpdate{}
 	changed := false
+	bodyChanged := cmd.Flags().Changed("body")
 	if title != "" && title != pr.Title {
 		update.Title = &title
 		changed = true
@@ -598,16 +599,18 @@ func runPREdit(cmd *cobra.Command, args []string) error {
 			return err
 		}
 		body = string(bodyBytes)
+		bodyChanged = true
 	}
-	if shouldEditBodyInEditor(title, body, bodyFile, addReviewers, removeReviewers) {
+	if !bodyChanged && shouldEditBodyInEditor(title, body, bodyFile, addReviewers, removeReviewers) {
 		edited, err := editTextInEditor(pr.Description)
 		if err != nil {
 			return err
 		}
 		body = edited
+		bodyChanged = true
 	}
-	if body != pr.Description {
-		update.Description = &body
+	if description, hasDescriptionChange := buildPRDescriptionUpdate(pr.Description, body, bodyChanged); hasDescriptionChange {
+		update.Description = description
 		changed = true
 	}
 	if addReviewers != "" || removeReviewers != "" {
@@ -783,13 +786,7 @@ func runPRCreate(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	input := bitbucket.PullRequestCreate{
-		Title:       title,
-		Description: body,
-		Source:      bitbucket.PullRequestRefInput{Branch: bitbucket.Branch{Name: head}},
-		Destination: bitbucket.PullRequestRefInput{Branch: bitbucket.Branch{Name: base}},
-		Reviewers:   reviewers,
-	}
+	input := buildPRCreateInput(title, body, head, base, reviewers)
 	if dryRun {
 		return json.NewEncoder(os.Stdout).Encode(input)
 	}
@@ -983,6 +980,155 @@ func readBodyFile(path string) ([]byte, error) {
 
 func shouldEditBodyInEditor(title, body, bodyFile, addReviewers, removeReviewers string) bool {
 	return body == "" && bodyFile == "" && title == "" && addReviewers == "" && removeReviewers == ""
+}
+
+type markdownLine struct {
+	text    string
+	newline string
+}
+
+type markdownFence struct {
+	marker byte
+	length int
+}
+
+func buildPRCreateInput(title, body, head, base string, reviewers []bitbucket.User) bitbucket.PullRequestCreate {
+	return bitbucket.PullRequestCreate{
+		Title:       title,
+		Description: normalizePRDescriptionMarkdown(body),
+		Source:      bitbucket.PullRequestRefInput{Branch: bitbucket.Branch{Name: head}},
+		Destination: bitbucket.PullRequestRefInput{Branch: bitbucket.Branch{Name: base}},
+		Reviewers:   reviewers,
+	}
+}
+
+func buildPRDescriptionUpdate(current, body string, bodyChanged bool) (*string, bool) {
+	if !bodyChanged {
+		return nil, false
+	}
+	normalized := normalizePRDescriptionMarkdown(body)
+	if normalized == current {
+		return nil, false
+	}
+	return &normalized, true
+}
+
+func normalizePRDescriptionMarkdown(body string) string {
+	lines := splitMarkdownLines(body)
+	if len(lines) < 2 {
+		return body
+	}
+
+	var normalized strings.Builder
+	normalized.Grow(len(body))
+	inFence := false
+	openFence := markdownFence{}
+	changed := false
+	for i, line := range lines {
+		trimmedLine := strings.TrimSpace(line.text)
+		lineInFence := inFence
+		currentFence, hasCurrentFence := parseMarkdownFence(trimmedLine)
+		if hasCurrentFence {
+			if inFence && currentFence.closes(openFence) {
+				inFence = false
+			} else if !inFence {
+				inFence = true
+				openFence = currentFence
+			}
+		}
+
+		normalized.WriteString(line.text)
+		normalized.WriteString(line.newline)
+		if line.newline == "" || lineInFence || hasCurrentFence || i+1 >= len(lines) {
+			continue
+		}
+		if isPRSectionLabel(trimmedLine) && isMarkdownListItem(lines[i+1].text) {
+			normalized.WriteString(line.newline)
+			changed = true
+		}
+	}
+	if !changed {
+		return body
+	}
+	return normalized.String()
+}
+
+func splitMarkdownLines(text string) []markdownLine {
+	if text == "" {
+		return nil
+	}
+	lines := make([]markdownLine, 0, strings.Count(text, "\n")+1)
+	start := 0
+	for start < len(text) {
+		newlineIndex := strings.IndexByte(text[start:], '\n')
+		if newlineIndex == -1 {
+			lines = append(lines, markdownLine{text: text[start:]})
+			return lines
+		}
+		end := start + newlineIndex
+		lineText := text[start:end]
+		newline := "\n"
+		if strings.HasSuffix(lineText, "\r") {
+			lineText = strings.TrimSuffix(lineText, "\r")
+			newline = "\r\n"
+		}
+		lines = append(lines, markdownLine{text: lineText, newline: newline})
+		start = end + 1
+	}
+	return lines
+}
+
+func isPRSectionLabel(line string) bool {
+	return line != "" && strings.HasSuffix(line, ":")
+}
+
+func isMarkdownListItem(line string) bool {
+	trimmedLine := strings.TrimLeft(line, " \t")
+	if len(trimmedLine) < 3 {
+		return false
+	}
+	switch trimmedLine[0] {
+	case '-', '*', '+':
+		return isMarkdownWhitespace(trimmedLine[1])
+	}
+
+	digitEnd := 0
+	for digitEnd < len(trimmedLine) && trimmedLine[digitEnd] >= '0' && trimmedLine[digitEnd] <= '9' {
+		digitEnd++
+	}
+	if digitEnd == 0 || digitEnd+1 >= len(trimmedLine) {
+		return false
+	}
+	if trimmedLine[digitEnd] != '.' && trimmedLine[digitEnd] != ')' {
+		return false
+	}
+	return isMarkdownWhitespace(trimmedLine[digitEnd+1])
+}
+
+func isMarkdownWhitespace(char byte) bool {
+	return char == ' ' || char == '\t'
+}
+
+func parseMarkdownFence(line string) (markdownFence, bool) {
+	if len(line) < 3 {
+		return markdownFence{}, false
+	}
+	marker := line[0]
+	if marker != '`' && marker != '~' {
+		return markdownFence{}, false
+	}
+	length := 0
+	for length < len(line) && line[length] == marker {
+		length++
+	}
+	if length < 3 {
+		return markdownFence{}, false
+	}
+	return markdownFence{marker: marker, length: length}, true
+}
+
+func (f markdownFence) closes(open markdownFence) bool {
+	return f.marker == open.marker && f.length >= open.length
 }
 
 func editTextInEditor(initial string) (string, error) {
