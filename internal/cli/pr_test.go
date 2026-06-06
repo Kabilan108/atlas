@@ -248,3 +248,218 @@ func TestReviewerSummary(t *testing.T) {
 		t.Fatalf("reviewerSummary() = %q, want %q", got, want)
 	}
 }
+
+func TestPRWriteCommandsRegistered(t *testing.T) {
+	t.Parallel()
+
+	cmd := newPRCmd()
+	for _, name := range []string{"comment", "approve", "unapprove", "request-changes", "clear-change-request", "review"} {
+		name := name
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			found, _, err := cmd.Find([]string{name})
+			if err != nil {
+				t.Fatalf("Find(%q) error = %v", name, err)
+			}
+			if found.Name() != name {
+				t.Fatalf("Find(%q) = %q, want %q", name, found.Name(), name)
+			}
+		})
+	}
+}
+
+func TestBuildCommentCreate(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		spec commentSpec
+		want func(*testing.T, bitbucket.CommentCreate)
+	}{
+		{
+			name: "top level",
+			spec: commentSpec{Body: "Looks good"},
+			want: func(t *testing.T, got bitbucket.CommentCreate) {
+				t.Helper()
+				if got.Content.Raw != "Looks good" {
+					t.Fatalf("Content.Raw = %q, want %q", got.Content.Raw, "Looks good")
+				}
+				if got.Parent != nil || got.Inline != nil {
+					t.Fatalf("Parent = %#v Inline = %#v, want nil", got.Parent, got.Inline)
+				}
+			},
+		},
+		{
+			name: "reply",
+			spec: commentSpec{Body: "Fixed", ReplyTo: 123},
+			want: func(t *testing.T, got bitbucket.CommentCreate) {
+				t.Helper()
+				if got.Parent == nil || got.Parent.ID != 123 {
+					t.Fatalf("Parent = %#v, want id 123", got.Parent)
+				}
+				if got.Inline != nil {
+					t.Fatalf("Inline = %#v, want nil", got.Inline)
+				}
+			},
+		},
+		{
+			name: "file level",
+			spec: commentSpec{Body: "Question", Path: "internal/cli/pr.go"},
+			want: func(t *testing.T, got bitbucket.CommentCreate) {
+				t.Helper()
+				if got.Inline == nil || got.Inline.Path != "internal/cli/pr.go" {
+					t.Fatalf("Inline = %#v, want path", got.Inline)
+				}
+				if got.Inline.From != nil || got.Inline.To != nil {
+					t.Fatalf("Inline = %#v, want no line", got.Inline)
+				}
+			},
+		},
+		{
+			name: "new line",
+			spec: commentSpec{Body: "Question", Path: "internal/cli/pr.go", Line: 42, Side: "new"},
+			want: func(t *testing.T, got bitbucket.CommentCreate) {
+				t.Helper()
+				if got.Inline == nil || got.Inline.To == nil || *got.Inline.To != 42 {
+					t.Fatalf("Inline = %#v, want to line 42", got.Inline)
+				}
+				if got.Inline.From != nil {
+					t.Fatalf("From = %#v, want nil", got.Inline.From)
+				}
+			},
+		},
+		{
+			name: "old line",
+			spec: commentSpec{Body: "Question", Path: "internal/cli/pr.go", Line: 42, Side: "old"},
+			want: func(t *testing.T, got bitbucket.CommentCreate) {
+				t.Helper()
+				if got.Inline == nil || got.Inline.From == nil || *got.Inline.From != 42 {
+					t.Fatalf("Inline = %#v, want from line 42", got.Inline)
+				}
+				if got.Inline.To != nil {
+					t.Fatalf("To = %#v, want nil", got.Inline.To)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := buildCommentCreate(tt.spec)
+			if err != nil {
+				t.Fatalf("buildCommentCreate() error = %v", err)
+			}
+			tt.want(t, got)
+		})
+	}
+}
+
+func TestBuildCommentCreateRejectsInvalidInput(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		spec commentSpec
+	}{
+		{name: "empty body", spec: commentSpec{Body: "  "}},
+		{name: "line without path", spec: commentSpec{Body: "body", Line: 3}},
+		{name: "side without line", spec: commentSpec{Body: "body", Path: "file.go", Side: "old"}},
+		{name: "invalid side", spec: commentSpec{Body: "body", Path: "file.go", Line: 3, Side: "right"}},
+		{name: "reply with path", spec: commentSpec{Body: "body", ReplyTo: 1, Path: "file.go"}},
+		{name: "reply with line", spec: commentSpec{Body: "body", ReplyTo: 1, Line: 3}},
+		{name: "reply with side", spec: commentSpec{Body: "body", ReplyTo: 1, Side: "new"}},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if _, err := buildCommentCreate(tt.spec); err == nil {
+				t.Fatal("buildCommentCreate() error = nil, want error")
+			}
+		})
+	}
+}
+
+func TestBuildCommentCreatesRejectsInvalidBatchBeforePosting(t *testing.T) {
+	t.Parallel()
+
+	specs := []commentSpec{
+		{Body: "first"},
+		{Body: "second", Path: "file.go", Side: "old"},
+	}
+
+	if _, err := buildCommentCreates(specs); err == nil {
+		t.Fatal("buildCommentCreates() error = nil, want error")
+	}
+}
+
+func TestValidateCommentBodySources(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		flags    commentBodyFlags
+		required bool
+		wantErr  bool
+	}{
+		{name: "required with body", flags: commentBodyFlags{body: "body"}, required: true},
+		{name: "required missing", required: true, wantErr: true},
+		{name: "optional missing", required: false},
+		{name: "body and file", flags: commentBodyFlags{body: "body", bodyFile: "body.md"}, required: true, wantErr: true},
+		{name: "body and editor", flags: commentBodyFlags{body: "body", editor: true}, required: true, wantErr: true},
+		{name: "file and editor", flags: commentBodyFlags{bodyFile: "body.md", editor: true}, required: true, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := validateCommentBodySources(tt.flags, tt.required)
+			if tt.wantErr && err == nil {
+				t.Fatal("validateCommentBodySources() error = nil, want error")
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("validateCommentBodySources() error = %v", err)
+			}
+		})
+	}
+}
+
+func TestReviewActionFromFlags(t *testing.T) {
+	t.Parallel()
+
+	cmd := newPRReviewCmd()
+	if err := cmd.Flags().Set("approve", "true"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := reviewActionFromFlags(cmd)
+	if err != nil {
+		t.Fatalf("reviewActionFromFlags() error = %v", err)
+	}
+	if got != "approve" {
+		t.Fatalf("reviewActionFromFlags() = %q, want approve", got)
+	}
+}
+
+func TestReviewActionFromFlagsRejectsMissingOrMultiple(t *testing.T) {
+	t.Parallel()
+
+	missing := newPRReviewCmd()
+	if _, err := reviewActionFromFlags(missing); err == nil {
+		t.Fatal("reviewActionFromFlags() missing error = nil, want error")
+	}
+
+	multiple := newPRReviewCmd()
+	if err := multiple.Flags().Set("approve", "true"); err != nil {
+		t.Fatal(err)
+	}
+	if err := multiple.Flags().Set("request-changes", "true"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reviewActionFromFlags(multiple); err == nil {
+		t.Fatal("reviewActionFromFlags() multiple error = nil, want error")
+	}
+}

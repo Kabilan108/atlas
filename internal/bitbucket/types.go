@@ -186,6 +186,12 @@ type Comment struct {
 	Links      Links       `json:"links"`
 }
 
+type CommentCreate struct {
+	Content ContentInput `json:"content"`
+	Inline  *InlineInput `json:"inline,omitempty"`
+	Parent  *ParentInput `json:"parent,omitempty"`
+}
+
 type Resolution struct {
 	User User      `json:"user"`
 	Date time.Time `json:"date"`
@@ -201,7 +207,17 @@ type Content struct {
 	HTML   string `json:"html"`
 }
 
+type ContentInput struct {
+	Raw string `json:"raw"`
+}
+
 type Inline struct {
+	Path string `json:"path"`
+	From *int   `json:"from,omitempty"`
+	To   *int   `json:"to,omitempty"`
+}
+
+type InlineInput struct {
 	Path string `json:"path"`
 	From *int   `json:"from,omitempty"`
 	To   *int   `json:"to,omitempty"`
@@ -209,6 +225,19 @@ type Inline struct {
 
 type Parent struct {
 	ID int `json:"id"`
+}
+
+type ParentInput struct {
+	ID int `json:"id"`
+}
+
+type ReviewActionResult struct {
+	Type           string    `json:"type"`
+	User           User      `json:"user"`
+	Role           string    `json:"role"`
+	Approved       bool      `json:"approved"`
+	State          string    `json:"state"`
+	ParticipatedOn time.Time `json:"participated_on"`
 }
 
 type PaginatedResponse[T any] struct {

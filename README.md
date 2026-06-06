@@ -48,6 +48,7 @@ Create a Bitbucket API token at **Personal settings → App passwords** with sco
 | `read:user:bitbucket` | Yes |
 | `read:repository:bitbucket` | Yes |
 | `read:pullrequest:bitbucket` | Yes |
+| `write:pullrequest:bitbucket` | For posting comments, approvals, and change requests |
 | `read:snippet:bitbucket` | For snippets |
 | `write:snippet:bitbucket` | For snippets |
 | `delete:snippet:bitbucket` | For snippets |
@@ -78,6 +79,12 @@ atlas pr view --comments              # current branch PR
 atlas pr view --raw                   # raw markdown, no pager
 atlas pr diff -s                      # difftastic when available, delta fallback
 atlas pr edit --title "Fix auth flow" # opens body in $EDITOR/nvim when no body flag is passed
+atlas pr comment 123 --body "Looks good overall"
+atlas pr comment 123 --path internal/cli/pr.go --line 42 --body "Can this be simplified?"
+atlas pr comment 123 --reply-to 456 --body "Fixed in the latest push"
+atlas pr approve 123 --body "Reviewed locally"
+atlas pr request-changes 123 --body-file review.md
+atlas pr review 123 --request-changes --comment-spec comments.json --body "Please address these before merge"
 
 # Checkout PR branch locally
 atlas pr checkout 123
