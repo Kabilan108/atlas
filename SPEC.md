@@ -59,6 +59,12 @@ atlas pr view [<id|url|branch>] [-R <workspace/repo|repo>] [--comments] [--all] 
 atlas pr diff [<id|url|branch>] [-R <workspace/repo|repo>] [--name-only] [--patch] [-s|--structured]
 atlas pr edit [<id|url|branch>] [-R <workspace/repo|repo>] [--title <title>] [--body <body>|--body-file <file>] [--add-reviewer <id>] [--remove-reviewer <id>]
 atlas pr close <id|url|branch> [-R <workspace/repo|repo>] [--comment <text>]
+atlas pr comment [<id|url|branch>] [-R <workspace/repo|repo>] (--body <text>|--body-file <file>|--editor) [--reply-to <id>] [--path <path>] [--line <line>] [--side new|old] [--json]
+atlas pr approve [<id|url|branch>] [-R <workspace/repo|repo>] [--body <text>|--body-file <file>|--editor] [--json]
+atlas pr unapprove [<id|url|branch>] [-R <workspace/repo|repo>] [--json]
+atlas pr request-changes [<id|url|branch>] [-R <workspace/repo|repo>] [--body <text>|--body-file <file>|--editor] [--json]
+atlas pr clear-change-request [<id|url|branch>] [-R <workspace/repo|repo>] [--json]
+atlas pr review [<id|url|branch>] [-R <workspace/repo|repo>] (--approve|--request-changes|--comment) [--body <text>|--body-file <file>|--editor] [--comment-spec <file>] [--json]
 atlas pr checkout <id|url|branch> [-R <workspace/repo|repo>] [--branch <name>] [--detach] [--force] [--recurse-submodules]
 atlas snippet list [--workspace <workspace>] [--role <role>] [--public|--private] [-L <limit>] [--json]
 atlas snippet view [<id|url>] [--filename <file>] [--files] [--raw] [--web] [--json]
@@ -312,6 +318,35 @@ Status only (no attribution for who completed).
 
 ---
 
+## PR Comments And Review Actions
+
+`atlas pr comment` creates a Bitbucket pull request comment.
+
+- Requires exactly one body source: `--body`, `--body-file`, or `--editor`
+- No selector means the current branch PR
+- `--reply-to <id>` posts a reply to an existing comment
+- `--path <path>` posts a file-level comment
+- `--path <path> --line <line> --side new|old` posts an inline comment
+- `--side new` maps to Bitbucket `inline.to`; `--side old` maps to `inline.from`
+- `--json` emits the created comment
+
+`atlas pr approve` and `atlas pr request-changes` update the authenticated user's review state.
+
+- Optional body flags post a top-level PR comment before the review action
+- If the comment succeeds but the review action fails, Atlas reports that partial success
+- `atlas pr unapprove` withdraws the authenticated user's approval
+- `atlas pr clear-change-request` withdraws the authenticated user's change request
+
+`atlas pr review` posts zero or more comments and then finishes with one action.
+
+- Exactly one of `--approve`, `--request-changes`, or `--comment` is required
+- `--comment-spec <file>` accepts a JSON array of `{ "body", "reply_to", "path", "line", "side" }` objects
+- Comments are posted in file order before the final action
+- If a comment fails, Atlas stops before changing review state
+- If the final action fails, Atlas reports how many comments were already posted
+
+---
+
 ## PR Status
 
 `atlas pr status` shows gh-like groups for the selected repository:
@@ -478,6 +513,11 @@ Retry with backoff based on `--retry` flag, then fail with actionable suggestion
 - `GET /repositories/{workspace}/{repo}/pullrequests` - list PRs
 - `GET /repositories/{workspace}/{repo}/pullrequests/{id}` - PR details
 - `GET /repositories/{workspace}/{repo}/pullrequests/{id}/comments` - PR comments
+- `POST /repositories/{workspace}/{repo}/pullrequests/{id}/comments` - create PR comments and replies
+- `POST /repositories/{workspace}/{repo}/pullrequests/{id}/approve` - approve a PR
+- `DELETE /repositories/{workspace}/{repo}/pullrequests/{id}/approve` - withdraw approval
+- `POST /repositories/{workspace}/{repo}/pullrequests/{id}/request-changes` - request changes
+- `DELETE /repositories/{workspace}/{repo}/pullrequests/{id}/request-changes` - withdraw change request
 - `GET /repositories/{workspace}/{repo}/pullrequests/{id}/diff` - PR diff
 - `GET /repositories/{workspace}/{repo}/src/{commit}/{path}` - file contents
 - `GET /user` - auth verification
@@ -570,6 +610,7 @@ Retry with backoff based on `--retry` flag, then fail with actionable suggestion
 **Deliverables**:
 - `atlas pr view 123 --json` outputs complete PR data
 - `atlas pr list --json` outputs PR list as JSON array
+- PR comment and review write commands expose returned API objects with `--json`
 - All-or-nothing output (no field selection)
 
 **Testable outcome**: Output can be piped to `jq` for processing.

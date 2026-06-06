@@ -15,10 +15,11 @@ import (
 	"github.com/kabilan108/atlas/internal/config"
 )
 
-const baseURL = "https://api.bitbucket.org/2.0"
+const defaultBaseURL = "https://api.bitbucket.org/2.0"
 
 type Client struct {
 	httpClient *http.Client
+	baseURL    string
 	username   string
 	password   string
 	cache      *Cache
@@ -57,6 +58,7 @@ func NewClient(opts ...ClientOption) (*Client, error) {
 
 	c := &Client{
 		httpClient: &http.Client{Timeout: 30 * time.Second},
+		baseURL:    defaultBaseURL,
 		username:   cfg.Username,
 		password:   cfg.AppPassword,
 		cache:      cache,
@@ -67,6 +69,16 @@ func NewClient(opts ...ClientOption) (*Client, error) {
 	}
 
 	return c, nil
+}
+
+func newClientForTest(baseURL string, httpClient *http.Client) *Client {
+	return &Client{
+		httpClient: httpClient,
+		baseURL:    baseURL,
+		username:   "user",
+		password:   "password",
+		noCache:    true,
+	}
 }
 
 func (c *Client) do(req *http.Request) (*http.Response, error) {
@@ -93,15 +105,15 @@ func (c *Client) do(req *http.Request) (*http.Response, error) {
 }
 
 func (c *Client) get(path string) ([]byte, error) {
-	url := baseURL + path
+	requestURL := c.baseURL + path
 
 	if !c.noCache {
-		if data, ok := c.cache.Get(url); ok {
+		if data, ok := c.cache.Get(requestURL); ok {
 			return data, nil
 		}
 	}
 
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	req, err := http.NewRequest(http.MethodGet, requestURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -122,16 +134,16 @@ func (c *Client) get(path string) ([]byte, error) {
 	}
 
 	if !c.noCache {
-		c.cache.Set(url, body)
+		c.cache.Set(requestURL, body)
 	}
 
 	return body, nil
 }
 
 func (c *Client) getRaw(path string) ([]byte, error) {
-	url := baseURL + path
+	requestURL := c.baseURL + path
 
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	req, err := http.NewRequest(http.MethodGet, requestURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -164,6 +176,10 @@ func (c *Client) put(path string, body any) ([]byte, error) {
 	return c.sendJSON(http.MethodPut, path, body)
 }
 
+func (c *Client) delete(path string) ([]byte, error) {
+	return c.sendJSON(http.MethodDelete, path, nil)
+}
+
 func (c *Client) sendJSON(method, path string, body any) ([]byte, error) {
 	var payload io.Reader
 	if body != nil {
@@ -174,7 +190,7 @@ func (c *Client) sendJSON(method, path string, body any) ([]byte, error) {
 		payload = bytes.NewReader(data)
 	}
 
-	req, err := http.NewRequest(method, baseURL+path, payload)
+	req, err := http.NewRequest(method, c.baseURL+path, payload)
 	if err != nil {
 		return nil, err
 	}
@@ -291,7 +307,7 @@ func (c *Client) ListRepositories(workspace string) ([]Repository, error) {
 		}
 
 		repos = append(repos, page.Values...)
-		path = extractNextPath(page.Next)
+		path = c.extractNextPath(page.Next)
 	}
 
 	return repos, nil
@@ -346,7 +362,7 @@ func (c *Client) ListPullRequests(workspace, repo string, opts *PRListOptions) (
 			}
 			prs = append(prs, pr)
 		}
-		path = extractNextPath(page.Next)
+		path = c.extractNextPath(page.Next)
 	}
 
 	return prs, nil
@@ -490,18 +506,15 @@ func (c *Client) ListPullRequestComments(workspace, repo string, id int) ([]Comm
 		}
 
 		comments = append(comments, page.Values...)
-		path = extractNextPath(page.Next)
+		path = c.extractNextPath(page.Next)
 	}
 
 	return comments, nil
 }
 
-func (c *Client) CreatePullRequestComment(workspace, repo string, id int, body string) (*Comment, error) {
+func (c *Client) CreatePullRequestComment(workspace, repo string, id int, input CommentCreate) (*Comment, error) {
 	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d/comments", workspace, repo, id)
-	payload := map[string]any{
-		"content": map[string]string{"raw": body},
-	}
-	data, err := c.post(path, payload)
+	data, err := c.post(path, input)
 	if err != nil {
 		return nil, err
 	}
@@ -512,6 +525,54 @@ func (c *Client) CreatePullRequestComment(workspace, repo string, id int, body s
 	}
 
 	return &comment, nil
+}
+
+func (c *Client) CreatePullRequestCommentText(workspace, repo string, id int, body string) (*Comment, error) {
+	return c.CreatePullRequestComment(workspace, repo, id, CommentCreate{
+		Content: ContentInput{Raw: body},
+	})
+}
+
+func (c *Client) ApprovePullRequest(workspace, repo string, id int) (*ReviewActionResult, error) {
+	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d/approve", workspace, repo, id)
+	data, err := c.post(path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var result ReviewActionResult
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse approval response: %w", err)
+	}
+
+	return &result, nil
+}
+
+func (c *Client) UnapprovePullRequest(workspace, repo string, id int) error {
+	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d/approve", workspace, repo, id)
+	_, err := c.delete(path)
+	return err
+}
+
+func (c *Client) RequestPullRequestChanges(workspace, repo string, id int) (*ReviewActionResult, error) {
+	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d/request-changes", workspace, repo, id)
+	data, err := c.post(path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var result ReviewActionResult
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse request changes response: %w", err)
+	}
+
+	return &result, nil
+}
+
+func (c *Client) ClearPullRequestChanges(workspace, repo string, id int) error {
+	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d/request-changes", workspace, repo, id)
+	_, err := c.delete(path)
+	return err
 }
 
 func (c *Client) GetPullRequestDiff(workspace, repo string, id int) ([]byte, error) {
@@ -538,18 +599,18 @@ func (c *Client) ListPullRequestTasks(workspace, repo string, id int) ([]Task, e
 		}
 
 		tasks = append(tasks, page.Values...)
-		path = extractNextPath(page.Next)
+		path = c.extractNextPath(page.Next)
 	}
 
 	return tasks, nil
 }
 
-func extractNextPath(nextURL string) string {
+func (c *Client) extractNextPath(nextURL string) string {
 	if nextURL == "" {
 		return ""
 	}
-	if len(nextURL) > len(baseURL) && nextURL[:len(baseURL)] == baseURL {
-		return nextURL[len(baseURL):]
+	if len(nextURL) > len(c.baseURL) && nextURL[:len(c.baseURL)] == c.baseURL {
+		return nextURL[len(c.baseURL):]
 	}
 	return ""
 }
@@ -621,7 +682,7 @@ func (c *Client) ListSnippets(workspace string, opts *SnippetListOptions) ([]Sni
 		if opts != nil && opts.Limit > 0 && len(snippets) >= opts.Limit {
 			return snippets[:opts.Limit], nil
 		}
-		path = extractNextPath(page.Next)
+		path = c.extractNextPath(page.Next)
 	}
 
 	return snippets, nil
@@ -652,7 +713,7 @@ func (c *Client) GetSnippetFileContent(workspace, id, filename string) ([]byte, 
 }
 
 func (c *Client) CreateSnippet(workspace, title string, files map[string][]byte, isPrivate bool) (*Snippet, error) {
-	url := baseURL + fmt.Sprintf("/snippets/%s", url.PathEscape(workspace))
+	requestURL := c.baseURL + fmt.Sprintf("/snippets/%s", url.PathEscape(workspace))
 
 	var buf bytes.Buffer
 	writer := multipart.NewWriter(&buf)
@@ -679,7 +740,7 @@ func (c *Client) CreateSnippet(workspace, title string, files map[string][]byte,
 		return nil, fmt.Errorf("failed to close multipart writer: %w", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, url, &buf)
+	req, err := http.NewRequest(http.MethodPost, requestURL, &buf)
 	if err != nil {
 		return nil, err
 	}
@@ -709,7 +770,7 @@ func (c *Client) CreateSnippet(workspace, title string, files map[string][]byte,
 }
 
 func (c *Client) UpdateSnippet(workspace, id, title string, addFiles map[string][]byte, removeFiles []string) error {
-	url := baseURL + fmt.Sprintf("/snippets/%s/%s", url.PathEscape(workspace), url.PathEscape(id))
+	requestURL := c.baseURL + fmt.Sprintf("/snippets/%s/%s", url.PathEscape(workspace), url.PathEscape(id))
 
 	var buf bytes.Buffer
 	writer := multipart.NewWriter(&buf)
@@ -740,7 +801,7 @@ func (c *Client) UpdateSnippet(workspace, id, title string, addFiles map[string]
 		return fmt.Errorf("failed to close multipart writer: %w", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPut, url, &buf)
+	req, err := http.NewRequest(http.MethodPut, requestURL, &buf)
 	if err != nil {
 		return err
 	}
@@ -761,9 +822,9 @@ func (c *Client) UpdateSnippet(workspace, id, title string, addFiles map[string]
 }
 
 func (c *Client) DeleteSnippet(workspace, id string) error {
-	url := baseURL + fmt.Sprintf("/snippets/%s/%s", url.PathEscape(workspace), url.PathEscape(id))
+	requestURL := c.baseURL + fmt.Sprintf("/snippets/%s/%s", url.PathEscape(workspace), url.PathEscape(id))
 
-	req, err := http.NewRequest(http.MethodDelete, url, nil)
+	req, err := http.NewRequest(http.MethodDelete, requestURL, nil)
 	if err != nil {
 		return err
 	}

@@ -50,6 +50,12 @@ func newPRCmd() *cobra.Command {
 	cmd.AddCommand(newPRDiffCmd())
 	cmd.AddCommand(newPREditCmd())
 	cmd.AddCommand(newPRCloseCmd())
+	cmd.AddCommand(newPRCommentCmd())
+	cmd.AddCommand(newPRApproveCmd())
+	cmd.AddCommand(newPRUnapproveCmd())
+	cmd.AddCommand(newPRRequestChangesCmd())
+	cmd.AddCommand(newPRClearChangeRequestCmd())
+	cmd.AddCommand(newPRReviewCmd())
 	cmd.AddCommand(newPRCreateCmd())
 	cmd.AddCommand(newPRStatusCmd())
 
@@ -656,7 +662,7 @@ func runPRClose(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	if comment != "" {
-		if _, err := ctx.client.CreatePullRequestComment(ctx.workspace, ctx.repo, pr.ID, comment); err != nil {
+		if _, err := ctx.client.CreatePullRequestCommentText(ctx.workspace, ctx.repo, pr.ID, comment); err != nil {
 			return err
 		}
 	}
@@ -668,6 +674,312 @@ func runPRClose(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	fmt.Printf("Closed pull request #%d: %s\n", closed.ID, closed.Title)
+	return nil
+}
+
+func newPRCommentCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "comment [number|url|branch]",
+		Short: "Comment on a pull request",
+		Args:  cobra.MaximumNArgs(1),
+		RunE:  runPRComment,
+	}
+	addPRRepoFlag(cmd)
+	addCommentBodyFlags(cmd)
+	cmd.Flags().Int("reply-to", 0, "Reply to an existing comment")
+	cmd.Flags().String("path", "", "Attach the comment to a file path")
+	cmd.Flags().Int("line", 0, "Attach the comment to a line in --path")
+	cmd.Flags().String("side", "new", "Line side for inline comments: new or old")
+	cmd.Flags().Bool("json", false, "Output as JSON")
+	return cmd
+}
+
+func runPRComment(cmd *cobra.Command, args []string) error {
+	body, _, err := readCommentBodyFromFlags(cmd, true)
+	if err != nil {
+		return err
+	}
+	replyTo, _ := cmd.Flags().GetInt("reply-to")
+	path, _ := cmd.Flags().GetString("path")
+	line, _ := cmd.Flags().GetInt("line")
+	side, _ := cmd.Flags().GetString("side")
+	if !cmd.Flags().Changed("side") && line == 0 {
+		side = ""
+	}
+	jsonOutput, _ := cmd.Flags().GetBool("json")
+
+	input, err := buildCommentCreate(commentSpec{
+		Body:    body,
+		ReplyTo: replyTo,
+		Path:    path,
+		Line:    line,
+		Side:    side,
+	})
+	if err != nil {
+		return err
+	}
+
+	ctx, err := prCommandContext(cmd, false)
+	if err != nil {
+		return err
+	}
+	pr, err := resolvePR(ctx, optionalArg(args), true)
+	if err != nil {
+		return err
+	}
+	comment, err := ctx.client.CreatePullRequestComment(ctx.workspace, ctx.repo, pr.ID, input)
+	if err != nil {
+		return err
+	}
+	if jsonOutput {
+		return output.WriteJSON(os.Stdout, comment)
+	}
+	fmt.Printf("Created comment #%d on pull request #%d\n", comment.ID, pr.ID)
+	return nil
+}
+
+func newPRApproveCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "approve [number|url|branch]",
+		Short: "Approve a pull request",
+		Args:  cobra.MaximumNArgs(1),
+		RunE:  runPRApprove,
+	}
+	addPRRepoFlag(cmd)
+	addCommentBodyFlags(cmd)
+	cmd.Flags().Bool("json", false, "Output as JSON")
+	return cmd
+}
+
+func runPRApprove(cmd *cobra.Command, args []string) error {
+	return runPRReviewAction(cmd, args, "approve")
+}
+
+func newPRUnapproveCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "unapprove [number|url|branch]",
+		Short: "Remove your approval from a pull request",
+		Args:  cobra.MaximumNArgs(1),
+		RunE:  runPRUnapprove,
+	}
+	addPRRepoFlag(cmd)
+	cmd.Flags().Bool("json", false, "Output as JSON")
+	return cmd
+}
+
+func runPRUnapprove(cmd *cobra.Command, args []string) error {
+	jsonOutput, _ := cmd.Flags().GetBool("json")
+	ctx, err := prCommandContext(cmd, false)
+	if err != nil {
+		return err
+	}
+	pr, err := resolvePR(ctx, optionalArg(args), true)
+	if err != nil {
+		return err
+	}
+	if err := ctx.client.UnapprovePullRequest(ctx.workspace, ctx.repo, pr.ID); err != nil {
+		return err
+	}
+	if jsonOutput {
+		return output.WriteJSON(os.Stdout, map[string]any{
+			"approved":     false,
+			"pull_request": pr.ID,
+		})
+	}
+	fmt.Printf("Removed approval from pull request #%d\n", pr.ID)
+	return nil
+}
+
+func newPRRequestChangesCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "request-changes [number|url|branch]",
+		Short: "Request changes on a pull request",
+		Args:  cobra.MaximumNArgs(1),
+		RunE:  runPRRequestChanges,
+	}
+	addPRRepoFlag(cmd)
+	addCommentBodyFlags(cmd)
+	cmd.Flags().Bool("json", false, "Output as JSON")
+	return cmd
+}
+
+func runPRRequestChanges(cmd *cobra.Command, args []string) error {
+	return runPRReviewAction(cmd, args, "request-changes")
+}
+
+func newPRClearChangeRequestCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "clear-change-request [number|url|branch]",
+		Short: "Remove your change request from a pull request",
+		Args:  cobra.MaximumNArgs(1),
+		RunE:  runPRClearChangeRequest,
+	}
+	addPRRepoFlag(cmd)
+	cmd.Flags().Bool("json", false, "Output as JSON")
+	return cmd
+}
+
+func runPRClearChangeRequest(cmd *cobra.Command, args []string) error {
+	jsonOutput, _ := cmd.Flags().GetBool("json")
+	ctx, err := prCommandContext(cmd, false)
+	if err != nil {
+		return err
+	}
+	pr, err := resolvePR(ctx, optionalArg(args), true)
+	if err != nil {
+		return err
+	}
+	if err := ctx.client.ClearPullRequestChanges(ctx.workspace, ctx.repo, pr.ID); err != nil {
+		return err
+	}
+	if jsonOutput {
+		return output.WriteJSON(os.Stdout, map[string]any{
+			"changes_requested": false,
+			"pull_request":      pr.ID,
+		})
+	}
+	fmt.Printf("Removed change request from pull request #%d\n", pr.ID)
+	return nil
+}
+
+func newPRReviewCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "review [number|url|branch]",
+		Short: "Post review comments and finish a pull request review",
+		Args:  cobra.MaximumNArgs(1),
+		RunE:  runPRReview,
+	}
+	addPRRepoFlag(cmd)
+	addCommentBodyFlags(cmd)
+	cmd.Flags().Bool("approve", false, "Finish by approving")
+	cmd.Flags().Bool("request-changes", false, "Finish by requesting changes")
+	cmd.Flags().Bool("comment", false, "Finish with comments only")
+	cmd.Flags().String("comment-spec", "", "JSON file of comments to post before the final review action")
+	cmd.Flags().Bool("json", false, "Output as JSON")
+	return cmd
+}
+
+type prReviewOutput struct {
+	PullRequest int                           `json:"pull_request"`
+	Action      string                        `json:"action"`
+	Comments    []bitbucket.Comment           `json:"comments,omitempty"`
+	Result      *bitbucket.ReviewActionResult `json:"result,omitempty"`
+}
+
+func runPRReview(cmd *cobra.Command, args []string) error {
+	action, err := reviewActionFromFlags(cmd)
+	if err != nil {
+		return err
+	}
+	body, hasSummary, err := readCommentBodyFromFlags(cmd, false)
+	if err != nil {
+		return err
+	}
+	specPath, _ := cmd.Flags().GetString("comment-spec")
+	specs, err := readCommentSpecs(specPath)
+	if err != nil {
+		return err
+	}
+	if action == "comment" && len(specs) == 0 && !hasSummary {
+		return fmt.Errorf("comment-only review requires --body, --body-file, --editor, or --comment-spec")
+	}
+
+	ctx, err := prCommandContext(cmd, false)
+	if err != nil {
+		return err
+	}
+	pr, err := resolvePR(ctx, optionalArg(args), true)
+	if err != nil {
+		return err
+	}
+
+	comments, err := postCommentSpecs(ctx, pr, specs)
+	if err != nil {
+		return err
+	}
+	if hasSummary {
+		comment, err := ctx.client.CreatePullRequestCommentText(ctx.workspace, ctx.repo, pr.ID, body)
+		if err != nil {
+			return fmt.Errorf("posted %d comments but failed to post review summary: %w", len(comments), err)
+		}
+		comments = append(comments, *comment)
+	}
+
+	var result *bitbucket.ReviewActionResult
+	switch action {
+	case "approve":
+		result, err = ctx.client.ApprovePullRequest(ctx.workspace, ctx.repo, pr.ID)
+	case "request-changes":
+		result, err = ctx.client.RequestPullRequestChanges(ctx.workspace, ctx.repo, pr.ID)
+	}
+	if err != nil {
+		return fmt.Errorf("posted %d comments but failed to %s pull request: %w", len(comments), reviewActionPhrase(action), err)
+	}
+
+	jsonOutput, _ := cmd.Flags().GetBool("json")
+	if jsonOutput {
+		return output.WriteJSON(os.Stdout, prReviewOutput{
+			PullRequest: pr.ID,
+			Action:      action,
+			Comments:    comments,
+			Result:      result,
+		})
+	}
+	switch action {
+	case "approve":
+		fmt.Printf("Posted %d comments and approved pull request #%d\n", len(comments), pr.ID)
+	case "request-changes":
+		fmt.Printf("Posted %d comments and requested changes on pull request #%d\n", len(comments), pr.ID)
+	default:
+		fmt.Printf("Posted %d comments on pull request #%d\n", len(comments), pr.ID)
+	}
+	return nil
+}
+
+func runPRReviewAction(cmd *cobra.Command, args []string, action string) error {
+	body, hasComment, err := readCommentBodyFromFlags(cmd, false)
+	if err != nil {
+		return err
+	}
+	jsonOutput, _ := cmd.Flags().GetBool("json")
+	ctx, err := prCommandContext(cmd, false)
+	if err != nil {
+		return err
+	}
+	pr, err := resolvePR(ctx, optionalArg(args), true)
+	if err != nil {
+		return err
+	}
+	if hasComment {
+		if _, err := ctx.client.CreatePullRequestCommentText(ctx.workspace, ctx.repo, pr.ID, body); err != nil {
+			return err
+		}
+	}
+
+	var result *bitbucket.ReviewActionResult
+	switch action {
+	case "approve":
+		result, err = ctx.client.ApprovePullRequest(ctx.workspace, ctx.repo, pr.ID)
+	case "request-changes":
+		result, err = ctx.client.RequestPullRequestChanges(ctx.workspace, ctx.repo, pr.ID)
+	default:
+		return fmt.Errorf("unknown review action %q", action)
+	}
+	if err != nil {
+		if hasComment {
+			return fmt.Errorf("posted comment but failed to %s pull request: %w", reviewActionPhrase(action), err)
+		}
+		return err
+	}
+	if jsonOutput {
+		return output.WriteJSON(os.Stdout, result)
+	}
+	switch action {
+	case "approve":
+		fmt.Printf("Approved pull request #%d\n", pr.ID)
+	case "request-changes":
+		fmt.Printf("Requested changes on pull request #%d\n", pr.ID)
+	}
 	return nil
 }
 
@@ -969,6 +1281,224 @@ func optionalArg(args []string) string {
 		return ""
 	}
 	return args[0]
+}
+
+type commentBodyFlags struct {
+	body        string
+	bodySet     bool
+	bodyFile    string
+	bodyFileSet bool
+	editor      bool
+}
+
+type commentSpec struct {
+	Body    string `json:"body"`
+	ReplyTo int    `json:"reply_to,omitempty"`
+	Path    string `json:"path,omitempty"`
+	Line    int    `json:"line,omitempty"`
+	Side    string `json:"side,omitempty"`
+}
+
+func addCommentBodyFlags(cmd *cobra.Command) {
+	cmd.Flags().StringP("body", "b", "", "Comment body")
+	cmd.Flags().StringP("body-file", "F", "", "Read comment body from file (use - to read from stdin)")
+	cmd.Flags().BoolP("editor", "e", false, "Open the editor to write the comment body")
+}
+
+func getCommentBodyFlags(cmd *cobra.Command) commentBodyFlags {
+	body, _ := cmd.Flags().GetString("body")
+	bodyFile, _ := cmd.Flags().GetString("body-file")
+	editor, _ := cmd.Flags().GetBool("editor")
+	return commentBodyFlags{
+		body:        body,
+		bodySet:     cmd.Flags().Changed("body"),
+		bodyFile:    bodyFile,
+		bodyFileSet: cmd.Flags().Changed("body-file"),
+		editor:      editor,
+	}
+}
+
+func validateCommentBodySources(flags commentBodyFlags, required bool) error {
+	count := 0
+	if flags.bodySet || flags.body != "" {
+		count++
+	}
+	if flags.bodyFileSet || flags.bodyFile != "" {
+		count++
+	}
+	if flags.editor {
+		count++
+	}
+	if count > 1 {
+		return fmt.Errorf("--body, --body-file, and --editor are mutually exclusive")
+	}
+	if required && count == 0 {
+		return fmt.Errorf("one of --body, --body-file, or --editor is required")
+	}
+	return nil
+}
+
+func readCommentBodyFromFlags(cmd *cobra.Command, required bool) (string, bool, error) {
+	flags := getCommentBodyFlags(cmd)
+	if err := validateCommentBodySources(flags, required); err != nil {
+		return "", false, err
+	}
+	hasBody := flags.bodySet || flags.body != "" || flags.bodyFileSet || flags.bodyFile != "" || flags.editor
+	if !hasBody {
+		return "", false, nil
+	}
+
+	var body string
+	switch {
+	case flags.bodySet || flags.body != "":
+		body = flags.body
+	case flags.bodyFileSet || flags.bodyFile != "":
+		bodyBytes, err := readBodyFile(flags.bodyFile)
+		if err != nil {
+			return "", false, err
+		}
+		body = string(bodyBytes)
+	case flags.editor:
+		edited, err := editTextInEditor("")
+		if err != nil {
+			return "", false, err
+		}
+		body = edited
+	}
+	if strings.TrimSpace(body) == "" {
+		return "", false, fmt.Errorf("comment body cannot be empty")
+	}
+	return body, true, nil
+}
+
+func buildCommentCreate(spec commentSpec) (bitbucket.CommentCreate, error) {
+	body := spec.Body
+	if strings.TrimSpace(body) == "" {
+		return bitbucket.CommentCreate{}, fmt.Errorf("comment body cannot be empty")
+	}
+	if spec.ReplyTo < 0 {
+		return bitbucket.CommentCreate{}, fmt.Errorf("--reply-to must be greater than zero")
+	}
+	if spec.Line < 0 {
+		return bitbucket.CommentCreate{}, fmt.Errorf("--line must be greater than zero")
+	}
+
+	path := strings.TrimSpace(spec.Path)
+	side := strings.ToLower(strings.TrimSpace(spec.Side))
+	if spec.ReplyTo > 0 {
+		if path != "" || spec.Line != 0 || side != "" {
+			return bitbucket.CommentCreate{}, fmt.Errorf("--reply-to cannot be combined with --path, --line, or --side")
+		}
+		return bitbucket.CommentCreate{
+			Content: bitbucket.ContentInput{Raw: body},
+			Parent:  &bitbucket.ParentInput{ID: spec.ReplyTo},
+		}, nil
+	}
+	if spec.Line > 0 && path == "" {
+		return bitbucket.CommentCreate{}, fmt.Errorf("--line requires --path")
+	}
+	if side != "" && path == "" {
+		return bitbucket.CommentCreate{}, fmt.Errorf("--side requires --path")
+	}
+	if side != "" && spec.Line == 0 {
+		return bitbucket.CommentCreate{}, fmt.Errorf("--side requires --line")
+	}
+
+	input := bitbucket.CommentCreate{Content: bitbucket.ContentInput{Raw: body}}
+	if path == "" {
+		return input, nil
+	}
+
+	inline := bitbucket.InlineInput{Path: path}
+	if spec.Line > 0 {
+		switch side {
+		case "", "new":
+			inline.To = &spec.Line
+		case "old":
+			inline.From = &spec.Line
+		default:
+			return bitbucket.CommentCreate{}, fmt.Errorf("invalid --side %q: expected new or old", spec.Side)
+		}
+	} else if side != "" && side != "new" && side != "old" {
+		return bitbucket.CommentCreate{}, fmt.Errorf("invalid --side %q: expected new or old", spec.Side)
+	}
+	input.Inline = &inline
+	return input, nil
+}
+
+func readCommentSpecs(path string) ([]commentSpec, error) {
+	if path == "" {
+		return nil, nil
+	}
+	data, err := readBodyFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var specs []commentSpec
+	if err := json.Unmarshal(data, &specs); err != nil {
+		return nil, fmt.Errorf("failed to parse comment spec: %w", err)
+	}
+	return specs, nil
+}
+
+func buildCommentCreates(specs []commentSpec) ([]bitbucket.CommentCreate, error) {
+	inputs := make([]bitbucket.CommentCreate, 0, len(specs))
+	for index, spec := range specs {
+		input, err := buildCommentCreate(spec)
+		if err != nil {
+			return nil, fmt.Errorf("invalid comment spec %d: %w", index+1, err)
+		}
+		inputs = append(inputs, input)
+	}
+	return inputs, nil
+}
+
+func postCommentSpecs(ctx *prContext, pr *bitbucket.PullRequest, specs []commentSpec) ([]bitbucket.Comment, error) {
+	inputs, err := buildCommentCreates(specs)
+	if err != nil {
+		return nil, err
+	}
+	comments := make([]bitbucket.Comment, 0, len(inputs))
+	for index, input := range inputs {
+		comment, err := ctx.client.CreatePullRequestComment(ctx.workspace, ctx.repo, pr.ID, input)
+		if err != nil {
+			return nil, fmt.Errorf("posted %d comments but failed to post comment %d: %w", len(comments), index+1, err)
+		}
+		comments = append(comments, *comment)
+	}
+	return comments, nil
+}
+
+func reviewActionFromFlags(cmd *cobra.Command) (string, error) {
+	approve, _ := cmd.Flags().GetBool("approve")
+	requestChanges, _ := cmd.Flags().GetBool("request-changes")
+	commentOnly, _ := cmd.Flags().GetBool("comment")
+
+	actions := []string{}
+	if approve {
+		actions = append(actions, "approve")
+	}
+	if requestChanges {
+		actions = append(actions, "request-changes")
+	}
+	if commentOnly {
+		actions = append(actions, "comment")
+	}
+	if len(actions) != 1 {
+		return "", fmt.Errorf("exactly one of --approve, --request-changes, or --comment is required")
+	}
+	return actions[0], nil
+}
+
+func reviewActionPhrase(action string) string {
+	switch action {
+	case "approve":
+		return "approve"
+	case "request-changes":
+		return "request changes on"
+	default:
+		return action
+	}
 }
 
 func readBodyFile(path string) ([]byte, error) {
