@@ -2,6 +2,7 @@ package cli
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/kabilan108/atlas/internal/bitbucket"
@@ -192,6 +193,48 @@ func TestNormalizePRDescriptionMarkdownPreservesLongFenceWithShortFenceInside(t 
 
 	if got := normalizePRDescriptionMarkdown(body); got != want {
 		t.Fatalf("normalizePRDescriptionMarkdown() = %q, want %q", got, want)
+	}
+}
+
+func TestNormalizePRDescriptionMarkdownAddsInlineCardsToStandaloneURLs(t *testing.T) {
+	t.Parallel()
+
+	body := "https://moberganalytics.atlassian.net/browse/MCP-7163\n\nhttps://bitbucket.org/moberg-analytics/dashboard/pull-requests/1361"
+	want := "[https://moberganalytics.atlassian.net/browse/MCP-7163](https://moberganalytics.atlassian.net/browse/MCP-7163){: data-inline-card='' }\n\n[https://bitbucket.org/moberg-analytics/dashboard/pull-requests/1361](https://bitbucket.org/moberg-analytics/dashboard/pull-requests/1361){: data-inline-card='' }"
+
+	if got := normalizePRDescriptionMarkdown(body); got != want {
+		t.Fatalf("normalizePRDescriptionMarkdown() = %q, want %q", got, want)
+	}
+}
+
+func TestNormalizePRDescriptionMarkdownAddsInlineCardsToURLListItems(t *testing.T) {
+	t.Parallel()
+
+	body := "- https://moberganalytics.atlassian.net/browse/MCP-7163\n  1.   https://bitbucket.org/moberg-analytics/dashboard/pull-requests/1361  \n"
+	want := "- [https://moberganalytics.atlassian.net/browse/MCP-7163](https://moberganalytics.atlassian.net/browse/MCP-7163){: data-inline-card='' }\n  1.   [https://bitbucket.org/moberg-analytics/dashboard/pull-requests/1361](https://bitbucket.org/moberg-analytics/dashboard/pull-requests/1361){: data-inline-card='' }  \n"
+
+	if got := normalizePRDescriptionMarkdown(body); got != want {
+		t.Fatalf("normalizePRDescriptionMarkdown() = %q, want %q", got, want)
+	}
+}
+
+func TestNormalizePRDescriptionMarkdownSkipsInlineCardIneligibleURLs(t *testing.T) {
+	t.Parallel()
+
+	body := strings.Join([]string{
+		"https://bitbucket.org/moberg-analytics/dashboard/pull-requests/1361{: data-inline-card='' }",
+		"[https://bitbucket.org/moberg-analytics/dashboard/pull-requests/1361](https://bitbucket.org/moberg-analytics/dashboard/pull-requests/1361){: data-inline-card='' }",
+		"[dashboard PR](https://bitbucket.org/moberg-analytics/dashboard/pull-requests/1361)",
+		"See https://bitbucket.org/moberg-analytics/dashboard/pull-requests/1361",
+		"https://example.com/moberg-analytics/dashboard/pull-requests/1361",
+		"```md",
+		"https://moberganalytics.atlassian.net/browse/MCP-7163",
+		"```",
+		"",
+	}, "\n")
+
+	if got := normalizePRDescriptionMarkdown(body); got != body {
+		t.Fatalf("normalizePRDescriptionMarkdown() = %q, want %q", got, body)
 	}
 }
 

@@ -1522,6 +1522,8 @@ type markdownFence struct {
 	length int
 }
 
+const bitbucketInlineCardSuffix = "{: data-inline-card='' }"
+
 func buildPRCreateInput(title, body, head, base string, reviewers []bitbucket.User) bitbucket.PullRequestCreate {
 	return bitbucket.PullRequestCreate{
 		Title:       title,
@@ -1545,7 +1547,7 @@ func buildPRDescriptionUpdate(current, body string, bodyChanged bool) (*string, 
 
 func normalizePRDescriptionMarkdown(body string) string {
 	lines := splitMarkdownLines(body)
-	if len(lines) < 2 {
+	if len(lines) == 0 {
 		return body
 	}
 
@@ -1567,7 +1569,14 @@ func normalizePRDescriptionMarkdown(body string) string {
 			}
 		}
 
-		normalized.WriteString(line.text)
+		lineText := line.text
+		if !lineInFence && !hasCurrentFence {
+			var normalizedInlineCard bool
+			lineText, normalizedInlineCard = normalizeInlineCardLine(lineText)
+			changed = changed || normalizedInlineCard
+		}
+
+		normalized.WriteString(lineText)
 		normalized.WriteString(line.newline)
 		if line.newline == "" || lineInFence || hasCurrentFence || i+1 >= len(lines) {
 			continue
@@ -1581,6 +1590,53 @@ func normalizePRDescriptionMarkdown(body string) string {
 		return body
 	}
 	return normalized.String()
+}
+
+func normalizeInlineCardLine(line string) (string, bool) {
+	if strings.Contains(line, bitbucketInlineCardSuffix) {
+		return line, false
+	}
+
+	if normalized, ok := normalizePlainInlineCardLine(line); ok {
+		return normalized, true
+	}
+
+	prefix, content, ok := splitMarkdownListContent(line)
+	if !ok {
+		return line, false
+	}
+	normalized, ok := normalizePlainInlineCardLine(content)
+	if !ok {
+		return line, false
+	}
+	return prefix + normalized, true
+}
+
+func normalizePlainInlineCardLine(line string) (string, bool) {
+	trimmed := strings.TrimSpace(line)
+	if !isInlineCardURL(trimmed) {
+		return line, false
+	}
+	leadingLength := len(line) - len(strings.TrimLeft(line, " \t"))
+	trailingLength := len(line) - len(strings.TrimRight(line, " \t"))
+	return line[:leadingLength] + formatInlineCardLink(trimmed) + line[len(line)-trailingLength:], true
+}
+
+func isInlineCardURL(rawURL string) bool {
+	parsedURL, err := url.Parse(rawURL)
+	if err != nil || parsedURL.Scheme == "" || parsedURL.Host == "" {
+		return false
+	}
+	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+		return false
+	}
+
+	hostname := strings.ToLower(parsedURL.Hostname())
+	return hostname == "bitbucket.org" || strings.HasSuffix(hostname, ".atlassian.net")
+}
+
+func formatInlineCardLink(rawURL string) string {
+	return "[" + rawURL + "](" + rawURL + ")" + bitbucketInlineCardSuffix
 }
 
 func splitMarkdownLines(text string) []markdownLine {
@@ -1612,6 +1668,39 @@ func isPRSectionLabel(line string) bool {
 	return line != "" && strings.HasSuffix(line, ":")
 }
 
+func splitMarkdownListContent(line string) (string, string, bool) {
+	leadingLength := len(line) - len(strings.TrimLeft(line, " \t"))
+	remaining := line[leadingLength:]
+	if len(remaining) < 3 {
+		return "", "", false
+	}
+
+	switch remaining[0] {
+	case '-', '*', '+':
+		if !isMarkdownWhitespace(remaining[1]) {
+			return "", "", false
+		}
+		contentStart := consumeMarkdownWhitespace(remaining, 1)
+		return line[:leadingLength] + remaining[:contentStart], remaining[contentStart:], true
+	}
+
+	digitEnd := 0
+	for digitEnd < len(remaining) && remaining[digitEnd] >= '0' && remaining[digitEnd] <= '9' {
+		digitEnd++
+	}
+	if digitEnd == 0 || digitEnd+1 >= len(remaining) {
+		return "", "", false
+	}
+	if remaining[digitEnd] != '.' && remaining[digitEnd] != ')' {
+		return "", "", false
+	}
+	if !isMarkdownWhitespace(remaining[digitEnd+1]) {
+		return "", "", false
+	}
+	contentStart := consumeMarkdownWhitespace(remaining, digitEnd+1)
+	return line[:leadingLength] + remaining[:contentStart], remaining[contentStart:], true
+}
+
 func isMarkdownListItem(line string) bool {
 	trimmedLine := strings.TrimLeft(line, " \t")
 	if len(trimmedLine) < 3 {
@@ -1637,6 +1726,13 @@ func isMarkdownListItem(line string) bool {
 
 func isMarkdownWhitespace(char byte) bool {
 	return char == ' ' || char == '\t'
+}
+
+func consumeMarkdownWhitespace(text string, start int) int {
+	for start < len(text) && isMarkdownWhitespace(text[start]) {
+		start++
+	}
+	return start
 }
 
 func parseMarkdownFence(line string) (markdownFence, bool) {
