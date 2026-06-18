@@ -28,6 +28,13 @@ func TestCommentWriterFormatsThreadsAndMetadata(t *testing.T) {
 			CreatedOn: time.Date(2026, time.March, 10, 14, 4, 0, 0, time.UTC),
 			Inline:    &bitbucket.Inline{Path: "data_query/app.py", To: intPtr(411)},
 		},
+		{
+			ID:        3,
+			User:      bitbucket.User{UUID: "{author-1}", DisplayName: "Tony Okeke"},
+			Content:   bitbucket.Content{Raw: "Author reply"},
+			CreatedOn: time.Date(2026, time.March, 10, 14, 5, 0, 0, time.UTC),
+			Parent:    &bitbucket.Parent{ID: 2},
+		},
 	}
 
 	if err := writer.WriteComments(comments, false); err != nil {
@@ -40,9 +47,14 @@ func TestCommentWriterFormatsThreadsAndMetadata(t *testing.T) {
 		"### Thread: General [OPEN]",
 		"### Thread: `data_query/app.py:411` [UNRESOLVED]",
 		"Type: comment",
+		"ID: 1",
+		"ID: 2",
+		"Type: reply",
+		"ID: 3",
 		"Author: @Tony Okeke (author)",
 		"Author: @Justin Moore",
 		"Status: UNRESOLVED",
+		"Author reply",
 	} {
 		if !strings.Contains(output, expected) {
 			t.Fatalf("output missing %q:\n%s", expected, output)

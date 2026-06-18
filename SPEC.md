@@ -208,6 +208,8 @@ Interactive output is sent through `bat` when available, then `less`, then stdou
 
 Unified display - all comment types shown together, distinguished by presence of file/line info.
 
+Each displayed comment includes its Bitbucket comment ID for use with `atlas pr comment --reply-to`.
+
 ### Inline Comment Context
 
 Shows relevant diff hunk (not full file) wrapped in markdown diff fence:

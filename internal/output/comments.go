@@ -205,6 +205,7 @@ func (cw *CommentWriter) writeComment(comment bitbucket.Comment, isReply bool) {
 	}
 
 	fmt.Fprintf(cw.w, "Type: %s\n", commentType)
+	fmt.Fprintf(cw.w, "ID: %d\n", comment.ID)
 	fmt.Fprintf(cw.w, "Author: %s%s\n", formatUserMention(comment.User), authorIndicator)
 	fmt.Fprintf(cw.w, "When: %s\n", cw.formatTimestamp(comment.CreatedOn))
 	if status := commentStatus(comment); status != "" {
