@@ -1,6 +1,6 @@
 ---
 name: cut-release
-description: Cut a new Atlas CLI release. Use when asked to release Atlas, bump the release version, create or update CHANGELOG.md, document user-facing changes, validate the Go/Nix build, create the release commit, tag the release, and push branch plus tag.
+description: Cut a new Atlas CLI release. Use when asked to release Atlas, bump the release version, create or update CHANGELOG.md, document user-facing changes, validate the Go/Nix build, create the release commit, and push the branch so GitHub Actions can create the tag and release.
 ---
 
 # Cut Release
@@ -40,10 +40,11 @@ description: Cut a new Atlas CLI release. Use when asked to release Atlas, bump 
    - Stage only intentional release files.
    - Use a commit message like `Release atlas vX.Y.Z` with bullets summarizing the version bump, changelog, and behavior changes.
 
-7. Tag and push:
-   - Create an annotated tag: `git tag -a vX.Y.Z -m "Release vX.Y.Z"`.
-   - Push the current branch and tag together: `git push origin <branch> vX.Y.Z`.
-   - Finish with the commit hash, tag, pushed branch, and validation commands.
+7. Push the branch:
+   - Do not create or push the release tag locally.
+   - Push only the current branch: `git push origin <branch>`.
+   - The repo's `Release on Version Change` GitHub Actions workflow detects the `flake.nix` version bump, creates the `vX.Y.Z` tag, and publishes the GitHub Release.
+   - Finish with the release commit hash, pushed branch, expected tag, and validation commands.
 
 ## Project Notes
 
