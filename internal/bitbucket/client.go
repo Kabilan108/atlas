@@ -42,13 +42,17 @@ func WithRetry(retry bool) ClientOption {
 }
 
 func NewClient(opts ...ClientOption) (*Client, error) {
-	cfg, err := config.Load()
+	creds, err := config.LoadCredentials()
 	if err != nil {
-		return nil, fmt.Errorf("failed to load config: %w", err)
+		return nil, fmt.Errorf("failed to load credentials: %w", err)
 	}
 
-	if cfg.Username == "" || cfg.AppPassword == "" {
-		return nil, NewAuthError(401, "missing credentials in config")
+	return NewClientWithCredentials(creds.Username, creds.APIToken, opts...)
+}
+
+func NewClientWithCredentials(username, apiToken string, opts ...ClientOption) (*Client, error) {
+	if username == "" || apiToken == "" {
+		return nil, NewAuthError(401, "missing credentials")
 	}
 
 	cache, err := NewCache()
@@ -59,8 +63,8 @@ func NewClient(opts ...ClientOption) (*Client, error) {
 	c := &Client{
 		httpClient: &http.Client{Timeout: 30 * time.Second},
 		baseURL:    defaultBaseURL,
-		username:   cfg.Username,
-		password:   cfg.AppPassword,
+		username:   username,
+		password:   apiToken,
 		cache:      cache,
 	}
 

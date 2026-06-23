@@ -21,6 +21,7 @@ func NewRootCmd(version string) *cobra.Command {
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Show inferred values (repo from git remote, etc.)")
 
 	rootCmd.AddCommand(newConfigCmd())
+	rootCmd.AddCommand(newLoginCmd())
 	rootCmd.AddCommand(newPRCmd())
 	rootCmd.AddCommand(newSnippetCmd())
 

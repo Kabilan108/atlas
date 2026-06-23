@@ -28,7 +28,6 @@ programs.atlas = {
   settings = {
     workspace = "my-workspace";
     username = "user@example.com";
-    app_password = "\${env:ATLAS_API_TOKEN}";
   };
 };
 ```
@@ -41,26 +40,31 @@ go install github.com/kabilan108/atlas/cmd/atlas@latest
 
 ## Configuration
 
-Create a Bitbucket API token at **Personal settings → App passwords** with scopes:
+Run `atlas login` and follow the prompts to create and save a Bitbucket API token.
+Atlas always prefers `ATLAS_API_TOKEN` when it is set, then falls back to saved
+credentials from `~/.config/atlas/credentials.toml`.
 
-| Scope | Required |
-|-------|----------|
-| `read:user:bitbucket` | Yes |
-| `read:repository:bitbucket` | Yes |
-| `read:pullrequest:bitbucket` | Yes |
-| `write:pullrequest:bitbucket` | For posting comments, approvals, and change requests |
-| `read:snippet:bitbucket` | For snippets |
-| `write:snippet:bitbucket` | For snippets |
-| `delete:snippet:bitbucket` | For snippets |
+Create the token with these scopes:
 
-If not using the home-manager module, configure manually:
+```text
+read:user:bitbucket
+read:repository:bitbucket
+write:repository:bitbucket
+read:pullrequest:bitbucket
+write:pullrequest:bitbucket
+read:snippet:bitbucket
+write:snippet:bitbucket
+delete:snippet:bitbucket
+```
+
+Configure manually or through environment variables:
 
 ```bash
 export ATLAS_API_TOKEN="your-token"
+export ATLAS_USERNAME="user@example.com"
 
 atlas config set workspace my-workspace
 atlas config set username user@example.com
-atlas config set app_password '${env:ATLAS_API_TOKEN}'
 
 atlas config verify
 ```

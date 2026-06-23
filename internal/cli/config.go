@@ -29,16 +29,14 @@ func newConfigSetCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "set <key> [value]",
 		Short: "Set a configuration value",
-		Long: `Set a configuration value. Valid keys: workspace, username, app_password.
+		Long: `Set a configuration value. Valid keys: workspace, username.
 
-For app_password, if no value is provided, you will be prompted to enter it interactively
-(hidden input). You can also pipe the value via stdin.
+If no value is provided, you will be prompted to enter it interactively. You can also
+pipe the value via stdin.
 
 Examples:
   atlas config set workspace mycompany
-  atlas config set username user@example.com
-  atlas config set app_password              # prompts interactively
-  echo $TOKEN | atlas config set app_password  # via stdin`,
+  atlas config set username user@example.com`,
 		Args: cobra.RangeArgs(1, 2),
 		RunE: runConfigSet,
 	}
@@ -65,11 +63,6 @@ func runConfigSet(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if key == "app_password" && !config.IsEnvReference(value) {
-		fmt.Fprintln(os.Stderr, "Warning: Storing app_password directly in config file.")
-		fmt.Fprintln(os.Stderr, "Consider using ${env:ATLAS_API_TOKEN} syntax instead.")
-	}
-
 	fmt.Printf("Set %s\n", key)
 	return nil
 }
@@ -93,16 +86,6 @@ func readValueInteractively(key string) (string, error) {
 		return "", fmt.Errorf("no value provided and stdin is not a terminal")
 	}
 
-	if key == "app_password" {
-		fmt.Fprint(os.Stderr, "Enter app password: ")
-		password, err := term.ReadPassword(int(os.Stdin.Fd()))
-		fmt.Fprintln(os.Stderr)
-		if err != nil {
-			return "", fmt.Errorf("failed to read password: %w", err)
-		}
-		return string(password), nil
-	}
-
 	fmt.Fprintf(os.Stderr, "Enter %s: ", key)
 	scanner := bufio.NewScanner(os.Stdin)
 	if scanner.Scan() {
@@ -118,11 +101,9 @@ func newConfigGetCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "get <key>",
 		Short: "Get a configuration value",
-		Long: `Get a configuration value. Valid keys: workspace, username, app_password.
-
-Use --verbose to see whether the value uses an environment variable reference.`,
-		Args: cobra.ExactArgs(1),
-		RunE: runConfigGet,
+		Long:  `Get a configuration value. Valid keys: workspace, username.`,
+		Args:  cobra.ExactArgs(1),
+		RunE:  runConfigGet,
 	}
 	return cmd
 }
@@ -133,7 +114,7 @@ func runConfigGet(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid config key: %s (valid keys: %s)", key, strings.Join(config.ValidKeys(), ", "))
 	}
 
-	rawValue, hasEnvRef, err := config.GetRaw(key)
+	rawValue, err := config.GetRaw(key)
 	if err != nil {
 		return err
 	}
@@ -143,13 +124,7 @@ func runConfigGet(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	if verbose && hasEnvRef {
-		fmt.Printf("%s: %s (env reference)\n", key, rawValue)
-	} else if key == "app_password" {
-		fmt.Printf("%s: ****\n", key)
-	} else {
-		fmt.Printf("%s: %s\n", key, rawValue)
-	}
+	fmt.Printf("%s: %s\n", key, rawValue)
 
 	return nil
 }
@@ -167,7 +142,7 @@ func newConfigVerifyCmd() *cobra.Command {
 func runConfigVerify(cmd *cobra.Command, args []string) error {
 	client, err := bitbucket.NewClient(bitbucket.WithNoCache(true))
 	if err != nil {
-		return fmt.Errorf("authentication failed: %w\nRun 'atlas config set username' and 'atlas config set app_password' to configure credentials", err)
+		return fmt.Errorf("authentication failed: %w\nRun 'atlas login' to configure credentials", err)
 	}
 
 	user, err := client.GetCurrentUser()

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -17,12 +16,14 @@ var (
 )
 
 type Config struct {
-	Workspace   string `mapstructure:"workspace"`
-	Username    string `mapstructure:"username"`
-	AppPassword string `mapstructure:"app_password"`
+	Workspace string `mapstructure:"workspace"`
+	Username  string `mapstructure:"username"`
 }
 
-var envVarPattern = regexp.MustCompile(`\$\{env:([^}]+)\}`)
+type Credentials struct {
+	Username string
+	APIToken string
+}
 
 func ConfigDir() (string, error) {
 	home, err := os.UserHomeDir()
@@ -40,50 +41,49 @@ func ConfigPath() (string, error) {
 	return filepath.Join(dir, "config.toml"), nil
 }
 
+func CredentialsPath() (string, error) {
+	dir, err := ConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "credentials.toml"), nil
+}
+
 func Load() (*Config, error) {
 	configDir, err := ConfigDir()
 	if err != nil {
 		return nil, err
 	}
 
-	viper.SetConfigName("config")
-	viper.SetConfigType("toml")
-	viper.AddConfigPath(configDir)
+	v := viper.New()
+	v.SetConfigName("config")
+	v.SetConfigType("toml")
+	v.AddConfigPath(configDir)
 
-	if err := viper.ReadInConfig(); err != nil {
+	if err := v.ReadInConfig(); err != nil {
 		var configFileNotFoundError viper.ConfigFileNotFoundError
 		if errors.As(err, &configFileNotFoundError) {
-			return &Config{}, nil
+			return configWithEnv(&Config{}), nil
 		}
 		return nil, fmt.Errorf("failed to read config: %w", err)
 	}
 
 	var cfg Config
-	if err := viper.Unmarshal(&cfg); err != nil {
+	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
-	cfg.AppPassword, err = expandEnvVar(cfg.AppPassword)
-	if err != nil {
-		return nil, err
-	}
-
-	return &cfg, nil
+	return configWithEnv(&cfg), nil
 }
 
-func expandEnvVar(value string) (string, error) {
-	matches := envVarPattern.FindStringSubmatch(value)
-	if matches == nil {
-		return value, nil
+func configWithEnv(cfg *Config) *Config {
+	if workspace := os.Getenv("ATLAS_WORKSPACE"); workspace != "" {
+		cfg.Workspace = workspace
 	}
-
-	varName := matches[1]
-	envValue := os.Getenv(varName)
-	if envValue == "" {
-		return "", fmt.Errorf("%w: %s", ErrMissingEnvVar, varName)
+	if username := os.Getenv("ATLAS_USERNAME"); username != "" {
+		cfg.Username = username
 	}
-
-	return envVarPattern.ReplaceAllString(value, envValue), nil
+	return cfg
 }
 
 func Get(key string) (string, error) {
@@ -92,11 +92,12 @@ func Get(key string) (string, error) {
 		return "", err
 	}
 
-	viper.SetConfigName("config")
-	viper.SetConfigType("toml")
-	viper.AddConfigPath(configDir)
+	v := viper.New()
+	v.SetConfigName("config")
+	v.SetConfigType("toml")
+	v.AddConfigPath(configDir)
 
-	if err := viper.ReadInConfig(); err != nil {
+	if err := v.ReadInConfig(); err != nil {
 		var configFileNotFoundError viper.ConfigFileNotFoundError
 		if errors.As(err, &configFileNotFoundError) {
 			return "", nil
@@ -104,30 +105,29 @@ func Get(key string) (string, error) {
 		return "", fmt.Errorf("failed to read config: %w", err)
 	}
 
-	return viper.GetString(key), nil
+	return v.GetString(key), nil
 }
 
-func GetRaw(key string) (string, bool, error) {
+func GetRaw(key string) (string, error) {
 	configDir, err := ConfigDir()
 	if err != nil {
-		return "", false, err
+		return "", err
 	}
 
-	viper.SetConfigName("config")
-	viper.SetConfigType("toml")
-	viper.AddConfigPath(configDir)
+	v := viper.New()
+	v.SetConfigName("config")
+	v.SetConfigType("toml")
+	v.AddConfigPath(configDir)
 
-	if err := viper.ReadInConfig(); err != nil {
+	if err := v.ReadInConfig(); err != nil {
 		var configFileNotFoundError viper.ConfigFileNotFoundError
 		if errors.As(err, &configFileNotFoundError) {
-			return "", false, nil
+			return "", nil
 		}
-		return "", false, fmt.Errorf("failed to read config: %w", err)
+		return "", fmt.Errorf("failed to read config: %w", err)
 	}
 
-	value := viper.GetString(key)
-	hasEnvRef := envVarPattern.MatchString(value)
-	return value, hasEnvRef, nil
+	return v.GetString(key), nil
 }
 
 func Set(key, value string) error {
@@ -159,12 +159,65 @@ func Set(key, value string) error {
 	return nil
 }
 
-func IsEnvReference(value string) bool {
-	return envVarPattern.MatchString(value)
+func LoadCredentials() (*Credentials, error) {
+	cfg, err := Load()
+	if err != nil {
+		return nil, err
+	}
+
+	creds := &Credentials{Username: cfg.Username}
+	if token := os.Getenv("ATLAS_API_TOKEN"); token != "" {
+		creds.APIToken = token
+		return creds, nil
+	}
+
+	credentialsPath, err := CredentialsPath()
+	if err != nil {
+		return nil, err
+	}
+
+	v := viper.New()
+	v.SetConfigFile(credentialsPath)
+	v.SetConfigType("toml")
+	if err := v.ReadInConfig(); err != nil {
+		var configFileNotFoundError viper.ConfigFileNotFoundError
+		if errors.As(err, &configFileNotFoundError) || os.IsNotExist(err) {
+			return creds, nil
+		}
+		return nil, fmt.Errorf("failed to read credentials: %w", err)
+	}
+
+	creds.APIToken = v.GetString("api_token")
+	return creds, nil
+}
+
+func SaveAPIToken(token string) error {
+	credentialsPath, err := CredentialsPath()
+	if err != nil {
+		return err
+	}
+
+	configDir := filepath.Dir(credentialsPath)
+	if err := os.MkdirAll(configDir, 0700); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+	if err := os.Chmod(configDir, 0700); err != nil {
+		return fmt.Errorf("failed to set config directory permissions: %w", err)
+	}
+
+	data := []byte(fmt.Sprintf("api_token = %q\n", token))
+	if err := os.WriteFile(credentialsPath, data, 0600); err != nil {
+		return fmt.Errorf("failed to write credentials: %w", err)
+	}
+	if err := os.Chmod(credentialsPath, 0600); err != nil {
+		return fmt.Errorf("failed to set credentials permissions: %w", err)
+	}
+
+	return nil
 }
 
 func ValidKeys() []string {
-	return []string{"workspace", "username", "app_password"}
+	return []string{"workspace", "username"}
 }
 
 func IsValidKey(key string) bool {

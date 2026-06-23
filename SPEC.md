@@ -8,11 +8,11 @@ Atlas enables fetching PR comments and review feedback from Bitbucket Cloud in a
 
 ## Authentication
 
-- **Method**: Bitbucket App Password
-- **Storage**: Config file only (`~/.config/atlas/config.toml`)
-- **Secret handling**: Use `${env:VAR_NAME}` syntax in config for sensitive values
-- **Supported env expansion**: Only `app_password` field supports `${env:}` syntax
-- **Validation**: Env vars referenced via `${env:}` are validated eagerly on startup
+- **Method**: Bitbucket API token
+- **Config storage**: `~/.config/atlas/config.toml`
+- **Credential storage**: `~/.config/atlas/credentials.toml`
+- **Environment overrides**: `ATLAS_WORKSPACE`, `ATLAS_USERNAME`, `ATLAS_API_TOKEN`
+- **Credential precedence**: `ATLAS_API_TOKEN`, then saved credentials
 
 ## Configuration
 
@@ -23,25 +23,22 @@ Location: `~/.config/atlas/config.toml`
 ```toml
 workspace = "mycompany"
 username = "user@example.com"
-app_password = "${env:ATLAS_API_TOKEN}"
 ```
 
 ### Config Precedence
 
 1. Command-line flags (highest)
-2. Config file with env expansion
-3. Defaults (lowest)
+2. Environment variables
+3. Config and credentials files
+4. Defaults (lowest)
 
 ### Setting Credentials
 
 ```bash
+atlas login
 atlas config set workspace mycompany
 atlas config set username user@example.com
-atlas config set app_password  # prompts interactively (hidden input)
-echo $TOKEN | atlas config set app_password  # or via stdin
 ```
-
-When storing `app_password` directly in config (not via `${env:}`), Atlas displays a security warning.
 
 ### Verifying Credentials
 
@@ -68,6 +65,7 @@ atlas pr review [<id|url|branch>] [-R <workspace/repo|repo>] (--approve|--reques
 atlas pr checkout <id|url|branch> [-R <workspace/repo|repo>] [--branch <name>] [--detach] [--force] [--recurse-submodules]
 atlas snippet list [--workspace <workspace>] [--role <role>] [--public|--private] [-L <limit>] [--json]
 atlas snippet view [<id|url>] [--filename <file>] [--files] [--raw] [--web] [--json]
+atlas login
 atlas snippet create [<file>... | -] --title <title> [--filename <file>] [--public] [--json]
 atlas snippet edit <id|url> [<filename>] [--title <title>] [--add <file>] [--remove <file>]
 atlas snippet rename <id|url> <old-filename> <new-filename>
@@ -468,12 +466,11 @@ Retry with backoff based on `--retry` flag, then fail with actionable suggestion
 **Deliverables**:
 - Cobra command structure (`root`, `pr`, `config` commands)
 - Viper config loading from `~/.config/atlas/config.toml`
-- `${env:VAR}` expansion for `app_password` field
-- Eager validation of env var references
 - `atlas config set/get` commands
+- `atlas login` command
 - `atlas config verify` command
-- Interactive password input with stdin fallback
-- Security warning when storing password directly
+- Bitbucket API token storage in `~/.config/atlas/credentials.toml`
+- `ATLAS_API_TOKEN`, `ATLAS_USERNAME`, and `ATLAS_WORKSPACE` environment overrides
 
 **Testable outcome**: `atlas config set workspace mycompany` persists to config file, `atlas config get workspace` reads it back, `atlas config verify` tests credentials.
 
@@ -501,7 +498,7 @@ Retry with backoff based on `--retry` flag, then fail with actionable suggestion
 **Goal**: HTTP client for Bitbucket Cloud REST API v2.0.
 
 **Deliverables**:
-- HTTP client with Basic Auth (username:app_password)
+- HTTP client with Basic Auth (username:api_token)
 - Base URL: `https://api.bitbucket.org/2.0`
 - Error handling with actionable hints
 - Pagination support (Bitbucket uses `next` links)
@@ -774,7 +771,6 @@ in
         {
           workspace = "mycompany";
           username = "user@example.com";
-          app_password = "\${env:ATLAS_API_TOKEN}";
         }
       '';
       description = "Configuration written to ~/.config/atlas/config.toml";
@@ -802,7 +798,6 @@ in
     settings = {
       workspace = "mycompany";
       username = "user@example.com";
-      app_password = "\${env:ATLAS_API_TOKEN}";
     };
   };
 }
