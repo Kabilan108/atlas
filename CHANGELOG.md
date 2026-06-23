@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.0 - 2026-06-23
+
+### Added
+
+- Add standalone Atlas installation through `install.sh`.
+- Add `atlas update` for self-updating standalone release binaries.
+- Publish Linux and macOS release binaries for amd64 and arm64 with checksums.
+- Add cached update nudges with `latest` and `minimum` version metadata.
+
+### Changed
+
+- Set the minimum recommended Atlas version to `0.1.0`.
+
 ## 0.0.10 - 2026-06-23
 
 ### Added
