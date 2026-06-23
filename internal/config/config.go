@@ -16,8 +16,9 @@ var (
 )
 
 type Config struct {
-	Workspace string `mapstructure:"workspace"`
-	Username  string `mapstructure:"username"`
+	Workspace   string `mapstructure:"workspace"`
+	Username    string `mapstructure:"username"`
+	Attribution bool   `mapstructure:"attribution"`
 }
 
 type Credentials struct {
@@ -59,11 +60,12 @@ func Load() (*Config, error) {
 	v.SetConfigName("config")
 	v.SetConfigType("toml")
 	v.AddConfigPath(configDir)
+	v.SetDefault("attribution", true)
 
 	if err := v.ReadInConfig(); err != nil {
 		var configFileNotFoundError viper.ConfigFileNotFoundError
 		if errors.As(err, &configFileNotFoundError) {
-			return configWithEnv(&Config{}), nil
+			return configWithEnv(&Config{Attribution: true}), nil
 		}
 		return nil, fmt.Errorf("failed to read config: %w", err)
 	}
@@ -151,7 +153,15 @@ func Set(key, value string) error {
 		}
 	}
 
-	v.Set(key, value)
+	if key == "attribution" {
+		boolValue, err := parseBoolConfigValue(value)
+		if err != nil {
+			return err
+		}
+		v.Set(key, boolValue)
+	} else {
+		v.Set(key, value)
+	}
 	if err := v.WriteConfigAs(configPath); err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
@@ -217,7 +227,7 @@ func SaveAPIToken(token string) error {
 }
 
 func ValidKeys() []string {
-	return []string{"workspace", "username"}
+	return []string{"workspace", "username", "attribution"}
 }
 
 func IsValidKey(key string) bool {
@@ -228,4 +238,15 @@ func IsValidKey(key string) bool {
 		}
 	}
 	return false
+}
+
+func parseBoolConfigValue(value string) (bool, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "true":
+		return true, nil
+	case "false":
+		return false, nil
+	default:
+		return false, fmt.Errorf("invalid attribution value %q: expected true or false", value)
+	}
 }

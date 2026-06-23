@@ -44,6 +44,20 @@ Run `atlas login` and follow the prompts to create and save a Bitbucket API toke
 Atlas always prefers `ATLAS_API_TOKEN` when it is set, then falls back to saved
 credentials from `~/.config/atlas/credentials.toml`.
 
+Atlas appends this footer to PR descriptions and comments it submits:
+
+```md
+<!-- atlas:attribution -->
+---
+Submitted via Atlas CLI.
+```
+
+Disable it per command with `--no-attribution`, or globally with:
+
+```bash
+atlas config set attribution false
+```
+
 Create the token with these scopes:
 
 ```text

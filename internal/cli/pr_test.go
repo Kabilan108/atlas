@@ -241,7 +241,7 @@ func TestNormalizePRDescriptionMarkdownSkipsInlineCardIneligibleURLs(t *testing.
 func TestBuildPRCreateInputNormalizesDescription(t *testing.T) {
 	t.Parallel()
 
-	input := buildPRCreateInput("Title", "Checklist:\n- Review\n", "feature", "main", nil)
+	input := buildPRCreateInput("Title", "Checklist:\n- Review\n", "feature", "main", nil, false)
 	want := "Checklist:\n\n- Review\n"
 
 	if input.Description != want {
@@ -255,11 +255,11 @@ func TestBuildPRCreateInputNormalizesDescription(t *testing.T) {
 func TestBuildPRDescriptionUpdate(t *testing.T) {
 	t.Parallel()
 
-	if description, changed := buildPRDescriptionUpdate("Existing description", "", false); changed || description != nil {
+	if description, changed := buildPRDescriptionUpdate("Existing description", "", false, false); changed || description != nil {
 		t.Fatalf("buildPRDescriptionUpdate() changed title-only edit: description=%#v changed=%v", description, changed)
 	}
 
-	description, changed := buildPRDescriptionUpdate("Existing description", "Checklist:\n- Review\n", true)
+	description, changed := buildPRDescriptionUpdate("Existing description", "Checklist:\n- Review\n", true, false)
 	if !changed || description == nil {
 		t.Fatalf("buildPRDescriptionUpdate() changed = %v, description = %#v", changed, description)
 	}
@@ -268,7 +268,7 @@ func TestBuildPRDescriptionUpdate(t *testing.T) {
 		t.Fatalf("description = %q, want %q", *description, want)
 	}
 
-	description, changed = buildPRDescriptionUpdate(want, "Checklist:\n- Review\n", true)
+	description, changed = buildPRDescriptionUpdate(want, "Checklist:\n- Review\n", true, false)
 	if changed || description != nil {
 		t.Fatalf("buildPRDescriptionUpdate() changed equivalent body: description=%#v changed=%v", description, changed)
 	}
@@ -434,8 +434,50 @@ func TestBuildCommentCreatesRejectsInvalidBatchBeforePosting(t *testing.T) {
 		{Body: "second", Path: "file.go", Side: "old"},
 	}
 
-	if _, err := buildCommentCreates(specs); err == nil {
+	if _, err := buildCommentCreates(specs, false); err == nil {
 		t.Fatal("buildCommentCreates() error = nil, want error")
+	}
+}
+
+func TestApplyAttribution(t *testing.T) {
+	t.Parallel()
+
+	body := "Looks good.\n"
+	want := "Looks good.\n\n" + atlasAttributionFooter
+	if got := applyAttribution(body, true); got != want {
+		t.Fatalf("applyAttribution() = %q, want %q", got, want)
+	}
+
+	if got := applyAttribution(body, false); got != body {
+		t.Fatalf("applyAttribution(disabled) = %q, want %q", got, body)
+	}
+
+	if got := applyAttribution(want, true); got != want {
+		t.Fatalf("applyAttribution() duplicated footer: %q", got)
+	}
+}
+
+func TestBuildPRCreateInputAppliesAttribution(t *testing.T) {
+	t.Parallel()
+
+	input := buildPRCreateInput("Title", "Checklist:\n- Review\n", "feature", "main", nil, true)
+	want := "Checklist:\n\n- Review\n\n" + atlasAttributionFooter
+	if input.Description != want {
+		t.Fatalf("Description = %q, want %q", input.Description, want)
+	}
+}
+
+func TestBuildCommentCreatesAppliesAttribution(t *testing.T) {
+	t.Parallel()
+
+	inputs, err := buildCommentCreates([]commentSpec{{Body: "first"}, {Body: "second"}}, true)
+	if err != nil {
+		t.Fatalf("buildCommentCreates() error = %v", err)
+	}
+	for index, input := range inputs {
+		if !strings.Contains(input.Content.Raw, atlasAttributionMarker) {
+			t.Fatalf("input %d missing attribution: %q", index, input.Content.Raw)
+		}
 	}
 }
 
