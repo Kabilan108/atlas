@@ -4,6 +4,19 @@ CLI for Bitbucket Cloud PR review workflows.
 
 ## Installation
 
+### Install Script
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kabilan108/atlas/master/install.sh | sh
+```
+
+The script installs the latest standalone release binary to `~/.local/bin/atlas`
+by default. After installing this way, update with:
+
+```bash
+atlas update
+```
+
 ### Nix Flake
 
 Add to your flake inputs:
@@ -37,6 +50,10 @@ programs.atlas = {
 ```bash
 go install github.com/kabilan108/atlas/cmd/atlas@latest
 ```
+
+`atlas update` only supports standalone release binaries installed by the install
+script or an equivalent manual download. Package-manager installs should be
+updated through the package manager.
 
 ## Configuration
 

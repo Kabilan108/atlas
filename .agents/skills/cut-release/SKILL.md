@@ -28,10 +28,14 @@ description: Cut a new Atlas CLI release. Use when asked to release Atlas, bump 
 
 4. Edit release files:
    - Update `flake.nix` with the selected version.
+   - Update `update.json` so `latest` matches the selected release version.
+   - Do not change `update.json` `minimum` unless the user explicitly requests or approves it.
+   - If `minimum` changes, call it out clearly in the release summary.
    - Format `flake.nix` with `nixfmt` or `alejandra`.
 
 5. Validate:
    - Run `CGO_ENABLED=0 go test ./...`.
+   - Confirm the update metadata validation passes: `go test ./internal/update`.
    - Run `nix flake check`.
    - If validation fails, fix the issue before committing.
 
