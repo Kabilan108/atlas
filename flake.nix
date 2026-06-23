@@ -13,7 +13,7 @@
         pkgs:
         pkgs.buildGoModule rec {
           pname = "atlas";
-          version = "0.0.9";
+          version = "0.0.10";
           src = self;
           vendorHash = "sha256-gEMzw1zfgXLlfwkSydNbZ8b4A/6FanI8tsdhSu3vhmE=";
 
