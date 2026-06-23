@@ -55,6 +55,17 @@ go install github.com/kabilan108/atlas/cmd/atlas@latest
 script or an equivalent manual download. Package-manager installs should be
 updated through the package manager.
 
+## Recommended Dependencies
+
+Atlas is distributed as a standalone binary, but some commands call external
+shell tools when they are available:
+
+| Tool | Recommended | Used for |
+|------|-------------|----------|
+| `bat` | Yes | Preferred interactive markdown and snippet viewer. |
+| `delta` | Optional | Preferred interactive PR diff viewer for normal diffs. |
+| `difft` | Optional | Structured PR diffs via `atlas pr diff --structured`; provided by difftastic. |
+
 ## Configuration
 
 Run `atlas login` and follow the prompts to create and save a Bitbucket API token.
