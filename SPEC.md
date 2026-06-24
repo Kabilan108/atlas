@@ -23,7 +23,6 @@ Location: `~/.config/atlas/config.toml`
 ```toml
 workspace = "mycompany"
 username = "user@example.com"
-attribution = true
 ```
 
 ### Config Precedence
@@ -39,18 +38,7 @@ attribution = true
 atlas login
 atlas config set workspace mycompany
 atlas config set username user@example.com
-atlas config set attribution false
 ```
-
-Atlas appends an attribution footer to PR descriptions and comments by default:
-
-```md
-<!-- atlas:attribution -->
----
-Submitted via Atlas CLI.
-```
-
-Commands that submit PR descriptions or comments accept `--no-attribution`.
 
 ### Verifying Credentials
 

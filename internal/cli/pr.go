@@ -571,7 +571,6 @@ func newPREditCmd() *cobra.Command {
 	cmd.Flags().StringP("body-file", "F", "", "Read body text from file (use - to read from stdin)")
 	cmd.Flags().String("add-reviewer", "", "Add reviewers by identifier")
 	cmd.Flags().String("remove-reviewer", "", "Remove reviewers by identifier")
-	addAttributionFlag(cmd)
 	return cmd
 }
 
@@ -616,11 +615,7 @@ func runPREdit(cmd *cobra.Command, args []string) error {
 		body = edited
 		bodyChanged = true
 	}
-	attribution, err := attributionEnabled(cmd)
-	if err != nil {
-		return err
-	}
-	if description, hasDescriptionChange := buildPRDescriptionUpdate(pr.Description, body, bodyChanged, attribution); hasDescriptionChange {
+	if description, hasDescriptionChange := buildPRDescriptionUpdate(pr.Description, body, bodyChanged); hasDescriptionChange {
 		update.Description = description
 		changed = true
 	}
@@ -653,16 +648,11 @@ func newPRCloseCmd() *cobra.Command {
 	}
 	addPRRepoFlag(cmd)
 	cmd.Flags().StringP("comment", "c", "", "Leave a closing comment")
-	addAttributionFlag(cmd)
 	return cmd
 }
 
 func runPRClose(cmd *cobra.Command, args []string) error {
 	comment, _ := cmd.Flags().GetString("comment")
-	attribution, err := attributionEnabled(cmd)
-	if err != nil {
-		return err
-	}
 	ctx, err := prCommandContext(cmd, false)
 	if err != nil {
 		return err
@@ -672,7 +662,6 @@ func runPRClose(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	if comment != "" {
-		comment = applyAttribution(comment, attribution)
 		if _, err := ctx.client.CreatePullRequestCommentText(ctx.workspace, ctx.repo, pr.ID, comment); err != nil {
 			return err
 		}
@@ -697,7 +686,6 @@ func newPRCommentCmd() *cobra.Command {
 	}
 	addPRRepoFlag(cmd)
 	addCommentBodyFlags(cmd)
-	addAttributionFlag(cmd)
 	cmd.Flags().Int("reply-to", 0, "Reply to an existing comment")
 	cmd.Flags().String("path", "", "Attach the comment to a file path")
 	cmd.Flags().Int("line", 0, "Attach the comment to a line in --path")
@@ -711,11 +699,6 @@ func runPRComment(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	attribution, err := attributionEnabled(cmd)
-	if err != nil {
-		return err
-	}
-	body = applyAttribution(body, attribution)
 	replyTo, _ := cmd.Flags().GetInt("reply-to")
 	path, _ := cmd.Flags().GetString("path")
 	line, _ := cmd.Flags().GetInt("line")
@@ -764,7 +747,6 @@ func newPRApproveCmd() *cobra.Command {
 	}
 	addPRRepoFlag(cmd)
 	addCommentBodyFlags(cmd)
-	addAttributionFlag(cmd)
 	cmd.Flags().Bool("json", false, "Output as JSON")
 	return cmd
 }
@@ -817,7 +799,6 @@ func newPRRequestChangesCmd() *cobra.Command {
 	}
 	addPRRepoFlag(cmd)
 	addCommentBodyFlags(cmd)
-	addAttributionFlag(cmd)
 	cmd.Flags().Bool("json", false, "Output as JSON")
 	return cmd
 }
@@ -870,7 +851,6 @@ func newPRReviewCmd() *cobra.Command {
 	}
 	addPRRepoFlag(cmd)
 	addCommentBodyFlags(cmd)
-	addAttributionFlag(cmd)
 	cmd.Flags().Bool("approve", false, "Finish by approving")
 	cmd.Flags().Bool("request-changes", false, "Finish by requesting changes")
 	cmd.Flags().Bool("comment", false, "Finish with comments only")
@@ -895,10 +875,6 @@ func runPRReview(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	attribution, err := attributionEnabled(cmd)
-	if err != nil {
-		return err
-	}
 	specPath, _ := cmd.Flags().GetString("comment-spec")
 	specs, err := readCommentSpecs(specPath)
 	if err != nil {
@@ -917,12 +893,11 @@ func runPRReview(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	comments, err := postCommentSpecs(ctx, pr, specs, attribution)
+	comments, err := postCommentSpecs(ctx, pr, specs)
 	if err != nil {
 		return err
 	}
 	if hasSummary {
-		body = applyAttribution(body, attribution)
 		comment, err := ctx.client.CreatePullRequestCommentText(ctx.workspace, ctx.repo, pr.ID, body)
 		if err != nil {
 			return fmt.Errorf("posted %d comments but failed to post review summary: %w", len(comments), err)
@@ -967,10 +942,6 @@ func runPRReviewAction(cmd *cobra.Command, args []string, action string) error {
 		return err
 	}
 	jsonOutput, _ := cmd.Flags().GetBool("json")
-	attribution, err := attributionEnabled(cmd)
-	if err != nil {
-		return err
-	}
 	ctx, err := prCommandContext(cmd, false)
 	if err != nil {
 		return err
@@ -980,7 +951,6 @@ func runPRReviewAction(cmd *cobra.Command, args []string, action string) error {
 		return err
 	}
 	if hasComment {
-		body = applyAttribution(body, attribution)
 		if _, err := ctx.client.CreatePullRequestCommentText(ctx.workspace, ctx.repo, pr.ID, body); err != nil {
 			return err
 		}
@@ -1031,7 +1001,6 @@ func newPRCreateCmd() *cobra.Command {
 	cmd.Flags().Bool("push", false, "Push the head branch before creating the PR")
 	cmd.Flags().Bool("dry-run", false, "Print details instead of creating the PR")
 	cmd.Flags().BoolP("web", "w", false, "Open the browser to create a pull request")
-	addAttributionFlag(cmd)
 	return cmd
 }
 
@@ -1047,10 +1016,6 @@ func runPRCreate(cmd *cobra.Command, args []string) error {
 	push, _ := cmd.Flags().GetBool("push")
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
 	webCreate, _ := cmd.Flags().GetBool("web")
-	attribution, err := attributionEnabled(cmd)
-	if err != nil {
-		return err
-	}
 	if body != "" && bodyFile != "" {
 		return fmt.Errorf("--body and --body-file cannot be used together")
 	}
@@ -1133,7 +1098,7 @@ func runPRCreate(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	input := buildPRCreateInput(title, body, head, base, reviewers, attribution)
+	input := buildPRCreateInput(title, body, head, base, reviewers)
 	if dryRun {
 		return json.NewEncoder(os.Stdout).Encode(input)
 	}
@@ -1476,10 +1441,9 @@ func readCommentSpecs(path string) ([]commentSpec, error) {
 	return specs, nil
 }
 
-func buildCommentCreates(specs []commentSpec, attribution bool) ([]bitbucket.CommentCreate, error) {
+func buildCommentCreates(specs []commentSpec) ([]bitbucket.CommentCreate, error) {
 	inputs := make([]bitbucket.CommentCreate, 0, len(specs))
 	for index, spec := range specs {
-		spec.Body = applyAttribution(spec.Body, attribution)
 		input, err := buildCommentCreate(spec)
 		if err != nil {
 			return nil, fmt.Errorf("invalid comment spec %d: %w", index+1, err)
@@ -1489,8 +1453,8 @@ func buildCommentCreates(specs []commentSpec, attribution bool) ([]bitbucket.Com
 	return inputs, nil
 }
 
-func postCommentSpecs(ctx *prContext, pr *bitbucket.PullRequest, specs []commentSpec, attribution bool) ([]bitbucket.Comment, error) {
-	inputs, err := buildCommentCreates(specs, attribution)
+func postCommentSpecs(ctx *prContext, pr *bitbucket.PullRequest, specs []commentSpec) ([]bitbucket.Comment, error) {
+	inputs, err := buildCommentCreates(specs)
 	if err != nil {
 		return nil, err
 	}
@@ -1560,53 +1524,21 @@ type markdownFence struct {
 
 const bitbucketInlineCardSuffix = "{: data-inline-card='' }"
 
-const atlasAttributionMarker = "<!-- atlas:attribution -->"
-
-const atlasAttributionFooter = atlasAttributionMarker + "\n---\nSubmitted via Atlas CLI."
-
-func addAttributionFlag(cmd *cobra.Command) {
-	cmd.Flags().Bool("no-attribution", false, "Do not append the Atlas attribution footer")
-}
-
-func attributionEnabled(cmd *cobra.Command) (bool, error) {
-	withoutAttribution, _ := cmd.Flags().GetBool("no-attribution")
-	if withoutAttribution {
-		return false, nil
-	}
-	cfg, err := config.Load()
-	if err != nil {
-		return false, err
-	}
-	return cfg.Attribution, nil
-}
-
-func applyAttribution(body string, enabled bool) string {
-	if !enabled || strings.Contains(body, atlasAttributionMarker) {
-		return body
-	}
-
-	trimmed := strings.TrimRight(body, " \t\r\n")
-	if trimmed == "" {
-		return atlasAttributionFooter
-	}
-	return trimmed + "\n\n" + atlasAttributionFooter
-}
-
-func buildPRCreateInput(title, body, head, base string, reviewers []bitbucket.User, attribution bool) bitbucket.PullRequestCreate {
+func buildPRCreateInput(title, body, head, base string, reviewers []bitbucket.User) bitbucket.PullRequestCreate {
 	return bitbucket.PullRequestCreate{
 		Title:       title,
-		Description: applyAttribution(normalizePRDescriptionMarkdown(body), attribution),
+		Description: normalizePRDescriptionMarkdown(body),
 		Source:      bitbucket.PullRequestRefInput{Branch: bitbucket.Branch{Name: head}},
 		Destination: bitbucket.PullRequestRefInput{Branch: bitbucket.Branch{Name: base}},
 		Reviewers:   reviewers,
 	}
 }
 
-func buildPRDescriptionUpdate(current, body string, bodyChanged bool, attribution bool) (*string, bool) {
+func buildPRDescriptionUpdate(current, body string, bodyChanged bool) (*string, bool) {
 	if !bodyChanged {
 		return nil, false
 	}
-	normalized := applyAttribution(normalizePRDescriptionMarkdown(body), attribution)
+	normalized := normalizePRDescriptionMarkdown(body)
 	if normalized == current {
 		return nil, false
 	}

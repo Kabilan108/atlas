@@ -32,51 +32,6 @@ func TestLoadAppliesAtlasEnvOverrides(t *testing.T) {
 	}
 }
 
-func TestLoadDefaultsAttributionToTrue(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("ATLAS_API_TOKEN", "")
-	t.Setenv("ATLAS_USERNAME", "")
-	t.Setenv("ATLAS_WORKSPACE", "")
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	if !cfg.Attribution {
-		t.Fatal("Attribution = false, want true")
-	}
-}
-
-func TestSetAttributionStoresBoolean(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("ATLAS_API_TOKEN", "")
-	t.Setenv("ATLAS_USERNAME", "")
-	t.Setenv("ATLAS_WORKSPACE", "")
-
-	if err := Set("attribution", "false"); err != nil {
-		t.Fatalf("Set(attribution) error = %v", err)
-	}
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	if cfg.Attribution {
-		t.Fatal("Attribution = true, want false")
-	}
-}
-
-func TestSetAttributionRejectsInvalidValue(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-
-	if err := Set("attribution", "sometimes"); err == nil {
-		t.Fatal("Set(attribution) error = nil, want error")
-	}
-}
-
 func TestLoadCredentialsPrefersAtlasAPIToken(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

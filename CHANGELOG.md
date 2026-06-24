@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.1 - 2026-06-24
+
+### Changed
+
+- Stop appending Atlas attribution footers to submitted PR descriptions and comments.
+- Remove the `--no-attribution` flags and `attribution` config key.
+
 ## 0.1.0 - 2026-06-23
 
 ### Added
@@ -19,7 +26,6 @@
 
 - Add `atlas login` for Bitbucket API token setup, verification, and secure local token storage.
 - Support `ATLAS_API_TOKEN`, `ATLAS_USERNAME`, and `ATLAS_WORKSPACE` environment overrides.
-- Append a marked `Submitted via Atlas CLI.` footer to PR descriptions and comments submitted by Atlas, with `--no-attribution` and `attribution = false` opt-outs.
 
 ### Changed
 

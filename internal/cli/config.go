@@ -29,15 +29,14 @@ func newConfigSetCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "set <key> [value]",
 		Short: "Set a configuration value",
-		Long: `Set a configuration value. Valid keys: workspace, username, attribution.
+		Long: `Set a configuration value. Valid keys: workspace, username.
 
 If no value is provided, you will be prompted to enter it interactively. You can also
 pipe the value via stdin.
 
 Examples:
   atlas config set workspace mycompany
-  atlas config set username user@example.com
-  atlas config set attribution false`,
+  atlas config set username user@example.com`,
 		Args: cobra.RangeArgs(1, 2),
 		RunE: runConfigSet,
 	}
@@ -102,7 +101,7 @@ func newConfigGetCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "get <key>",
 		Short: "Get a configuration value",
-		Long:  `Get a configuration value. Valid keys: workspace, username, attribution.`,
+		Long:  `Get a configuration value. Valid keys: workspace, username.`,
 		Args:  cobra.ExactArgs(1),
 		RunE:  runConfigGet,
 	}
