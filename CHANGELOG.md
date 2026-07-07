@@ -1,11 +1,15 @@
 # Changelog
 
-## 0.1.1 - 2026-06-24
+## 0.1.1 - 2026-07-07
 
 ### Changed
 
 - Stop appending Atlas attribution footers to submitted PR descriptions and comments.
 - Remove the `--no-attribution` flags and `attribution` config key.
+
+### Fixed
+
+- Point authentication errors to `atlas login` when credentials need setup.
 
 ## 0.1.0 - 2026-06-23
 

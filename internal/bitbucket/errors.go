@@ -72,7 +72,7 @@ func NewAuthError(statusCode int, message string) *APIError {
 		StatusCode: statusCode,
 		Message:    message,
 		Resource:   "authentication",
-		Hint:       "Run 'atlas config verify' to check your credentials",
+		Hint:       "Run 'atlas config verify' to check your credentials, or 'atlas login' to set them up",
 	}
 }
 
