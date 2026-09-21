@@ -13,7 +13,7 @@
         pkgs:
         pkgs.buildGoModule rec {
           pname = "atlas";
-          version = "0.1.2";
+          version = "0.1.3";
           src = self;
           vendorHash = "sha256-gEMzw1zfgXLlfwkSydNbZ8b4A/6FanI8tsdhSu3vhmE=";
 
@@ -42,7 +42,8 @@
           '';
 
           doCheck = true;
-          checkPhase = "make test";
+          checkPhase = "make test VERSION=${version}";
+          nativeCheckInputs = [ pkgs.git ];
 
           env.CGO_ENABLED = 0;
 

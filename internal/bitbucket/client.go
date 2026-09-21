@@ -8,6 +8,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -456,6 +457,8 @@ func (c *Client) CreatePullRequest(workspace, repo string, input PullRequestCrea
 		return nil, err
 	}
 
+	c.invalidatePRCache()
+
 	var pr PullRequest
 	if err := json.Unmarshal(data, &pr); err != nil {
 		return nil, fmt.Errorf("failed to parse pull request response: %w", err)
@@ -470,6 +473,8 @@ func (c *Client) UpdatePullRequest(workspace, repo string, id int, update PullRe
 	if err != nil {
 		return nil, err
 	}
+
+	c.invalidatePRCache()
 
 	var pr PullRequest
 	if err := json.Unmarshal(data, &pr); err != nil {
@@ -845,4 +850,16 @@ func (c *Client) DeleteSnippet(workspace, id string) error {
 	}
 
 	return checkResponse(resp, body)
+}
+
+// PR reads include detail, filtered lists, and branch lookups. Clear all cached
+// responses because the disk keys are hashes and cannot be matched by URL prefix.
+// This also applies to writes made with --no-cache.
+func (c *Client) invalidatePRCache() {
+	if c.cache == nil {
+		return
+	}
+	if err := c.cache.Clear(); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: pull request saved, but failed to invalidate cache: %v; use --no-cache for fresh reads\n", err)
+	}
 }

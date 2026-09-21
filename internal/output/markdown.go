@@ -124,6 +124,7 @@ func (m *PRMarkdownWriter) writeFrontmatter(pr *bitbucket.PullRequest) {
 	}
 	fmt.Fprintf(m.w, "title: %s\n", yamlString(pr.Title))
 	fmt.Fprintf(m.w, "state: %s\n", yamlString(pr.State))
+	fmt.Fprintf(m.w, "draft: %t\n", pr.Draft)
 	fmt.Fprintln(m.w, "author:")
 	fmt.Fprintf(m.w, "  name: %s\n", yamlString(pr.Author.Handle()))
 	fmt.Fprintf(m.w, "  mention: %s\n", yamlString(rawUserMention(pr.Author)))

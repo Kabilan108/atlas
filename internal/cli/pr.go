@@ -242,7 +242,7 @@ func printPRTable(prs []bitbucket.PullRequest) error {
 			stylePRID(pr.ID),
 			output.Truncate(pr.Title, 50),
 			pr.Author.DisplayName,
-			styleState(pr.State),
+			stylePRState(pr),
 			output.FormatRelativeTime(pr.UpdatedOn),
 		}
 		if hasComments {
@@ -571,6 +571,9 @@ func newPREditCmd() *cobra.Command {
 	cmd.Flags().StringP("body-file", "F", "", "Read body text from file (use - to read from stdin)")
 	cmd.Flags().String("add-reviewer", "", "Add reviewers by identifier")
 	cmd.Flags().String("remove-reviewer", "", "Remove reviewers by identifier")
+	cmd.Flags().Bool("draft", false, "Mark the pull request as draft")
+	cmd.Flags().Bool("ready", false, "Mark the pull request as ready for review")
+	cmd.MarkFlagsMutuallyExclusive("draft", "ready")
 	return cmd
 }
 
@@ -594,6 +597,16 @@ func runPREdit(cmd *cobra.Command, args []string) error {
 
 	update := bitbucket.PullRequestUpdate{}
 	changed := false
+	draftChanged := cmd.Flags().Changed("draft") || cmd.Flags().Changed("ready")
+	if draftChanged {
+		draft, _ := cmd.Flags().GetBool("draft")
+		if cmd.Flags().Changed("ready") {
+			ready, _ := cmd.Flags().GetBool("ready")
+			draft = !ready
+		}
+		update.Draft = &draft
+		changed = true
+	}
 	bodyChanged := cmd.Flags().Changed("body")
 	if title != "" && title != pr.Title {
 		update.Title = &title
@@ -607,7 +620,7 @@ func runPREdit(cmd *cobra.Command, args []string) error {
 		body = string(bodyBytes)
 		bodyChanged = true
 	}
-	if !bodyChanged && shouldEditBodyInEditor(title, body, bodyFile, addReviewers, removeReviewers) {
+	if !bodyChanged && !draftChanged && shouldEditBodyInEditor(title, body, bodyFile, addReviewers, removeReviewers) {
 		edited, err := editTextInEditor(pr.Description)
 		if err != nil {
 			return err
@@ -1000,6 +1013,7 @@ func newPRCreateCmd() *cobra.Command {
 	cmd.Flags().StringP("reviewer", "r", "", "Request reviews from people by identifier")
 	cmd.Flags().Bool("push", false, "Push the head branch before creating the PR")
 	cmd.Flags().Bool("dry-run", false, "Print details instead of creating the PR")
+	cmd.Flags().Bool("draft", false, "Create the pull request as draft")
 	cmd.Flags().BoolP("web", "w", false, "Open the browser to create a pull request")
 	return cmd
 }
@@ -1016,6 +1030,10 @@ func runPRCreate(cmd *cobra.Command, args []string) error {
 	push, _ := cmd.Flags().GetBool("push")
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
 	webCreate, _ := cmd.Flags().GetBool("web")
+	draft, _ := cmd.Flags().GetBool("draft")
+	if webCreate && draft {
+		return fmt.Errorf("--draft cannot be used with --web; create the draft through the API without --web")
+	}
 	if body != "" && bodyFile != "" {
 		return fmt.Errorf("--body and --body-file cannot be used together")
 	}
@@ -1099,6 +1117,7 @@ func runPRCreate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	input := buildPRCreateInput(title, body, head, base, reviewers)
+	input.Draft = draft
 	if dryRun {
 		return json.NewEncoder(os.Stdout).Encode(input)
 	}
@@ -1936,6 +1955,14 @@ func styleMuted(value string) string {
 
 func stylePRID(id int) string {
 	return ansiStyle("36", fmt.Sprintf("#%d", id))
+}
+
+func stylePRState(pr bitbucket.PullRequest) string {
+	state := styleState(pr.State)
+	if pr.Draft {
+		state += " (DRAFT)"
+	}
+	return state
 }
 
 func styleState(state string) string {

@@ -51,10 +51,10 @@ atlas config verify  # calls /user endpoint to verify auth works
 ```
 atlas pr list [-R <workspace/repo|repo>] [--all] [--state <state>] [--author <author>] [--reviewer <reviewer>] [--json]
 atlas pr status [-R <workspace/repo|repo>] [--json]
-atlas pr create [-R <workspace/repo|repo>] [--base <branch>] [--head <branch>] --title <title> [--body <body>|--body-file <file>|--editor] [--reviewer <id>] [--push] [--dry-run] [--web]
+atlas pr create [-R <workspace/repo|repo>] [--base <branch>] [--head <branch>] --title <title> [--body <body>|--body-file <file>|--editor] [--reviewer <id>] [--push] [--draft] [--dry-run] [--web]
 atlas pr view [<id|url|branch>] [-R <workspace/repo|repo>] [--comments] [--all] [--json] [--raw] [--web]
 atlas pr diff [<id|url|branch>] [-R <workspace/repo|repo>] [--name-only] [--patch] [-s|--structured]
-atlas pr edit [<id|url|branch>] [-R <workspace/repo|repo>] [--title <title>] [--body <body>|--body-file <file>] [--add-reviewer <id>] [--remove-reviewer <id>]
+atlas pr edit [<id|url|branch>] [-R <workspace/repo|repo>] [--title <title>] [--body <body>|--body-file <file>] [--add-reviewer <id>] [--remove-reviewer <id>] [--draft|--ready]
 atlas pr close <id|url|branch> [-R <workspace/repo|repo>] [--comment <text>]
 atlas pr comment [<id|url|branch>] [-R <workspace/repo|repo>] (--body <text>|--body-file <file>|--editor) [--reply-to <id>] [--path <path>] [--line <line>] [--side new|old] [--json]
 atlas pr approve [<id|url|branch>] [-R <workspace/repo|repo>] [--body <text>|--body-file <file>|--editor] [--json]
@@ -107,6 +107,7 @@ PR commands accept branch names in addition to numeric IDs:
 - Location: XDG cache directory
 - TTL: 5 minutes (uniform for all data types)
 - Bypass: `--no-cache` global flag
+- Successful PR creation and edits clear the disk response cache, including writes made with `--no-cache`. Cache cleanup failures warn on stderr without reporting the completed write as failed.
 - No user-facing cache management commands (internal implementation detail)
 
 ### Rate Limiting
@@ -282,6 +283,8 @@ Status only (no attribution for who completed).
 - Uses the repository main branch as `--base` by default
 - Fails if the head branch is not pushed unless `--push` is passed
 - Supports `--body`, `--body-file`, `--reviewer`, `--dry-run`, and `--web`
+- `--draft` creates a draft PR and is included in `--dry-run` output; it cannot be combined with `--web`
+- PR lists mark drafts as `OPEN (DRAFT)`. List and view JSON expose `draft: true|false`; view markdown includes the same boolean in frontmatter.
 - `-e, --editor` opens `$EDITOR`, then `nvim`, then `vi` to write the PR body
 
 ---
@@ -304,7 +307,9 @@ Status only (no attribution for who completed).
 - `--title` updates the title
 - `--body` sets the body directly
 - `--body-file` reads the body from a file or stdin with `-`
-- If neither body flag is passed, Atlas opens the existing PR body in `$EDITOR`, then `nvim`, then `vi`
+- With no explicit edits, Atlas opens the existing PR body in `$EDITOR`, then `nvim`, then `vi`
+- `--draft` marks the PR as draft; `--ready` marks it ready for review. The flags are mutually exclusive and do not open the editor. Explicit `--draft=false` marks ready, and `--ready=false` marks draft.
+- Explicit draft state is always sent to the API so stale cached state cannot suppress the requested change.
 - `--add-reviewer` and `--remove-reviewer` update reviewers without replacing unrelated reviewers
 
 ---

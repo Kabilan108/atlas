@@ -100,6 +100,7 @@ type PullRequest struct {
 	Title        string           `json:"title"`
 	Description  string           `json:"description"`
 	State        string           `json:"state"`
+	Draft        bool             `json:"draft"`
 	Author       User             `json:"author"`
 	Source       PullRequestRef   `json:"source"`
 	Destination  PullRequestRef   `json:"destination"`
@@ -135,6 +136,7 @@ type RepositoryInput struct {
 }
 
 type PullRequestCreate struct {
+	Draft       bool                `json:"draft,omitempty"`
 	Title       string              `json:"title"`
 	Description string              `json:"description,omitempty"`
 	Source      PullRequestRefInput `json:"source"`
@@ -143,6 +145,7 @@ type PullRequestCreate struct {
 }
 
 type PullRequestUpdate struct {
+	Draft       *bool   `json:"draft,omitempty"`
 	Title       *string `json:"title,omitempty"`
 	Description *string `json:"description,omitempty"`
 	Reviewers   *[]User `json:"reviewers,omitempty"`

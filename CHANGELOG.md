@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.3 - 2026-09-20
+
+### Added
+
+- Create draft pull requests with `atlas pr create --draft`, and toggle existing PRs with `atlas pr edit --draft` or `--ready`.
+- Show draft state in PR list and view output, including JSON.
+
+### Fixed
+
+- Invalidate cached reads after creating or editing a PR so subsequent views, lists, and branch lookups reflect the write, including writes made with `--no-cache`.
+
 ## 0.1.2 - 2026-07-07
 
 ### Fixed
