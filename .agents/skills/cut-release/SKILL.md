@@ -11,11 +11,11 @@ description: Cut a new Atlas CLI release. Use when asked to release Atlas, bump 
    - `git status --short --branch`
    - `git tag --list 'v*' --sort=-v:refname`
    - `git log --oneline --decorate -20`
-   - `sed -n '1,220p' flake.nix`
+   - `sed -n '1,60p' nix/package.nix`
 
 2. Choose the release version:
-   - Treat `flake.nix` `version = "...";` as the package version.
-   - If `flake.nix` is already ahead of the latest tag, release that version only when it has not already been tagged.
+   - Treat `nix/package.nix` `version = "...";` as the package version.
+   - If `nix/package.nix` is already ahead of the latest tag, release that version only when it has not already been tagged.
    - Otherwise bump the patch version unless the user explicitly requested a minor/major release.
    - Use a `vX.Y.Z` git tag for version `X.Y.Z`.
 
@@ -27,11 +27,11 @@ description: Cut a new Atlas CLI release. Use when asked to release Atlas, bump 
    - Update `SPEC.md` only for behavior or CLI contract changes.
 
 4. Edit release files:
-   - Update `flake.nix` with the selected version.
+   - Update `nix/package.nix` with the selected version.
    - Update `update.json` so `latest` matches the selected release version.
    - Do not change `update.json` `minimum` unless the user explicitly requests or approves it.
    - If `minimum` changes, call it out clearly in the release summary.
-   - Format `flake.nix` with `nixfmt` or `alejandra`.
+   - Format `nix/package.nix` with `nixfmt` or `alejandra`.
 
 5. Validate:
    - Run `CGO_ENABLED=0 go test ./...`.
@@ -47,7 +47,7 @@ description: Cut a new Atlas CLI release. Use when asked to release Atlas, bump 
 7. Push the branch:
    - Do not create or push the release tag locally.
    - Push only the current branch: `git push origin <branch>`.
-   - The repo's `Release on Version Change` GitHub Actions workflow detects the `flake.nix` version bump, creates the `vX.Y.Z` tag, and publishes the GitHub Release.
+   - The repo's `Release on Version Change` GitHub Actions workflow detects the package version bump (`nix eval .#default.version`), creates the `vX.Y.Z` tag, and publishes the GitHub Release.
    - Finish with the release commit hash, pushed branch, expected tag, and validation commands.
 
 ## Project Notes

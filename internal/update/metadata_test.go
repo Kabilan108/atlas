@@ -29,7 +29,7 @@ func TestDecodeMetadataRejectsMinimumNewerThanLatest(t *testing.T) {
 	}
 }
 
-func TestUpdateMetadataMatchesFlakeVersion(t *testing.T) {
+func TestUpdateMetadataMatchesPackageVersion(t *testing.T) {
 	t.Parallel()
 
 	metadataData, err := os.ReadFile("../../update.json")
@@ -41,18 +41,18 @@ func TestUpdateMetadataMatchesFlakeVersion(t *testing.T) {
 		t.Fatalf("DecodeMetadata(update.json) error = %v", err)
 	}
 
-	flakeData, err := os.ReadFile("../../flake.nix")
+	packageData, err := os.ReadFile("../../nix/package.nix")
 	if err != nil {
-		t.Fatalf("read flake.nix: %v", err)
+		t.Fatalf("read nix/package.nix: %v", err)
 	}
 	re := regexp.MustCompile(`version = "([^"]+)"`)
-	matches := re.FindSubmatch(flakeData)
+	matches := re.FindSubmatch(packageData)
 	if len(matches) != 2 {
-		t.Fatal("flake.nix version not found")
+		t.Fatal("nix/package.nix version not found")
 	}
 
-	flakeVersion := string(matches[1])
-	if metadata.Latest != flakeVersion {
-		t.Fatalf("update.json latest = %s, want flake version %s", metadata.Latest, flakeVersion)
+	packageVersion := string(matches[1])
+	if metadata.Latest != packageVersion {
+		t.Fatalf("update.json latest = %s, want package version %s", metadata.Latest, packageVersion)
 	}
 }
