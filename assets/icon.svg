@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 384" width="384" height="384" role="img" aria-labelledby="title">
+  <title id="title">Atlas merge mark</title>
+  <g fill="#111111">
+    <path d="M160 32h64l136 280-56 28L192 92 80 340l-56-28Z"/>
+    <path d="M40 316h64l88-88 88 88h64" fill="none" stroke="#111111" stroke-width="48" stroke-linejoin="miter"/>
+    <circle cx="40" cy="316" r="32"/>
+    <circle cx="192" cy="196" r="30"/>
+    <circle cx="344" cy="316" r="32"/>
+  </g>
+</svg>

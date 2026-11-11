@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.svg">
+    <img src="assets/logo.svg" alt="Atlas" width="400">
+  </picture>
+</p>
+
 # Atlas
 
 CLI for Bitbucket Cloud PR review workflows.
