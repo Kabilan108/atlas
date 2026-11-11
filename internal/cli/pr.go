@@ -67,38 +67,50 @@ func addPRRepoFlag(cmd *cobra.Command) {
 }
 
 func prCommandContext(cmd *cobra.Command, allowAll bool) (*prContext, error) {
+	return prContextForRef(cmd, prRef{}, allowAll)
+}
+
+// prContextForRef binds the context to the repository named by ref when it has
+// one (a PR URL), skipping -R and git inference; otherwise it uses -R, config,
+// and the local checkout.
+func prContextForRef(cmd *cobra.Command, ref prRef, allowAll bool) (*prContext, error) {
 	cfg, err := config.Load()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 
-	repoFlag, _ := cmd.Flags().GetString("repo")
 	workspace := cfg.Workspace
 	repo := ""
-	if repoFlag != "" {
-		parts := strings.Split(repoFlag, "/")
-		switch len(parts) {
-		case 1:
-			repo = parts[0]
-		case 2:
-			workspace = parts[0]
-			repo = parts[1]
-		default:
-			return nil, fmt.Errorf("invalid repository %q: expected repo or workspace/repo", repoFlag)
+	if ref.workspace != "" && ref.repo != "" {
+		workspace = ref.workspace
+		repo = ref.repo
+	} else {
+		repoFlag, _ := cmd.Flags().GetString("repo")
+		if repoFlag != "" {
+			parts := strings.Split(repoFlag, "/")
+			switch len(parts) {
+			case 1:
+				repo = parts[0]
+			case 2:
+				workspace = parts[0]
+				repo = parts[1]
+			default:
+				return nil, fmt.Errorf("invalid repository %q: expected repo or workspace/repo", repoFlag)
+			}
 		}
-	}
 
-	if repo == "" && !allowAll {
-		inferredWS, inferredRepo, err := git.InferRepository()
-		if err != nil {
-			return nil, fmt.Errorf("could not infer repository: %w\nUse -R to specify", err)
-		}
-		if workspace == "" {
-			workspace = inferredWS
-		}
-		repo = inferredRepo
-		if verbose {
-			fmt.Fprintf(os.Stderr, "Using repository: %s/%s\n", workspace, repo)
+		if repo == "" && !allowAll {
+			inferredWS, inferredRepo, err := git.InferRepository()
+			if err != nil {
+				return nil, fmt.Errorf("could not infer repository: %w\nUse -R to specify", err)
+			}
+			if workspace == "" {
+				workspace = inferredWS
+			}
+			repo = inferredRepo
+			if verbose {
+				fmt.Fprintf(os.Stderr, "Using repository: %s/%s\n", workspace, repo)
+			}
 		}
 	}
 
@@ -114,36 +126,43 @@ func prCommandContext(cmd *cobra.Command, allowAll bool) (*prContext, error) {
 	return &prContext{workspace: workspace, repo: repo, client: client}, nil
 }
 
-func resolvePR(ctx *prContext, selector string, allowCurrentBranch bool) (*bitbucket.PullRequest, error) {
+// resolvePR returns the selected pull request together with a context bound to
+// the repository it was fetched from. Every later API call for that pull
+// request must use the returned context.
+func resolvePR(cmd *cobra.Command, selector string, allowCurrentBranch bool) (*prContext, *bitbucket.PullRequest, error) {
 	ref, err := parsePRRef(selector)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	workspace := ctx.workspace
-	repo := ctx.repo
-	if ref.workspace != "" {
-		workspace = ref.workspace
+	ctx, err := prContextForRef(cmd, ref, false)
+	if err != nil {
+		return nil, nil, err
 	}
-	if ref.repo != "" {
-		repo = ref.repo
-	}
-	if repo == "" {
-		return nil, fmt.Errorf("repository is required. Use -R workspace/repo")
+	if ctx.repo == "" {
+		return nil, nil, fmt.Errorf("repository is required. Use -R workspace/repo")
 	}
 	if ref.id > 0 {
-		return ctx.client.GetPullRequest(workspace, repo, ref.id)
+		pr, err := ctx.client.GetPullRequest(ctx.workspace, ctx.repo, ref.id)
+		if err != nil {
+			return nil, nil, err
+		}
+		return ctx, pr, nil
 	}
 	branch := ref.branch
 	if branch == "" {
 		if !allowCurrentBranch {
-			return nil, fmt.Errorf("pull request selector is required")
+			return nil, nil, fmt.Errorf("pull request selector is required")
 		}
 		branch, err = git.CurrentBranch()
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
-	return ctx.client.FindPullRequestByBranch(workspace, repo, branch)
+	pr, err := ctx.client.FindPullRequestByBranch(ctx.workspace, ctx.repo, branch)
+	if err != nil {
+		return nil, nil, err
+	}
+	return ctx, pr, nil
 }
 
 func parsePRRef(selector string) (prRef, error) {
@@ -290,11 +309,7 @@ func runPRView(cmd *cobra.Command, args []string) error {
 	jsonOutput, _ := cmd.Flags().GetBool("json")
 	rawOutput, _ := cmd.Flags().GetBool("raw")
 	webOutput, _ := cmd.Flags().GetBool("web")
-	ctx, err := prCommandContext(cmd, false)
-	if err != nil {
-		return err
-	}
-	pr, err := resolvePR(ctx, optionalArg(args), true)
+	ctx, pr, err := resolvePR(cmd, optionalArg(args), true)
 	if err != nil {
 		return err
 	}
@@ -422,11 +437,7 @@ func runPRDiff(cmd *cobra.Command, args []string) error {
 	patch, _ := cmd.Flags().GetBool("patch")
 	structured, _ := cmd.Flags().GetBool("structured")
 	color, _ := cmd.Flags().GetString("color")
-	ctx, err := prCommandContext(cmd, false)
-	if err != nil {
-		return err
-	}
-	pr, err := resolvePR(ctx, optionalArg(args), true)
+	ctx, pr, err := resolvePR(cmd, optionalArg(args), true)
 	if err != nil {
 		return err
 	}
@@ -586,11 +597,7 @@ func runPREdit(cmd *cobra.Command, args []string) error {
 	if body != "" && bodyFile != "" {
 		return fmt.Errorf("--body and --body-file cannot be used together")
 	}
-	ctx, err := prCommandContext(cmd, false)
-	if err != nil {
-		return err
-	}
-	pr, err := resolvePR(ctx, optionalArg(args), true)
+	ctx, pr, err := resolvePR(cmd, optionalArg(args), true)
 	if err != nil {
 		return err
 	}
@@ -666,11 +673,7 @@ func newPRCloseCmd() *cobra.Command {
 
 func runPRClose(cmd *cobra.Command, args []string) error {
 	comment, _ := cmd.Flags().GetString("comment")
-	ctx, err := prCommandContext(cmd, false)
-	if err != nil {
-		return err
-	}
-	pr, err := resolvePR(ctx, args[0], false)
+	ctx, pr, err := resolvePR(cmd, args[0], false)
 	if err != nil {
 		return err
 	}
@@ -732,11 +735,7 @@ func runPRComment(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	ctx, err := prCommandContext(cmd, false)
-	if err != nil {
-		return err
-	}
-	pr, err := resolvePR(ctx, optionalArg(args), true)
+	ctx, pr, err := resolvePR(cmd, optionalArg(args), true)
 	if err != nil {
 		return err
 	}
@@ -782,11 +781,7 @@ func newPRUnapproveCmd() *cobra.Command {
 
 func runPRUnapprove(cmd *cobra.Command, args []string) error {
 	jsonOutput, _ := cmd.Flags().GetBool("json")
-	ctx, err := prCommandContext(cmd, false)
-	if err != nil {
-		return err
-	}
-	pr, err := resolvePR(ctx, optionalArg(args), true)
+	ctx, pr, err := resolvePR(cmd, optionalArg(args), true)
 	if err != nil {
 		return err
 	}
@@ -834,11 +829,7 @@ func newPRClearChangeRequestCmd() *cobra.Command {
 
 func runPRClearChangeRequest(cmd *cobra.Command, args []string) error {
 	jsonOutput, _ := cmd.Flags().GetBool("json")
-	ctx, err := prCommandContext(cmd, false)
-	if err != nil {
-		return err
-	}
-	pr, err := resolvePR(ctx, optionalArg(args), true)
+	ctx, pr, err := resolvePR(cmd, optionalArg(args), true)
 	if err != nil {
 		return err
 	}
@@ -897,11 +888,7 @@ func runPRReview(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("comment-only review requires --body, --body-file, --editor, or --comment-spec")
 	}
 
-	ctx, err := prCommandContext(cmd, false)
-	if err != nil {
-		return err
-	}
-	pr, err := resolvePR(ctx, optionalArg(args), true)
+	ctx, pr, err := resolvePR(cmd, optionalArg(args), true)
 	if err != nil {
 		return err
 	}
@@ -955,11 +942,7 @@ func runPRReviewAction(cmd *cobra.Command, args []string, action string) error {
 		return err
 	}
 	jsonOutput, _ := cmd.Flags().GetBool("json")
-	ctx, err := prCommandContext(cmd, false)
-	if err != nil {
-		return err
-	}
-	pr, err := resolvePR(ctx, optionalArg(args), true)
+	ctx, pr, err := resolvePR(cmd, optionalArg(args), true)
 	if err != nil {
 		return err
 	}
@@ -1249,11 +1232,7 @@ func runPRCheckout(cmd *cobra.Command, args []string) error {
 	detach, _ := cmd.Flags().GetBool("detach")
 	force, _ := cmd.Flags().GetBool("force")
 	recurse, _ := cmd.Flags().GetBool("recurse-submodules")
-	ctx, err := prCommandContext(cmd, false)
-	if err != nil {
-		return err
-	}
-	pr, err := resolvePR(ctx, args[0], false)
+	_, pr, err := resolvePR(cmd, args[0], false)
 	if err != nil {
 		return err
 	}
