@@ -18,6 +18,10 @@ const (
 	// MaxBodyBytes caps a markdown body (description, comment, worklog
 	// comment).
 	MaxBodyBytes = 128 << 10
+	// MaxIssueTypes and MaxCreateMetaFields cap the create metadata read
+	// for one project and issue type.
+	MaxIssueTypes       = 500
+	MaxCreateMetaFields = 2000
 )
 
 // boundedCount applies a default to zero and rejects counts outside

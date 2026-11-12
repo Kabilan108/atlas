@@ -26,6 +26,8 @@ type FieldsResult struct {
 	Issue      string                        `json:"issue,omitempty"`
 	IssueTypes []jiraapi.CreateMetaIssueType `json:"issue_types,omitempty"`
 	Fields     []jiraapi.FieldMeta           `json:"fields,omitempty"`
+	// Truncated says Jira has more issue types or fields than listed.
+	Truncated bool `json:"truncated,omitempty"`
 }
 
 var Fields = &ops.Op[FieldsInput, *FieldsResult]{
@@ -66,22 +68,22 @@ func fields(ctx context.Context, env ops.Env, in FieldsInput) (*FieldsResult, er
 	if err != nil {
 		return nil, err
 	}
-	types, err := client.CreateMetaIssueTypes(ctx, project)
+	types, truncated, err := client.CreateMetaIssueTypes(ctx, project, MaxIssueTypes)
 	if err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(in.Type) == "" {
-		return &FieldsResult{Project: project, IssueTypes: types}, nil
+		return &FieldsResult{Project: project, IssueTypes: types, Truncated: truncated}, nil
 	}
-	issueType, err := resolveIssueType(types, in.Type)
+	issueType, err := resolveIssueType(types, truncated, in.Type)
 	if err != nil {
 		return nil, err
 	}
-	metas, err := client.CreateMetaFields(ctx, project, issueType.ID)
+	metas, truncated, err := client.CreateMetaFields(ctx, project, issueType.ID, MaxCreateMetaFields)
 	if err != nil {
 		return nil, err
 	}
-	return &FieldsResult{Project: project, Type: issueType.Name, Fields: metas}, nil
+	return &FieldsResult{Project: project, Type: issueType.Name, Fields: metas, Truncated: truncated}, nil
 }
 
 func (r *FieldsResult) Markdown() (string, error) {
@@ -94,6 +96,9 @@ func (r *FieldsResult) Markdown() (string, error) {
 				kind = " (subtask)"
 			}
 			fmt.Fprintf(&b, "- %s%s\n", t.Name, kind)
+		}
+		if r.Truncated {
+			fmt.Fprintf(&b, "\nShowing the first %d issue types; Jira has more, and atlas can't use the rest.\n", len(r.IssueTypes))
 		}
 		return b.String(), nil
 	}
@@ -112,6 +117,9 @@ func (r *FieldsResult) Markdown() (string, error) {
 			required = "yes"
 		}
 		fmt.Fprintf(&b, "| %s | %s | %s | %s | %s |\n", cell(meta.Name), meta.ID(), cell(schemaType(meta.Schema)), required, cell(allowedLabels(meta, fieldsAllowedValues)))
+	}
+	if r.Truncated {
+		fmt.Fprintf(&b, "\nShowing the first %d fields; Jira has more, and atlas can't set the rest.\n", len(r.Fields))
 	}
 	return b.String(), nil
 }

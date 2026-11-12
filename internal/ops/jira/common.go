@@ -153,14 +153,36 @@ func resolveUser(ctx context.Context, client *jiraapi.Client, who string, scope 
 	return nil, ops.Errorf(ops.Invalid, "no active user%s matches %q", where, who)
 }
 
+// screen is the field metadata a write resolves names against. truncated
+// says Jira has more fields than atlas read, so a name missing from metas
+// may still be a real field.
+type screen struct {
+	metas     []jiraapi.FieldMeta
+	truncated bool
+}
+
+func (s screen) resolve(name string) (jiraapi.FieldMeta, error) {
+	meta, err := jiraapi.ResolveField(s.metas, name)
+	if err == nil {
+		return meta, nil
+	}
+	var resolveErr *jiraapi.ResolveError
+	if s.truncated && errors.As(err, &resolveErr) && !resolveErr.Ambiguous {
+		return meta, ops.Errorf(ops.Invalid,
+			"field %q is not among the first %d fields Jira listed, and Jira has more; atlas reads no further, so it can't set this field",
+			strings.TrimSpace(name), len(s.metas))
+	}
+	return meta, invalid(err)
+}
+
 // shapeFields resolves fields given by display name or ID against screen
 // metadata and shapes each value for Jira. User fields take the same values
 // as an assignee. set already holds the fields the op filled in itself.
-func shapeFields(ctx context.Context, client *jiraapi.Client, metas []jiraapi.FieldMeta, fields map[string]any, set map[string]any, scope jiraapi.AssignableSearch) error {
+func shapeFields(ctx context.Context, client *jiraapi.Client, s screen, fields map[string]any, set map[string]any, scope jiraapi.AssignableSearch) error {
 	for _, name := range slices.Sorted(maps.Keys(fields)) {
-		meta, err := jiraapi.ResolveField(metas, name)
+		meta, err := s.resolve(name)
 		if err != nil {
-			return invalid(err)
+			return err
 		}
 		id := meta.ID()
 		if _, dup := set[id]; dup {

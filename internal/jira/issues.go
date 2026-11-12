@@ -183,23 +183,36 @@ func (p createMetaPage[T]) items() []T {
 	return p.Fields
 }
 
-func getCreateMeta[T any](ctx context.Context, c *Client, path string) ([]T, error) {
-	return collectOffset(0, defaultPageSize, func(startAt, maxResults int) ([]T, pageInfo, error) {
+// getCreateMeta reads up to limit items, one past it to learn whether Jira
+// has more, and reports that as truncated.
+func getCreateMeta[T any](ctx context.Context, c *Client, path string, limit int) ([]T, bool, error) {
+	if limit <= 0 {
+		return nil, false, errLimit
+	}
+	items, err := collectOffset(limit+1, defaultPageSize, func(startAt, maxResults int) ([]T, pageInfo, error) {
 		var page createMetaPage[T]
 		err := c.getJSON(ctx, path, pageQuery(startAt, maxResults), &page)
 		return page.items(), pageInfo{page.StartAt, page.MaxResults, page.Total, page.IsLast}, err
 	})
+	if err != nil {
+		return nil, false, err
+	}
+	if len(items) > limit {
+		return items[:limit], true, nil
+	}
+	return items, false, nil
 }
 
-// CreateMetaIssueTypes lists the issue types a project can create.
-func (c *Client) CreateMetaIssueTypes(ctx context.Context, projectKey string) ([]CreateMetaIssueType, error) {
-	return getCreateMeta[CreateMetaIssueType](ctx, c, "/rest/api/3/issue/createmeta/"+escape(projectKey)+"/issuetypes")
+// CreateMetaIssueTypes lists up to limit issue types a project can create;
+// truncated says the project has more.
+func (c *Client) CreateMetaIssueTypes(ctx context.Context, projectKey string, limit int) (types []CreateMetaIssueType, truncated bool, err error) {
+	return getCreateMeta[CreateMetaIssueType](ctx, c, "/rest/api/3/issue/createmeta/"+escape(projectKey)+"/issuetypes", limit)
 }
 
-// CreateMetaFields lists the create-screen fields for a project and issue
-// type ID.
-func (c *Client) CreateMetaFields(ctx context.Context, projectKey, issueTypeID string) ([]FieldMeta, error) {
-	return getCreateMeta[FieldMeta](ctx, c, "/rest/api/3/issue/createmeta/"+escape(projectKey)+"/issuetypes/"+escape(issueTypeID))
+// CreateMetaFields lists up to limit create-screen fields for a project
+// and issue type ID; truncated says the screen has more.
+func (c *Client) CreateMetaFields(ctx context.Context, projectKey, issueTypeID string, limit int) (fields []FieldMeta, truncated bool, err error) {
+	return getCreateMeta[FieldMeta](ctx, c, "/rest/api/3/issue/createmeta/"+escape(projectKey)+"/issuetypes/"+escape(issueTypeID), limit)
 }
 
 // EditMeta lists the fields that can be edited on an issue, with FieldID set

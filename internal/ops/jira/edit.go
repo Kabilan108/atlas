@@ -115,7 +115,7 @@ func edit(ctx context.Context, env ops.Env, in EditInput) (*Edited, error) {
 			return nil, fmt.Errorf("fetch edit fields for %s: %w", key, err)
 		}
 		before := maps.Clone(input.Fields)
-		if err := shapeFields(ctx, client, metas, in.Fields, input.Fields, scope); err != nil {
+		if err := shapeFields(ctx, client, screen{metas: metas}, in.Fields, input.Fields, scope); err != nil {
 			return nil, err
 		}
 		for _, id := range slices.Sorted(maps.Keys(input.Fields)) {
