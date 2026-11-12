@@ -3,12 +3,21 @@ package snippet
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
 	"github.com/kabilan108/atlas/internal/bitbucket"
 	"github.com/kabilan108/atlas/internal/ops"
 	"github.com/kabilan108/atlas/internal/output"
+)
+
+const (
+	// maxFileBytes caps each snippet file read.
+	maxFileBytes = 4 << 20
+	// viewBudgetBytes caps one view across files: each file's cap shrinks
+	// to an equal share when the snippet has more than two.
+	viewBudgetBytes = 8 << 20
 )
 
 // ViewInput is the input to snippet_view.
@@ -23,6 +32,10 @@ type ViewInput struct {
 type ViewResult struct {
 	*bitbucket.Snippet
 	FileContents map[string]string `json:"file_contents,omitempty"`
+	// TruncatedFiles names the files cut at FileBytes, in sorted order.
+	TruncatedFiles []string `json:"truncated_files,omitempty"`
+	// FileBytes is the per-file cap when any file was truncated.
+	FileBytes int `json:"file_bytes,omitempty"`
 
 	ref       Ref
 	filesOnly bool
@@ -63,13 +76,18 @@ func view(ctx context.Context, env ops.Env, in ViewInput) (*ViewResult, error) {
 		}
 		names = []string{in.Filename}
 	}
+	maxBytes := min(maxFileBytes, viewBudgetBytes/max(len(names), 1))
 	result.FileContents = make(map[string]string, len(names))
 	for _, name := range names {
-		content, err := client.GetSnippetFileContent(ctx, ref.Workspace, ref.ID, name)
+		body, err := client.GetSnippetFileContentLimit(ctx, ref.Workspace, ref.ID, name, int64(maxBytes))
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch file %s: %w", name, err)
 		}
-		result.FileContents[name] = string(content)
+		result.FileContents[name] = string(body.Data)
+		if body.Truncated {
+			result.TruncatedFiles = append(result.TruncatedFiles, name)
+			result.FileBytes = maxBytes
+		}
 	}
 	return result, nil
 }
@@ -97,6 +115,9 @@ func (r *ViewResult) Markdown() (string, error) {
 	for _, name := range sortedKeys(r.FileContents) {
 		fmt.Fprintf(&b, "\n## %s\n\n", name)
 		b.WriteString(output.CodeFence(r.FileContents[name], output.FenceLanguage(name)))
+		if slices.Contains(r.TruncatedFiles, name) {
+			fmt.Fprintf(&b, "Truncated at %d bytes.\n", r.FileBytes)
+		}
 	}
 	return b.String(), nil
 }

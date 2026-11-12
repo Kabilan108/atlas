@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/kabilan108/atlas/internal/bitbucket"
@@ -16,8 +17,15 @@ import (
 const (
 	defaultFileBytes      = 64 << 10
 	defaultBatchFileBytes = 8 << 10
-	maxBatchRepos         = 200
-	fileReadConcurrency   = 8
+	// HardMaxFileBytes is the largest max_bytes for one file.
+	HardMaxFileBytes = 4 << 20
+	// HardMaxBatchFileBytes is the largest max_bytes with repos.
+	HardMaxBatchFileBytes = 1 << 20
+	// batchBudgetBytes bounds what one batch reads across all repositories:
+	// each file's cap shrinks to an equal share when max_bytes would exceed it.
+	batchBudgetBytes    = 8 << 20
+	maxBatchRepos       = 200
+	fileReadConcurrency = 8
 )
 
 // FileReadInput is the input to file_read: one file from repo, or the same
@@ -27,15 +35,18 @@ type FileReadInput struct {
 	Repos    []string `json:"repos,omitempty" jsonschema:"instead of repo: read path from each (workspace/repo, bare repo, or workspace/* for all), up to 200"`
 	Path     string   `json:"path" jsonschema:"file path from the repo root"`
 	Ref      string   `json:"ref,omitempty" jsonschema:"branch, tag, or commit; default: each repo's main branch"`
-	MaxBytes int      `json:"max_bytes,omitempty" jsonschema:"per-file byte cap; default 65536, or 8192 with repos"`
+	MaxBytes int      `json:"max_bytes,omitempty" jsonschema:"per-file byte cap; default 65536, max 4194304; with repos default 8192, max 1048576"`
 }
 
 // FileStatus is a file_read entry's outcome.
 type FileStatus string
 
 const (
-	FileOK     FileStatus = "ok"
-	FileFailed FileStatus = "failed"
+	FileOK FileStatus = "ok"
+	// FileNotFound marks a repository without the file, which is not a
+	// failure: audits expect many.
+	FileNotFound FileStatus = "not_found"
+	FileFailed   FileStatus = "failed"
 )
 
 // FileResult is one repository's file, or why it could not be read.
@@ -58,12 +69,15 @@ type FileReadResult struct {
 
 	batch    bool
 	maxBytes int
+	// budgetShare is true when the batch budget lowered maxBytes below
+	// what the caller asked for.
+	budgetShare bool
 }
 
 var FileRead = &ops.Op[FileReadInput, *FileReadResult]{
 	Meta: ops.Meta{
 		Name:        "file_read",
-		Description: "Read a file at a ref from a Bitbucket repo, or the same path across many repos in one call (e.g. version.json audits).",
+		Description: "Read a file at a ref from a Bitbucket repo, or the same path across many repos in one call (e.g. version.json audits). Repos without the file get status not_found, which is not an error.",
 		Surfaces:    ops.Both,
 		ReadOnly:    true,
 	},
@@ -72,22 +86,17 @@ var FileRead = &ops.Op[FileReadInput, *FileReadResult]{
 }
 
 func readFiles(ctx context.Context, env ops.Env, in FileReadInput) (*FileReadResult, error) {
-	path := strings.TrimPrefix(strings.TrimSpace(in.Path), "/")
-	if path == "" {
-		return nil, ops.Errorf(ops.Invalid, "path is required")
+	path := in.Path
+	if err := validateFilePath(path); err != nil {
+		return nil, err
 	}
 	batch := len(in.Repos) > 0
 	if batch && strings.TrimSpace(in.Repo) != "" {
 		return nil, ops.Errorf(ops.Invalid, "give repo or repos, not both")
 	}
-	maxBytes := in.MaxBytes
-	switch {
-	case maxBytes == 0 && batch:
-		maxBytes = defaultBatchFileBytes
-	case maxBytes == 0:
-		maxBytes = defaultFileBytes
-	case maxBytes < -1:
-		return nil, ops.Errorf(ops.Invalid, "max_bytes must be positive")
+	maxBytes, err := fileByteCap(in.MaxBytes, batch)
+	if err != nil {
+		return nil, err
 	}
 	ref := strings.TrimSpace(in.Ref)
 	revision := ref
@@ -117,6 +126,10 @@ func readFiles(ctx context.Context, env ops.Env, in FileReadInput) (*FileReadRes
 	if err != nil {
 		return nil, err
 	}
+	if len(repos) > 0 && maxBytes > batchBudgetBytes/len(repos) {
+		maxBytes = batchBudgetBytes / len(repos)
+		result.maxBytes, result.budgetShare = maxBytes, true
+	}
 	result.Results = make([]FileResult, len(repos))
 	sem := make(chan struct{}, fileReadConcurrency)
 	var wg sync.WaitGroup
@@ -128,7 +141,11 @@ func readFiles(ctx context.Context, env ops.Env, in FileReadInput) (*FileReadRes
 			defer func() { <-sem }()
 			entry, err := readOne(ctx, client, repo, revision, path, maxBytes)
 			if err != nil {
-				entry = FileResult{Repo: repo.String(), Status: FileFailed, Error: entryError(err)}
+				status := FileFailed
+				if ops.KindOf(err) == ops.NotFound {
+					status = FileNotFound
+				}
+				entry = FileResult{Repo: repo.String(), Status: status, Error: entryError(err)}
 			}
 			entry.Index = i
 			result.Results[i] = entry
@@ -142,6 +159,50 @@ func readFiles(ctx context.Context, env ops.Env, in FileReadInput) (*FileReadRes
 		}
 	}
 	return result, ops.PartialOf(failed, len(repos), "files")
+}
+
+// fileByteCap applies max_bytes' default and rejects values outside
+// (0, hard maximum].
+func fileByteCap(maxBytes int, batch bool) (int, error) {
+	def, hardMax := defaultFileBytes, HardMaxFileBytes
+	if batch {
+		def, hardMax = defaultBatchFileBytes, HardMaxBatchFileBytes
+	}
+	switch {
+	case maxBytes == 0:
+		return def, nil
+	case maxBytes < 0:
+		return 0, ops.Errorf(ops.Invalid, "max_bytes must be positive")
+	case maxBytes > hardMax:
+		return 0, ops.Errorf(ops.Invalid, "max_bytes %d is over the maximum of %d", maxBytes, hardMax)
+	}
+	return maxBytes, nil
+}
+
+// validateFilePath accepts a path from the repo root exactly as given, since
+// file names may start or end with spaces: no leading slash, no empty, ".",
+// or ".." components, and no control characters.
+func validateFilePath(path string) error {
+	invalid := func(reason string) error {
+		return ops.Errorf(ops.Invalid, "invalid file path %q: %s", path, reason)
+	}
+	switch {
+	case path == "":
+		return ops.Errorf(ops.Invalid, "path is required")
+	case strings.HasPrefix(path, "/"):
+		return invalid("give it from the repo root, without a leading /")
+	case strings.ContainsFunc(path, unicode.IsControl):
+		return invalid("control characters are not allowed")
+	}
+	for _, component := range strings.Split(path, "/") {
+		switch component {
+		case "":
+			return invalid("empty components (// or a trailing /) are not allowed")
+		case ".", "..":
+			return invalid("dot components are not allowed")
+		}
+	}
+	return nil
 }
 
 func readOne(ctx context.Context, client *bitbucket.Client, repo ops.Repository, ref, path string, maxBytes int) (FileResult, error) {
@@ -166,17 +227,30 @@ func entryError(err error) string {
 }
 
 // isBinary reports whether data holds a NUL byte or invalid UTF-8. A
-// truncated body may end mid-rune, which does not count.
+// truncated body may end in the valid first bytes of a rune the cap cut
+// off; any other invalid byte means binary.
 func isBinary(data []byte, truncated bool) bool {
 	if bytes.IndexByte(data, 0) >= 0 {
 		return true
 	}
 	if truncated {
-		for i := 0; i < utf8.UTFMax && len(data) > 0 && !utf8.Valid(data); i++ {
-			data = data[:len(data)-1]
-		}
+		data = data[:len(data)-len(incompleteRuneSuffix(data))]
 	}
 	return !utf8.Valid(data)
+}
+
+// incompleteRuneSuffix is data's trailing rune when it is a valid UTF-8
+// prefix the data ends before completing, or nil.
+func incompleteRuneSuffix(data []byte) []byte {
+	for i := len(data) - 1; i >= 0 && i >= len(data)-(utf8.UTFMax-1); i-- {
+		if utf8.RuneStart(data[i]) {
+			if tail := data[i:]; !utf8.FullRune(tail) {
+				return tail
+			}
+			return nil
+		}
+	}
+	return nil
 }
 
 // expandRepos resolves each repos entry, expanding workspace/* to every
@@ -227,13 +301,20 @@ func (r *FileReadResult) Markdown() (string, error) {
 		ref = "main branch"
 	}
 	if r.batch {
-		ok := 0
+		ok, notFound := 0, 0
 		for _, entry := range r.Results {
-			if entry.Status == FileOK {
+			switch entry.Status {
+			case FileOK:
 				ok++
+			case FileNotFound:
+				notFound++
 			}
 		}
-		fmt.Fprintf(&b, "%s at %s: read from %d of %d repositories\n", r.Path, ref, ok, len(r.Results))
+		fmt.Fprintf(&b, "%s at %s: read from %d of %d repositories", r.Path, ref, ok, len(r.Results))
+		if notFound > 0 {
+			fmt.Fprintf(&b, "; not found in %d", notFound)
+		}
+		b.WriteString("\n")
 	}
 	lang := output.FenceLanguage(r.Path)
 	for _, entry := range r.Results {
@@ -243,6 +324,8 @@ func (r *FileReadResult) Markdown() (string, error) {
 			fmt.Fprintf(&b, "%s in %s at %s\n\n", r.Path, entry.Repo, ref)
 		}
 		switch {
+		case entry.Status == FileNotFound:
+			fmt.Fprintf(&b, "Not found: %s\n", entry.Error)
 		case entry.Status == FileFailed:
 			fmt.Fprintf(&b, "Error: %s\n", entry.Error)
 		case entry.Binary:
@@ -250,11 +333,18 @@ func (r *FileReadResult) Markdown() (string, error) {
 		default:
 			b.WriteString(output.CodeFence(entry.Content, lang))
 			if entry.Truncated {
-				fmt.Fprintf(&b, "Truncated at %d bytes; raise max_bytes for more.\n", r.maxBytes)
+				b.WriteString(r.truncationNote())
 			}
 		}
 	}
 	return b.String(), nil
+}
+
+func (r *FileReadResult) truncationNote() string {
+	if r.budgetShare {
+		return fmt.Sprintf("Truncated at %d bytes, this repository's share of the %d-byte batch budget; read fewer repositories for more.\n", r.maxBytes, batchBudgetBytes)
+	}
+	return fmt.Sprintf("Truncated at %d bytes; raise max_bytes for more.\n", r.maxBytes)
 }
 
 func truncatedNote(entry FileResult) string {

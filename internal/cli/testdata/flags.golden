@@ -5,7 +5,7 @@ atlas
 atlas api
   use: api <path>
   flag --json bool default="false"
-  flag --max-bytes int default="0"
+  flag --max-bytes int default="4194304"
 atlas branch
   use: branch
 atlas branch list

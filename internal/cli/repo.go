@@ -155,7 +155,7 @@ section, and the command then exits non-zero.`,
 	addPRRepoFlag(cmd)
 	cmd.Flags().String("ref", "", "Branch, tag, or commit (default: the main branch)")
 	cmd.Flags().StringSlice("repos", nil, "Read from these repositories instead (comma-separated or repeated)")
-	cmd.Flags().Int("max-bytes", 0, "Per-file byte cap (default: none for one file, 8192 with --repos)")
+	cmd.Flags().Int("max-bytes", 0, "Per-file byte cap (one file: default and max 4194304; --repos: default 8192, max 1048576)")
 	return bind(cmd, binding[repo.FileReadInput, *repo.FileReadResult]{
 		op: repo.FileRead,
 		input: func(cmd *cobra.Command, args []string, env *cliEnv) (repo.FileReadInput, error) {
@@ -170,22 +170,31 @@ section, and the command then exits non-zero.`,
 				return in, nil
 			}
 			if !cmd.Flags().Changed("max-bytes") {
-				in.MaxBytes = -1
+				in.MaxBytes = repo.HardMaxFileBytes
 			}
 			var err error
 			in.RepoRef, err = repoRef(cmd, env)
 			return in, err
 		},
-		human: writeFileRead,
+		human: func(w io.Writer, out *repo.FileReadResult) error {
+			return writeFileRead(w, cmd.ErrOrStderr(), out)
+		},
 	})
 }
 
-// writeFileRead prints a single text file as is, like cat; batches and
-// binary files get the markdown summary.
-func writeFileRead(w io.Writer, out *repo.FileReadResult) error {
+// writeFileRead prints a single text file as is, like cat, with any
+// truncation notice on stderr; batches and binary files get the markdown
+// summary.
+func writeFileRead(w, stderr io.Writer, out *repo.FileReadResult) error {
 	if !out.Batch() && len(out.Results) == 1 && out.Results[0].Status == repo.FileOK && !out.Results[0].Binary {
-		_, err := io.WriteString(w, out.Results[0].Content)
-		return err
+		entry := out.Results[0]
+		if _, err := io.WriteString(w, entry.Content); err != nil {
+			return err
+		}
+		if entry.Truncated {
+			fmt.Fprintf(stderr, "File truncated at %d bytes (--max-bytes)\n", entry.Bytes)
+		}
+		return nil
 	}
 	markdown, err := out.Markdown()
 	if err != nil {

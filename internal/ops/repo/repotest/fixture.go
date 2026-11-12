@@ -14,6 +14,8 @@ import (
 const (
 	Workspace = "acme"
 	Host      = "api.bitbucket.org"
+	// Broken is a repository outside Repos whose files fail with a 500.
+	Broken = "broken"
 )
 
 // Files holds version.json per repository; a repository missing here has no
@@ -109,6 +111,8 @@ func (f *Fixture) serveRepo(w http.ResponseWriter, r *http.Request, parts []stri
 		writeJSON(w, main)
 	case strings.HasPrefix(rest, "commits"):
 		writeJSON(w, page(commit("a1b2c3d4e5f6a7b8", "Release 1.2.3"), commit("99887766554433", "Fix | pipes")))
+	case repo == Broken:
+		http.Error(w, `{"type":"error","error":{"message":"Something went wrong"}}`, http.StatusInternalServerError)
 	case rest == "src/HEAD/version.json" || rest == "src/v1/version.json":
 		content, ok := Files[repo]
 		if !ok {

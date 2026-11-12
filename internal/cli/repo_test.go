@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/json"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -29,12 +31,35 @@ func TestFileReadPrintsOneFileAsIs(t *testing.T) {
 	}
 }
 
-func TestFileReadBatchPrintsSectionsThenFails(t *testing.T) {
-	out, err, _ := runRepoCmd(t, "file", "read", "version.json", "--repos", "widgets,legacy")
-	if ops.KindOf(err) != ops.Partial {
-		t.Fatalf("err = %v, want Partial", err)
+func TestFileReadReportsTruncationOnStderr(t *testing.T) {
+	setupCLIEnv(t)
+	t.Setenv("ATLAS_WORKSPACE", repotest.Workspace)
+	t.Chdir(t.TempDir())
+	var stdout, stderr bytes.Buffer
+	root := NewRootCmd("test", WithHTTPClient(&http.Client{Transport: repotest.New()}))
+	root.PersistentPreRun = nil
+	root.SilenceUsage, root.SilenceErrors = true, true
+	root.SetOut(&stdout)
+	root.SetErr(&stderr)
+	root.SetArgs([]string{"--no-cache", "file", "read", "version.json", "-R", "widgets", "--max-bytes", "5"})
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(out, "## acme/widgets\n\n```json\n{\"version\":\"1.2.3\"}") || !strings.Contains(out, "## acme/legacy\n\nError:") {
+	if stdout.String() != `{"ver` {
+		t.Fatalf("stdout = %q, want only the file's first 5 bytes", stdout.String())
+	}
+	if stderr.String() != "File truncated at 5 bytes (--max-bytes)\n" {
+		t.Fatalf("stderr = %q, want a truncation notice", stderr.String())
+	}
+}
+
+func TestFileReadBatchPrintsSectionsThenFails(t *testing.T) {
+	out, err, _ := runRepoCmd(t, "file", "read", "version.json", "--repos", "widgets,legacy,broken")
+	if ops.KindOf(err) != ops.Partial || !strings.Contains(err.Error(), "1 of 3") {
+		t.Fatalf("err = %v, want Partial for broken only", err)
+	}
+	if !strings.Contains(out, "## acme/widgets\n\n```json\n{\"version\":\"1.2.3\"}") ||
+		!strings.Contains(out, "## acme/legacy\n\nNot found:") || !strings.Contains(out, "## acme/broken\n\nError:") {
 		t.Fatalf("stdout = %q", out)
 	}
 

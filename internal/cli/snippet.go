@@ -207,7 +207,13 @@ func newSnippetViewCmd() *cobra.Command {
 				return nil
 			}
 			rawOutput, _ := cmd.Flags().GetBool("raw")
-			return renderSnippetFiles(w, result.FileContents, rawOutput)
+			if err := renderSnippetFiles(w, result.FileContents, rawOutput); err != nil {
+				return err
+			}
+			for _, name := range result.TruncatedFiles {
+				fmt.Fprintf(cmd.ErrOrStderr(), "%s truncated at %d bytes\n", name, result.FileBytes)
+			}
+			return nil
 		},
 	})
 }
