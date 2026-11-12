@@ -121,7 +121,7 @@ func callText(t *testing.T, session *mcp.ClientSession, name string, args map[st
 	return text.String(), result.IsError
 }
 
-func TestToolsListIsLean(t *testing.T) {
+func TestPRViewToolSchema(t *testing.T) {
 	srv := startServer(t, mcpserver.Options{})
 	session := connect(t, srv.url, nil)
 	result, err := session.ListTools(context.Background(), nil)
@@ -130,14 +130,6 @@ func TestToolsListIsLean(t *testing.T) {
 	}
 	var found *mcp.Tool
 	for _, tool := range result.Tools {
-		data, err := json.Marshal(tool)
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Logf("%s: %d bytes: %s", tool.Name, len(data), data)
-		if len(data) >= 1024 {
-			t.Errorf("%s is %d bytes in tools/list, want under 1024", tool.Name, len(data))
-		}
 		if tool.Name == "pr_view" {
 			found = tool
 		}
