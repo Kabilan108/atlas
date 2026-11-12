@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,12 +22,11 @@ type Config struct {
 	JiraCloudID string `mapstructure:"jira_cloud_id"`
 }
 
-// Credentials are the Atlassian email (the configured username) and the API
-// tokens for each product. APIToken is the Bitbucket token.
+// Credentials are the Atlassian email (the configured username) and one
+// product's API token.
 type Credentials struct {
-	Username  string
-	APIToken  string
-	JiraToken string
+	Username string
+	Token    string
 }
 
 func ConfigDir() (string, error) {
@@ -166,20 +166,27 @@ func Set(key, value string) error {
 	return nil
 }
 
-// LoadCredentials reads the tokens from credentials.toml (api_token,
-// jira_token); ATLAS_API_TOKEN and ATLAS_JIRA_TOKEN override them.
-func LoadCredentials() (*Credentials, error) {
+// BitbucketCredentials returns the Bitbucket API token from ATLAS_API_TOKEN,
+// or else api_token in credentials.toml.
+func BitbucketCredentials() (*Credentials, error) {
+	return loadCredentials("ATLAS_API_TOKEN", "api_token")
+}
+
+// JiraCredentials returns the Jira API token from ATLAS_JIRA_TOKEN, or else
+// jira_token in credentials.toml.
+func JiraCredentials() (*Credentials, error) {
+	return loadCredentials("ATLAS_JIRA_TOKEN", "jira_token")
+}
+
+// loadCredentials reads the credentials file only when envVar is unset, so
+// a broken entry for one product never blocks the other.
+func loadCredentials(envVar, fileKey string) (*Credentials, error) {
 	cfg, err := Load()
 	if err != nil {
 		return nil, err
 	}
-
-	creds := &Credentials{
-		Username:  cfg.Username,
-		APIToken:  os.Getenv("ATLAS_API_TOKEN"),
-		JiraToken: os.Getenv("ATLAS_JIRA_TOKEN"),
-	}
-	if creds.APIToken != "" && creds.JiraToken != "" {
+	creds := &Credentials{Username: cfg.Username, Token: os.Getenv(envVar)}
+	if creds.Token != "" {
 		return creds, nil
 	}
 
@@ -187,23 +194,9 @@ func LoadCredentials() (*Credentials, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	v := viper.New()
-	v.SetConfigFile(credentialsPath)
-	v.SetConfigType("toml")
-	if err := v.ReadInConfig(); err != nil {
-		var configFileNotFoundError viper.ConfigFileNotFoundError
-		if errors.As(err, &configFileNotFoundError) || os.IsNotExist(err) {
-			return creds, nil
-		}
-		return nil, fmt.Errorf("failed to read credentials: %w", err)
-	}
-
-	if creds.APIToken == "" {
-		creds.APIToken = v.GetString("api_token")
-	}
-	if creds.JiraToken == "" {
-		creds.JiraToken = v.GetString("jira_token")
+	creds.Token, err = storedCredential(credentialsPath, fileKey)
+	if err != nil {
+		return nil, err
 	}
 	return creds, nil
 }
@@ -245,7 +238,8 @@ func storedCredential(path, key string) (string, error) {
 	v.SetConfigFile(path)
 	v.SetConfigType("toml")
 	if err := v.ReadInConfig(); err != nil {
-		if os.IsNotExist(err) {
+		var configFileNotFoundError viper.ConfigFileNotFoundError
+		if errors.As(err, &configFileNotFoundError) || errors.Is(err, fs.ErrNotExist) {
 			return "", nil
 		}
 		return "", fmt.Errorf("failed to read credentials: %w", err)

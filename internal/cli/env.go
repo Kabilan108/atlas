@@ -60,14 +60,14 @@ func (e *cliEnv) Jira(context.Context) (*jira.Client, error) {
 // newJiraClient builds a Jira client from the configured username (the
 // Atlassian email), the Jira token, and jira_cloud_id.
 func newJiraClient(cmd *cobra.Command, cfg *config.Config) (*jira.Client, error) {
-	creds, err := config.LoadCredentials()
+	creds, err := config.JiraCredentials()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load credentials: %w", err)
 	}
 	switch {
 	case creds.Username == "":
 		return nil, ops.Errorf(ops.Auth, "Jira needs your Atlassian email. Run 'atlas config set username <email>'")
-	case creds.JiraToken == "":
+	case creds.Token == "":
 		return nil, ops.Errorf(ops.Auth, "Jira API token not configured. Set ATLAS_JIRA_TOKEN, or jira_token in the credentials file")
 	case cfg.JiraCloudID == "":
 		return nil, ops.Errorf(ops.Invalid, "Jira cloud ID not configured. Run 'atlas config set jira_cloud_id <id>' or set ATLAS_JIRA_CLOUD_ID")
@@ -76,14 +76,14 @@ func newJiraClient(cmd *cobra.Command, cfg *config.Config) (*jira.Client, error)
 	if httpClient := optionsFrom(cmd).httpClient; httpClient != nil {
 		opts = append(opts, jira.WithHTTPClient(httpClient))
 	}
-	return jira.NewClientWithCredentials(creds.Username, creds.JiraToken, cfg.JiraCloudID, opts...)
+	return jira.NewClientWithCredentials(creds.Username, creds.Token, cfg.JiraCloudID, opts...)
 }
 
 // newBitbucketClient builds a client from the stored credentials. Reads use
 // the disk cache unless --no-cache is set or useCache is false; writes clear
 // it either way, so later cached reads see them.
 func newBitbucketClient(cmd *cobra.Command, useCache bool) (*bitbucket.Client, error) {
-	creds, err := config.LoadCredentials()
+	creds, err := config.BitbucketCredentials()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load credentials: %w", err)
 	}
@@ -95,7 +95,7 @@ func newBitbucketClient(cmd *cobra.Command, useCache bool) (*bitbucket.Client, e
 		}
 		opts = append(opts, bitbucket.WithCache(cache))
 	}
-	return bitbucket.NewClientWithCredentials(creds.Username, creds.APIToken, opts...)
+	return bitbucket.NewClientWithCredentials(creds.Username, creds.Token, opts...)
 }
 
 // bitbucketOptions are the options every CLI client gets, before the cache.
