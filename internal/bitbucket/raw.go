@@ -1,0 +1,96 @@
+package bitbucket
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"strings"
+)
+
+// LimitedBody is a response body read up to a byte limit.
+type LimitedBody struct {
+	Data []byte
+	// Truncated is true when the body had more than the limit.
+	Truncated   bool
+	ContentType string
+	StatusCode  int
+}
+
+// GetFileContentLimit is GetFileContent reading at most maxBytes of the file
+// (all of it when maxBytes is negative). Ref "HEAD" names the main branch.
+func (c *Client) GetFileContentLimit(ctx context.Context, workspace, repo, ref, path string, maxBytes int64) (*LimitedBody, error) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return nil, fmt.Errorf("ref cannot be empty")
+	}
+	escapedPath, err := escapeSegments("file path", path)
+	if err != nil {
+		return nil, err
+	}
+	revision := ref
+	if strings.Contains(ref, "/") {
+		if revision, err = c.resolveSlashRef(ctx, workspace, repo, ref); err != nil {
+			return nil, err
+		}
+	}
+	body, err := c.getLimited(ctx, repoPath(workspace, repo)+"/src/"+url.PathEscape(revision)+"/"+escapedPath, maxBytes, false)
+	if err != nil {
+		if body != nil && body.StatusCode == http.StatusNotFound {
+			return nil, NewNotFoundError("file", ref+":"+path)
+		}
+		return nil, err
+	}
+	return body, nil
+}
+
+// GetAPI sends an uncached GET for path (relative to the base URL, with an
+// optional query) and reads at most maxBytes of the body (all of it when
+// maxBytes is negative). Callers validate path; the client still refuses one
+// that resolves outside the base URL.
+func (c *Client) GetAPI(ctx context.Context, path string, maxBytes int64) (*LimitedBody, error) {
+	return c.getLimited(ctx, path, maxBytes, true)
+}
+
+func (c *Client) getLimited(ctx context.Context, path string, maxBytes int64, acceptJSON bool) (*LimitedBody, error) {
+	requestURL := c.baseURL + path
+	target, err := url.Parse(requestURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid API path %q: %w", path, err)
+	}
+	if _, ok := c.apiScopePath(target); !ok {
+		return nil, fmt.Errorf("refusing path outside %s: %s", c.baseURL, path)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	var resp *http.Response
+	if acceptJSON {
+		resp, err = c.do(req)
+	} else {
+		resp, err = c.doAuthenticated(req)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var reader io.Reader = resp.Body
+	if maxBytes >= 0 {
+		reader = io.LimitReader(resp.Body, maxBytes+1)
+	}
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, err
+	}
+	body := &LimitedBody{Data: data, ContentType: resp.Header.Get("Content-Type"), StatusCode: resp.StatusCode}
+	if maxBytes >= 0 && int64(len(data)) > maxBytes {
+		body.Data, body.Truncated = data[:maxBytes], true
+	}
+	if err := checkResponseWithMessage(resp, data); err != nil {
+		return body, err
+	}
+	return body, nil
+}
