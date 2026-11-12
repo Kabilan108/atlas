@@ -119,21 +119,30 @@ var WorklogAdd = &ops.Op[WorklogAddInput, *WorklogAddResult]{
 	Meta: ops.Meta{
 		Name: "jira_worklog_add",
 		Description: "Log work on Jira issues in one batch. An entry you already logged (same issue, start and duration) is " +
-			"skipped, so retrying a batch is safe. Returns a status per entry.",
+			"skipped, so retrying through the same atlas server is safe; concurrent calls via different servers can still " +
+			"log twice. Returns a status per entry.",
 		Surfaces: ops.Both,
 	},
 	Run: worklogAdd,
 }
 
 type worklogPlan struct {
-	key     string
+	ref     string
 	started time.Time
 	seconds int
 	comment json.RawMessage
 }
 
-func (p worklogPlan) dedupKey() string {
-	return fmt.Sprintf("%s|%d|%d", p.key, p.started.Unix(), p.seconds)
+// worklogIdentity is what makes two worklogs the same entry: the issue's
+// immutable ID (keys change when an issue moves), the start as Jira stores
+// it (to the millisecond, as an instant), and the time spent in seconds.
+func worklogIdentity(issueID string, started time.Time, seconds int) string {
+	return fmt.Sprintf("%s|%d|%d", issueID, started.UnixMilli(), seconds)
+}
+
+type worklogIssue struct {
+	id, key string
+	err     error
 }
 
 func worklogAdd(ctx context.Context, env ops.Env, in WorklogAddInput) (*WorklogAddResult, error) {
@@ -156,39 +165,129 @@ func worklogAdd(ctx context.Context, env ops.Env, in WorklogAddInput) (*WorklogA
 	if err != nil {
 		return nil, fmt.Errorf("find your account: %w", err)
 	}
-	logged, listErrs := existingWorklogs(ctx, client, me.AccountID, plans)
+	issues := map[string]worklogIssue{}
+	for _, plan := range plans {
+		if _, ok := issues[plan.ref]; !ok {
+			issues[plan.ref] = findWorklogIssue(ctx, client, plan.ref)
+		}
+	}
+	logger := &worklogger{client: client, accountID: me.AccountID, logged: map[string]string{}}
 	result := &WorklogAddResult{Results: make([]WorklogEntryResult, len(plans))}
 	failed := 0
 	for i, plan := range plans {
+		issue := issues[plan.ref]
 		r := &result.Results[i]
-		*r = WorklogEntryResult{Index: i, Issue: plan.key, Started: jiraapi.FormatTime(plan.started), Duration: formatSeconds(plan.seconds)}
-		if err := listErrs[plan.key]; err != nil {
-			r.Status, r.Error = StatusFailed, "could not check for an existing worklog: "+err.Error()
+		*r = WorklogEntryResult{Index: i, Issue: plan.ref, Started: jiraapi.FormatTime(plan.started), Duration: formatSeconds(plan.seconds)}
+		if issue.err != nil {
+			r.Status, r.Error = StatusFailed, "could not find the issue: "+issue.err.Error()
 			failed++
 			continue
 		}
-		if id, ok := logged[plan.dedupKey()]; ok {
-			r.Status, r.WorklogID = StatusSkipped, id
-			continue
-		}
-		w, err := client.AddWorklog(ctx, plan.key, jiraapi.WorklogInput{
-			Started:          jiraapi.FormatTime(plan.started),
-			TimeSpentSeconds: plan.seconds,
-			Comment:          plan.comment,
-		}, jiraapi.WorklogAddOptions{})
+		r.Issue = issue.key
+		status, id, err := logger.add(ctx, issue.id, plan)
+		r.Status, r.WorklogID = status, id
 		if err != nil {
-			r.Status, r.Error = StatusFailed, err.Error()
+			r.Error = err.Error()
 			failed++
-			continue
 		}
-		r.Status, r.WorklogID = StatusOK, w.ID
-		logged[plan.dedupKey()] = w.ID
 	}
 	return result, ops.PartialOf(failed, len(plans), "worklog entries")
 }
 
+// findWorklogIssue reads an issue's ID and current key from its key or ID.
+func findWorklogIssue(ctx context.Context, client *jiraapi.Client, ref string) worklogIssue {
+	issue, err := client.GetIssue(ctx, ref, jiraapi.GetIssueOptions{Fields: []string{"summary"}})
+	if err != nil {
+		return worklogIssue{err: err}
+	}
+	if !issueIDPattern.MatchString(issue.ID) {
+		return worklogIssue{err: fmt.Errorf("jira returned no numeric ID for %s", ref)}
+	}
+	key := issue.Key
+	if key == "" {
+		key = ref
+	}
+	return worklogIssue{id: issue.ID, key: key}
+}
+
+// worklogLocks serializes the check and the POST for one site, account and
+// issue across every call in this process.
+var worklogLocks keyedLocks
+
+// worklogger adds one batch's worklogs, skipping entries already logged.
+type worklogger struct {
+	client    *jiraapi.Client
+	accountID string
+	// logged maps worklogIdentity to the worklog ID for this batch's
+	// entries, so a repeated entry is skipped even before Jira lists it.
+	logged map[string]string
+}
+
+// add logs plan on issueID unless the caller already logged it. Under the
+// issue's lock it lists the worklogs around plan's start right before the
+// POST, so calls in this process never both see none and both log it.
+// Calls from other processes can still race.
+func (l *worklogger) add(ctx context.Context, issueID string, plan worklogPlan) (status, id string, err error) {
+	identity := worklogIdentity(issueID, plan.started, plan.seconds)
+	if id, ok := l.logged[identity]; ok {
+		return StatusSkipped, id, nil
+	}
+	unlock, err := worklogLocks.lock(ctx, l.client.BaseURL()+"\x00"+l.accountID+"\x00"+issueID)
+	if err != nil {
+		return StatusFailed, "", err
+	}
+	defer unlock()
+	existing, err := l.existing(ctx, issueID, plan)
+	if err != nil {
+		return StatusFailed, "", fmt.Errorf("could not check for an existing worklog: %w", err)
+	}
+	if existing != "" {
+		l.logged[identity] = existing
+		return StatusSkipped, existing, nil
+	}
+	w, err := l.client.AddWorklog(ctx, issueID, jiraapi.WorklogInput{
+		Started:          jiraapi.FormatTime(plan.started),
+		TimeSpentSeconds: plan.seconds,
+		Comment:          plan.comment,
+	}, jiraapi.WorklogAddOptions{})
+	if err != nil {
+		return StatusFailed, "", err
+	}
+	l.logged[identity] = w.ID
+	return StatusOK, w.ID, nil
+}
+
+// existing returns the ID of the caller's worklog matching plan on issueID,
+// or "" when there is none.
+func (l *worklogger) existing(ctx context.Context, issueID string, plan worklogPlan) (string, error) {
+	worklogs, total, err := l.client.WorklogsUpTo(ctx, issueID, jiraapi.WorklogListOptions{
+		StartedAfter:  plan.started.Add(-time.Minute).UnixMilli(),
+		StartedBefore: plan.started.Add(time.Minute).UnixMilli(),
+	}, MaxWorklogs)
+	if err != nil {
+		return "", err
+	}
+	if total > len(worklogs) {
+		return "", fmt.Errorf("%d worklogs start within a minute of %s, more than the %d atlas checks", total, jiraapi.FormatTime(plan.started), MaxWorklogs)
+	}
+	want := worklogIdentity(issueID, plan.started, plan.seconds)
+	for _, w := range worklogs {
+		if w.Author == nil || w.Author.AccountID != l.accountID {
+			continue
+		}
+		started, err := jiraapi.ParseTime(w.Started)
+		if err != nil {
+			continue
+		}
+		if worklogIdentity(issueID, started, w.TimeSpentSeconds) == want {
+			return w.ID, nil
+		}
+	}
+	return "", nil
+}
+
 func planWorklog(entry WorklogEntry) (worklogPlan, error) {
-	key, err := issueKey("issue", entry.Issue)
+	ref, err := issueKey("issue", entry.Issue)
 	if err != nil {
 		return worklogPlan{}, err
 	}
@@ -200,66 +299,13 @@ func planWorklog(entry WorklogEntry) (worklogPlan, error) {
 	if err != nil {
 		return worklogPlan{}, err
 	}
-	plan := worklogPlan{key: key, started: started, seconds: seconds}
+	plan := worklogPlan{ref: ref, started: started, seconds: seconds}
 	if strings.TrimSpace(entry.Comment) != "" {
 		if plan.comment, err = markdownBody("comment", entry.Comment); err != nil {
 			return worklogPlan{}, err
 		}
 	}
 	return plan, nil
-}
-
-// existingWorklogs maps the dedup key of each worklog the caller already
-// logged in the batch's time range to its ID, per issue. An issue whose
-// worklogs could not be listed gets an error instead, and its entries fail
-// rather than risk logging twice.
-func existingWorklogs(ctx context.Context, client *jiraapi.Client, accountID string, plans []worklogPlan) (map[string]string, map[string]error) {
-	type span struct{ from, to time.Time }
-	spans := map[string]*span{}
-	var order []string
-	for _, plan := range plans {
-		s, ok := spans[plan.key]
-		if !ok {
-			spans[plan.key] = &span{plan.started, plan.started}
-			order = append(order, plan.key)
-			continue
-		}
-		if plan.started.Before(s.from) {
-			s.from = plan.started
-		}
-		if plan.started.After(s.to) {
-			s.to = plan.started
-		}
-	}
-	logged := map[string]string{}
-	errs := map[string]error{}
-	for _, key := range order {
-		s := spans[key]
-		worklogs, total, err := client.WorklogsUpTo(ctx, key, jiraapi.WorklogListOptions{
-			StartedAfter:  s.from.Add(-time.Minute).UnixMilli(),
-			StartedBefore: s.to.Add(time.Minute).UnixMilli(),
-		}, MaxWorklogs)
-		if err != nil {
-			errs[key] = err
-			continue
-		}
-		if total > len(worklogs) {
-			errs[key] = fmt.Errorf("%s has %d worklogs in the batch's time range, more than the %d atlas checks", key, total, MaxWorklogs)
-			continue
-		}
-		for _, w := range worklogs {
-			if w.Author == nil || w.Author.AccountID != accountID {
-				continue
-			}
-			started, err := jiraapi.ParseTime(w.Started)
-			if err != nil {
-				continue
-			}
-			plan := worklogPlan{key: key, started: started, seconds: w.TimeSpentSeconds}
-			logged[plan.dedupKey()] = w.ID
-		}
-	}
-	return logged, errs
 }
 
 var durationPart = regexp.MustCompile(`(?i)^(\d+(?:\.\d+)?)\s*([a-z]+)`)

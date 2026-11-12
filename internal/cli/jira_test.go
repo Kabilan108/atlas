@@ -124,10 +124,9 @@ func TestJiraWorklogAddEntriesFileAndPartialExit(t *testing.T) {
 	setupJiraCLIEnv(t)
 	fake := jiratest.New()
 	fake.JSON("GET /rest/api/3/myself", http.StatusOK, `{"accountId":"acc-me"}`)
-	fake.JSON("GET /rest/api/3/issue/CSM-1/worklog", http.StatusOK, `{"total":0,"worklogs":[]}`)
-	fake.JSON("POST /rest/api/3/issue/CSM-1/worklog", http.StatusCreated, `{"id":"77"}`)
-	fake.JSON("GET /rest/api/3/issue/CSM-2/worklog", http.StatusOK, `{"total":0,"worklogs":[]}`)
-	fake.JSON("POST /rest/api/3/issue/CSM-2/worklog", http.StatusBadRequest, `{"errorMessages":["Worklog must not be null."]}`)
+	fake.IssueWorklogs("10001", "CSM-1", "acc-me")
+	fake.IssueWorklogs("10002", "CSM-2", "acc-me")
+	fake.JSON("POST /rest/api/3/issue/10002/worklog", http.StatusBadRequest, `{"errorMessages":["Worklog must not be null."]}`)
 	entries := filepath.Join(t.TempDir(), "entries.json")
 	if err := os.WriteFile(entries, []byte(`[{"issue":"CSM-1","started":"2026-11-11T09:00:00-05:00","duration":"1h"},
 		{"issue":"CSM-2","started":"2026-11-11T10:00:00-05:00","duration":"30m"}]`), 0o600); err != nil {
@@ -137,7 +136,7 @@ func TestJiraWorklogAddEntriesFileAndPartialExit(t *testing.T) {
 	if ops.KindOf(err) != ops.Partial {
 		t.Fatalf("err = %v, want Partial", err)
 	}
-	want := "0 ok CSM-1 2026-11-11T09:00:00.000-0500 1h worklog 77\n1 failed CSM-2 2026-11-11T10:00:00.000-0500 30m: "
+	want := "0 ok CSM-1 2026-11-11T09:00:00.000-0500 1h worklog 900\n1 failed CSM-2 2026-11-11T10:00:00.000-0500 30m: "
 	if !strings.HasPrefix(got, want) {
 		t.Errorf("output = %q", got)
 	}
