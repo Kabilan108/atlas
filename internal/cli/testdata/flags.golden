@@ -10,6 +10,96 @@ atlas config set
   use: set <key> [value]
 atlas config verify
   use: verify
+atlas jira
+  use: jira
+atlas jira assign
+  use: assign <issue> <user>
+  flag --json bool default="false"
+atlas jira attach
+  use: attach <issue> <file>...
+  flag --json bool default="false"
+atlas jira comment
+  use: comment <issue>
+  flag --body -b string default="" cobra_annotation_mutually_exclusive=body body-file
+  flag --body-file -F string default="" cobra_annotation_mutually_exclusive=body body-file
+  flag --json bool default="false"
+atlas jira create
+  use: create
+  flag --assignee -a string default=""
+  flag --body -b string default="" cobra_annotation_mutually_exclusive=body body-file
+  flag --body-file -F string default="" cobra_annotation_mutually_exclusive=body body-file
+  flag --field stringArray default="[]"
+  flag --json bool default="false"
+  flag --label -l stringArray default="[]"
+  flag --parent string default=""
+  flag --priority string default=""
+  flag --project -p string default="" cobra_annotation_bash_completion_one_required_flag=true
+  flag --summary -s string default="" cobra_annotation_bash_completion_one_required_flag=true
+  flag --type -t string default="" cobra_annotation_bash_completion_one_required_flag=true
+atlas jira edit
+  use: edit <issue>
+  flag --append bool default="false" cobra_annotation_mutually_exclusive=append force
+  flag --assignee -a string default=""
+  flag --body -b string default="" cobra_annotation_mutually_exclusive=body body-file
+  flag --body-file -F string default="" cobra_annotation_mutually_exclusive=body body-file
+  flag --field stringArray default="[]"
+  flag --force bool default="false" cobra_annotation_mutually_exclusive=append force
+  flag --json bool default="false"
+  flag --label -l stringArray default="[]"
+  flag --summary -s string default=""
+atlas jira fields
+  use: fields [issue]
+  flag --json bool default="false"
+  flag --project -p string default=""
+  flag --type -t string default=""
+atlas jira internal-comment
+  use: internal-comment <issue>
+  flag --body -b string default="" cobra_annotation_mutually_exclusive=body body-file
+  flag --body-file -F string default="" cobra_annotation_mutually_exclusive=body body-file
+  flag --json bool default="false"
+atlas jira link
+  use: link <issue> <target> <type>
+  flag --inward bool default="false"
+  flag --json bool default="false"
+atlas jira projects
+  use: projects
+  flag --json bool default="false"
+  flag --limit -L int default="0"
+  flag --query -q string default=""
+atlas jira search
+  use: search <jql>
+  flag --fields stringSlice default="[]"
+  flag --json bool default="false"
+  flag --limit -L int default="0"
+  flag --page-token string default=""
+atlas jira transition
+  use: transition <issue> <transition-or-status>
+  aliases: move
+  flag --field stringArray default="[]"
+  flag --json bool default="false"
+atlas jira transitions
+  use: transitions <issue>
+  flag --json bool default="false"
+atlas jira view
+  use: view <issue>
+  flag --comments -c int default="0"
+  flag --history bool default="false"
+  flag --json bool default="false"
+  flag --raw -r bool default="false"
+atlas jira whoami
+  use: whoami
+  flag --json bool default="false"
+atlas jira worklog
+  use: worklog
+atlas jira worklog add
+  use: add [<issue> <duration>]
+  flag --comment -m string default="" cobra_annotation_mutually_exclusive=entries-file comment
+  flag --entries-file -f string default="" cobra_annotation_mutually_exclusive=entries-file comment|entries-file started
+  flag --json bool default="false"
+  flag --started string default="" cobra_annotation_mutually_exclusive=entries-file started
+atlas jira worklog list
+  use: list <issue>
+  flag --json bool default="false"
 atlas login
   use: login
 atlas mcp
