@@ -20,6 +20,42 @@ atlas mcp serve
   flag --allowed-host stringArray default="[]"
   flag --jira-cloud-id string default=""
   flag --workspace string default=""
+atlas pipeline
+  use: pipeline
+atlas pipeline list
+  use: list
+  flag --branch -b string default=""
+  flag --commit string default=""
+  flag --json bool default="false"
+  flag --limit -L int default="20"
+  flag --pattern string default=""
+  flag --repo -R string default=""
+atlas pipeline log
+  use: log <build>...
+  flag --full bool default="false" cobra_annotation_mutually_exclusive=full max-bytes|full tail
+  flag --json bool default="false"
+  flag --max-bytes int default="0" cobra_annotation_mutually_exclusive=full max-bytes
+  flag --repo -R string default=""
+  flag --step stringArray default="[]"
+  flag --tail int default="0" cobra_annotation_mutually_exclusive=full tail
+atlas pipeline run
+  use: run
+  flag --branch -b string default=""
+  flag --commit string default=""
+  flag --json bool default="false"
+  flag --pipeline -p string default=""
+  flag --repo -R string default=""
+  flag --secured-var stringArray default="[]"
+  flag --var stringArray default="[]"
+  flag --wait duration default="0s"
+atlas pipeline stop
+  use: stop <build>
+  flag --json bool default="false"
+  flag --repo -R string default=""
+atlas pipeline view
+  use: view <build>...
+  flag --json bool default="false"
+  flag --repo -R string default=""
 atlas pr
   use: pr
 atlas pr approve
@@ -35,6 +71,11 @@ atlas pr checkout
   flag --detach bool default="false"
   flag --force -f bool default="false"
   flag --recurse-submodules bool default="false"
+  flag --repo -R string default=""
+atlas pr checks
+  use: checks [number|url|branch]
+  flag --commit string default=""
+  flag --json bool default="false"
   flag --repo -R string default=""
 atlas pr clear-change-request
   use: clear-change-request [number|url|branch]
@@ -95,6 +136,14 @@ atlas pr list
   flag --repo -R string default=""
   flag --reviewer string default=""
   flag --state string default="open"
+atlas pr merge
+  use: merge [number|url|branch]
+  flag --close-source-branch bool default="false"
+  flag --json bool default="false"
+  flag --message string default=""
+  flag --repo -R string default=""
+  flag --strategy string default=""
+  flag --wait duration default="0s"
 atlas pr request-changes
   use: request-changes [number|url|branch]
   flag --body -b string default=""
