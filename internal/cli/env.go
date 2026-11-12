@@ -134,7 +134,7 @@ func (e *cliEnv) prRef(cmd *cobra.Command, selector string) (pr.Ref, error) {
 	if sel.IsURL() {
 		return ref, nil
 	}
-	if ref.Repo, err = e.repository(cmd); err != nil {
+	if ref.RepoRef.Repo, err = e.repository(cmd); err != nil {
 		return pr.Ref{}, err
 	}
 	if sel.IsEmpty() {

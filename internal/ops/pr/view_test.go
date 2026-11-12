@@ -43,15 +43,15 @@ func TestViewMarkdownMatchesGolden(t *testing.T) {
 		in        pr.ViewInput
 		golden    string
 	}{
-		{"number", "", pr.ViewInput{Ref: pr.Ref{Repo: "acme/widgets", PR: "42"}}, "view.md"},
-		{"hash number", "", pr.ViewInput{Ref: pr.Ref{Repo: "acme/widgets", PR: "#42"}}, "view.md"},
-		{"bare repo uses default workspace", "acme", pr.ViewInput{Ref: pr.Ref{Repo: "widgets", PR: "42"}}, "view.md"},
-		{"comments", "", pr.ViewInput{Ref: pr.Ref{Repo: "acme/widgets", PR: "42"}, Comments: true}, "view_comments.md"},
-		{"resolved", "", pr.ViewInput{Ref: pr.Ref{Repo: "acme/widgets", PR: "42"}, Comments: true, IncludeResolved: true}, "view_comments_all.md"},
-		{"branch", "", pr.ViewInput{Ref: pr.Ref{Repo: "acme/widgets", PR: prtest.Branch}, Comments: true}, "view_comments.md"},
-		{"current branch", "", pr.ViewInput{Ref: pr.Ref{Repo: "acme/widgets", CurrentBranch: prtest.Branch}, Comments: true}, "view_comments.md"},
+		{"number", "", pr.ViewInput{Ref: pr.Ref{RepoRef: ops.RepoRef{Repo: "acme/widgets"}, PR: "42"}}, "view.md"},
+		{"hash number", "", pr.ViewInput{Ref: pr.Ref{RepoRef: ops.RepoRef{Repo: "acme/widgets"}, PR: "#42"}}, "view.md"},
+		{"bare repo uses default workspace", "acme", pr.ViewInput{Ref: pr.Ref{RepoRef: ops.RepoRef{Repo: "widgets"}, PR: "42"}}, "view.md"},
+		{"comments", "", pr.ViewInput{Ref: pr.Ref{RepoRef: ops.RepoRef{Repo: "acme/widgets"}, PR: "42"}, Comments: true}, "view_comments.md"},
+		{"resolved", "", pr.ViewInput{Ref: pr.Ref{RepoRef: ops.RepoRef{Repo: "acme/widgets"}, PR: "42"}, Comments: true, IncludeResolved: true}, "view_comments_all.md"},
+		{"branch", "", pr.ViewInput{Ref: pr.Ref{RepoRef: ops.RepoRef{Repo: "acme/widgets"}, PR: prtest.Branch}, Comments: true}, "view_comments.md"},
+		{"current branch", "", pr.ViewInput{Ref: pr.Ref{RepoRef: ops.RepoRef{Repo: "acme/widgets"}, CurrentBranch: prtest.Branch}, Comments: true}, "view_comments.md"},
 		{"url without repo", "", pr.ViewInput{Ref: pr.Ref{PR: prtest.URL}, Comments: true}, "view_comments.md"},
-		{"url wins over repo", "", pr.ViewInput{Ref: pr.Ref{Repo: "other/elsewhere", PR: prtest.URL}, Comments: true}, "view_comments.md"},
+		{"url wins over repo", "", pr.ViewInput{Ref: pr.Ref{RepoRef: ops.RepoRef{Repo: "other/elsewhere"}, PR: prtest.URL}, Comments: true}, "view_comments.md"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -82,7 +82,7 @@ func TestViewMarkdownMatchesGolden(t *testing.T) {
 
 func TestViewJSONMatchesGolden(t *testing.T) {
 	env, fixture := newTestEnv(t, "")
-	result, err := pr.View.Call(context.Background(), env, pr.ViewInput{Ref: pr.Ref{Repo: "acme/widgets", PR: "42"}, JSON: true})
+	result, err := pr.View.Call(context.Background(), env, pr.ViewInput{Ref: pr.Ref{RepoRef: ops.RepoRef{Repo: "acme/widgets"}, PR: "42"}, JSON: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,6 +129,13 @@ func TestViewRejectsBadInput(t *testing.T) {
 		{"bad repo", `{"repo":"a/b/c","pr":"42"}`, "invalid repository"},
 		{"bad url", `{"pr":"https://bitbucket.org/acme/widgets/pull-requests/x"}`, "invalid pull request URL"},
 		{"zero", `{"repo":"acme/widgets","pr":"0"}`, "invalid pull request number"},
+		// The confirmed P2: this once requested /repositories/acme/widgets?fields=description#/...
+		{"query in repo", `{"repo":"acme/widgets?fields=description#","pr":"42"}`, "must not contain"},
+		{"fragment in workspace", `{"repo":"ac#me/widgets","pr":"42"}`, "must not contain"},
+		{"dot repo", `{"repo":"acme/..","pr":"42"}`, "dot segments"},
+		{"url with escaped slash", `{"pr":"https://bitbucket.org/acme/wid%2Fgets/pull-requests/42"}`, "must not contain"},
+		{"url with escaped query", `{"pr":"https://bitbucket.org/acme/wid%3Fx=1/pull-requests/42"}`, "must not contain"},
+		{"url with dot segment", `{"pr":"https://bitbucket.org/acme/%2E%2E/pull-requests/42"}`, "dot segments"},
 		{"trailing data", `{"repo":"acme/widgets","pr":"42"} {}`, "trailing data"},
 	}
 	for _, tc := range tests {
@@ -150,7 +157,7 @@ func TestViewRejectsBadInput(t *testing.T) {
 
 func TestViewMissingPRIsNotFound(t *testing.T) {
 	env, _ := newTestEnv(t, "")
-	_, err := pr.View.Call(context.Background(), env, pr.ViewInput{Ref: pr.Ref{Repo: "acme/widgets", PR: "7"}})
+	_, err := pr.View.Call(context.Background(), env, pr.ViewInput{Ref: pr.Ref{RepoRef: ops.RepoRef{Repo: "acme/widgets"}, PR: "7"}})
 	if kind := ops.KindOf(err); kind != ops.NotFound {
 		t.Fatalf("KindOf(%v) = %v, want not_found", err, kind)
 	}

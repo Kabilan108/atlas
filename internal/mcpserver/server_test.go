@@ -223,6 +223,19 @@ func TestToolCallUsesHeaderCredentials(t *testing.T) {
 	}
 }
 
+// The confirmed P2: a repo with a query and fragment changed the endpoint.
+func TestRepoComponentsCannotRedirectTheEndpoint(t *testing.T) {
+	srv := startServer(t, mcpserver.Options{})
+	session := connect(t, srv.url, credentials())
+	text, isError := callText(t, session, "pr_view", map[string]any{"repo": "acme/widgets?fields=description#", "pr": "42"})
+	if !isError || !strings.Contains(text, "must not contain") {
+		t.Fatalf("isError=%v text=%q", isError, text)
+	}
+	if n := len(srv.fixture.Requests()); n != 0 {
+		t.Fatalf("invalid repo reached Bitbucket %d times: %v", n, srv.fixture.Requests())
+	}
+}
+
 func TestInvalidArgumentsAreToolErrors(t *testing.T) {
 	srv := startServer(t, mcpserver.Options{})
 	session := connect(t, srv.url, credentials())

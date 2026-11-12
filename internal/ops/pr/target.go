@@ -13,8 +13,8 @@ import (
 
 // Ref is the input that names a pull request. Every PR op embeds it.
 type Ref struct {
-	Repo string `json:"repo,omitempty" jsonschema:"workspace/repo, or repo in the default workspace; omit when pr is a URL"`
-	PR   string `json:"pr" jsonschema:"PR number, Bitbucket PR URL, or source branch name"`
+	ops.RepoRef
+	PR string `json:"pr" jsonschema:"PR number, source branch name, or Bitbucket PR URL (which needs no repo)"`
 
 	// CurrentBranch is used when PR is empty. Only the CLI sets it, from git.
 	CurrentBranch string `json:"-"`
@@ -40,20 +40,17 @@ func (s Selector) IsEmpty() bool {
 }
 
 // ParseSelector accepts a PR number (optionally prefixed with #), a
-// bitbucket.org pull request URL, or a branch name.
+// bitbucket.org pull request URL, or a branch name. A URL's workspace and
+// repo are validated like a repo input.
 func ParseSelector(raw string) (Selector, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return Selector{}, nil
 	}
 	if parsed, err := url.Parse(raw); err == nil && parsed.Host == "bitbucket.org" {
-		parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+		parts := strings.Split(strings.Trim(parsed.EscapedPath(), "/"), "/")
 		if len(parts) >= 4 && parts[2] == "pull-requests" {
-			id, err := strconv.Atoi(parts[3])
-			if err != nil || id <= 0 {
-				return Selector{}, ops.Errorf(ops.Invalid, "invalid pull request URL %q", raw)
-			}
-			return Selector{Workspace: parts[0], Repo: parts[1], ID: id}, nil
+			return urlSelector(raw, parts)
 		}
 	}
 	if id, err := strconv.Atoi(strings.TrimPrefix(raw, "#")); err == nil {
@@ -65,28 +62,30 @@ func ParseSelector(raw string) (Selector, error) {
 	return Selector{Branch: raw}, nil
 }
 
-// SplitRepo parses "workspace/repo" or a bare "repo" in defaultWorkspace.
-func SplitRepo(raw, defaultWorkspace string) (workspace, repo string, err error) {
-	parts := strings.Split(strings.TrimSpace(raw), "/")
-	switch {
-	case len(parts) == 1 && parts[0] != "":
-		if defaultWorkspace == "" {
-			return "", "", ops.Errorf(ops.Invalid, "no default workspace: give repo as workspace/repo")
-		}
-		return defaultWorkspace, parts[0], nil
-	case len(parts) == 2 && parts[0] != "" && parts[1] != "":
-		return parts[0], parts[1], nil
-	default:
-		return "", "", ops.Errorf(ops.Invalid, "invalid repository %q: expected repo or workspace/repo", raw)
+func urlSelector(raw string, parts []string) (Selector, error) {
+	id, err := strconv.Atoi(parts[3])
+	if err != nil || id <= 0 {
+		return Selector{}, ops.Errorf(ops.Invalid, "invalid pull request URL %q", raw)
 	}
+	names := make([]string, 2)
+	for i, kind := range []string{"workspace", "repository"} {
+		name, err := url.PathUnescape(parts[i])
+		if err != nil {
+			return Selector{}, ops.Errorf(ops.Invalid, "invalid pull request URL %q: %w", raw, err)
+		}
+		if err := ops.ValidateSlug(kind, name); err != nil {
+			return Selector{}, ops.Errorf(ops.Invalid, "invalid pull request URL %q: %w", raw, err)
+		}
+		names[i] = name
+	}
+	return Selector{Workspace: names[0], Repo: names[1], ID: id}, nil
 }
 
 // Target is a resolved pull request and the repository it lives in. Every
 // later call about the PR must use Workspace and Repo from here.
 type Target struct {
-	Workspace string
-	Repo      string
-	PR        *bitbucket.PullRequest
+	ops.Repository
+	PR *bitbucket.PullRequest
 }
 
 // Resolve fetches the pull request ref names. A URL decides the repository
@@ -96,12 +95,12 @@ func (ref Ref) Resolve(ctx context.Context, env ops.Env) (*Target, error) {
 	if err != nil {
 		return nil, err
 	}
-	workspace, repo := sel.Workspace, sel.Repo
+	repo := ops.Repository{Workspace: sel.Workspace, Repo: sel.Repo}
 	if !sel.IsURL() {
 		if strings.TrimSpace(ref.Repo) == "" {
 			return nil, ops.Errorf(ops.Invalid, "repo is required unless pr is a Bitbucket pull request URL")
 		}
-		if workspace, repo, err = SplitRepo(ref.Repo, env.DefaultWorkspace()); err != nil {
+		if repo, err = ref.RepoRef.Resolve(env); err != nil {
 			return nil, err
 		}
 	}
@@ -118,12 +117,12 @@ func (ref Ref) Resolve(ctx context.Context, env ops.Env) (*Target, error) {
 	}
 	var pr *bitbucket.PullRequest
 	if sel.ID > 0 {
-		pr, err = client.GetPullRequest(ctx, workspace, repo, sel.ID)
+		pr, err = client.GetPullRequest(ctx, repo.Workspace, repo.Repo, sel.ID)
 	} else {
-		pr, err = client.FindPullRequestByBranch(ctx, workspace, repo, sel.Branch)
+		pr, err = client.FindPullRequestByBranch(ctx, repo.Workspace, repo.Repo, sel.Branch)
 	}
 	if err != nil {
 		return nil, err
 	}
-	return &Target{Workspace: workspace, Repo: repo, PR: pr}, nil
+	return &Target{Repository: repo, PR: pr}, nil
 }
