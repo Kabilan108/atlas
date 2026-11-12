@@ -23,7 +23,7 @@ func TestCommentThenActionFailureKeepsTheComment(t *testing.T) {
 	}{
 		{pr.Approve, `"body":"lgtm"`, "/approve", "approve", "posted comment but failed to approve pull request: "},
 		{pr.RequestChanges, `"body":"fix it"`, "/request-changes", "request-changes", "posted comment but failed to request changes on pull request: "},
-		{pr.Close, `"comment":"bye"`, "/decline", "decline", "posted closing comment but failed to close pull request: "},
+		{pr.Close, `"body":"bye"`, "/decline", "decline", "posted closing comment but failed to close pull request: "},
 	}
 	for _, tc := range tests {
 		t.Run(tc.def.Info().Name, func(t *testing.T) {

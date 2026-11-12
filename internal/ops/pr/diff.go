@@ -23,8 +23,9 @@ const (
 // DiffInput is the input to pr_diff.
 type DiffInput struct {
 	Ref
-	Path     string `json:"path,omitempty" jsonschema:"only this file, or the files under this directory"`
-	MaxBytes int    `json:"max_bytes,omitempty" jsonschema:"cap on diff bytes; default 60000, max 8388608"`
+	Path        string `json:"path,omitempty" jsonschema:"only this file, or the files under this directory"`
+	LineNumbers bool   `json:"line_numbers,omitempty" jsonschema:"prefix each line with its old and new line numbers, for placing inline comments"`
+	MaxBytes    int    `json:"max_bytes,omitempty" jsonschema:"cap on diff bytes; default 60000, max 8388608"`
 }
 
 // DiffResult is a pull request's unified diff.
@@ -81,6 +82,9 @@ func diff(ctx context.Context, env ops.Env, in DiffInput) (*DiffResult, error) {
 	result := &DiffResult{PullRequest: target.PR.ID, Files: DiffFiles(raw), target: target, path: path, DownloadTruncated: body.Truncated}
 	if path != "" {
 		raw = filterDiff(raw, path)
+	}
+	if in.LineNumbers {
+		raw = numberDiff(raw)
 	}
 	result.fullBytes = len(raw)
 	limit := in.MaxBytes

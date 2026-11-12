@@ -11,9 +11,9 @@ atlas branch
 atlas branch list
   use: list
   aliases: ls
-  flag --filter string default=""
   flag --json bool default="false"
   flag --limit -L int default="30"
+  flag --query -q string default=""
   flag --repo -R string default=""
 atlas branch view
   use: view <branch>
@@ -65,8 +65,10 @@ atlas jira create
   flag --body -b string default="" cobra_annotation_mutually_exclusive=body body-file
   flag --body-file -F string default="" cobra_annotation_mutually_exclusive=body body-file
   flag --field stringArray default="[]"
+  flag --inward-link stringArray default="[]"
   flag --json bool default="false"
   flag --label -l stringArray default="[]"
+  flag --link stringArray default="[]"
   flag --parent string default=""
   flag --priority string default=""
   flag --project -p string default="" cobra_annotation_bash_completion_one_required_flag=true
@@ -104,7 +106,7 @@ atlas jira projects
   flag --query -q string default=""
 atlas jira search
   use: search <jql>
-  flag --fields stringSlice default="[]"
+  flag --columns stringSlice default="[]"
   flag --json bool default="false"
   flag --limit -L int default="0"
   flag --page-token string default=""
@@ -155,7 +157,7 @@ atlas pipeline list
   flag --commit string default=""
   flag --json bool default="false"
   flag --limit -L int default="20"
-  flag --pattern string default=""
+  flag --pipeline -p string default=""
   flag --repo -R string default=""
 atlas pipeline log
   use: log <build>...
@@ -204,13 +206,14 @@ atlas pr checks
   flag --commit string default=""
   flag --json bool default="false"
   flag --repo -R string default=""
+  flag --wait duration default="0s"
 atlas pr clear-change-request
   use: clear-change-request [number|url|branch]
   flag --json bool default="false"
   flag --repo -R string default=""
 atlas pr close
   use: close <number|url|branch>
-  flag --comment -c string default=""
+  flag --body -b string default=""
   flag --json bool default="false"
   flag --repo -R string default=""
 atlas pr comment
@@ -246,6 +249,7 @@ atlas pr diff
   use: diff [number|url|branch]
   flag --color string default="auto"
   flag --json bool default="false"
+  flag --line-numbers -n bool default="false"
   flag --name-only bool default="false"
   flag --patch bool default="false"
   flag --repo -R string default=""
@@ -267,13 +271,17 @@ atlas pr list
   flag --all bool default="false"
   flag --author string default=""
   flag --json bool default="false"
+  flag --limit -L int default="50"
   flag --repo -R string default=""
+  flag --repos stringSlice default="[]"
   flag --reviewer string default=""
   flag --state string default="open"
+  flag --updated-since string default=""
 atlas pr merge
   use: merge [number|url|branch]
   flag --close-source-branch bool default="false"
   flag --json bool default="false"
+  flag --match-head-commit string default=""
   flag --message string default=""
   flag --repo -R string default=""
   flag --strategy string default=""
@@ -320,7 +328,7 @@ atlas repo list
   aliases: ls
   flag --json bool default="false"
   flag --limit -L int default="100"
-  flag --name string default=""
+  flag --query -q string default=""
   flag --workspace string default=""
 atlas snippet
   use: snippet

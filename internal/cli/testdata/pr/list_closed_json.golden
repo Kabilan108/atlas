@@ -2,4 +2,4 @@ $ atlas pr list -R acme/widgets --state Closed --json
 --- stdout
 null
 --- requests
-GET /2.0/repositories/acme/widgets/pullrequests?state=DECLINED
+GET /2.0/repositories/acme/widgets/pullrequests?pagelen=50&sort=-updated_on&state=DECLINED

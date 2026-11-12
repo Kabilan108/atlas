@@ -14,7 +14,7 @@ const defaultRepoLimit = 100
 // ListInput is the input to repo_list.
 type ListInput struct {
 	Workspace string `json:"workspace,omitempty" jsonschema:"default: the default workspace"`
-	Name      string `json:"name,omitempty" jsonschema:"case-insensitive substring of the repo name"`
+	Query     string `json:"query,omitempty" jsonschema:"case-insensitive substring of the repo name"`
 	Limit     int    `json:"limit,omitempty" jsonschema:"default 100, max 1000"`
 }
 
@@ -52,7 +52,7 @@ func listRepos(ctx context.Context, env ops.Env, in ListInput) (*ListResult, err
 		return nil, err
 	}
 	repos, err := client.SearchRepositories(ctx, workspace, &bitbucket.RepositoryListOptions{
-		Name:  strings.TrimSpace(in.Name),
+		Name:  strings.TrimSpace(in.Query),
 		Sort:  "-updated_on",
 		Limit: limit + 1,
 	})

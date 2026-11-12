@@ -72,3 +72,15 @@ func TestPRChecksSeesAForcePushPastTheCache(t *testing.T) {
 		t.Fatalf("output:\n%s", out)
 	}
 }
+
+func TestPRChecksWaitRejectsOverMaximum(t *testing.T) {
+	setupCLIEnv(t)
+	fixture := mergetest.New()
+	_, err := runAtlas(t, fixture, "--no-cache", "pr", "checks", "7", "-R", "acme/widgets", "--wait", "11m")
+	if err == nil || !strings.Contains(err.Error(), "wait_seconds 660 is over the 600-second maximum") {
+		t.Fatalf("err = %v", err)
+	}
+	if len(fixture.Requests()) != 0 {
+		t.Fatalf("requests = %v", fixture.Requests())
+	}
+}

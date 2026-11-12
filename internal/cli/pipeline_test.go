@@ -10,7 +10,7 @@ import (
 func TestPipelineListPassesFilters(t *testing.T) {
 	setupCLIEnv(t)
 	fixture := pipelinetest.New()
-	out, err := runAtlas(t, fixture, "--no-cache", "pipeline", "list", "-R", "acme/widgets", "-b", "testing", "--pattern", "db-backup", "-L", "5")
+	out, err := runAtlas(t, fixture, "--no-cache", "pipeline", "list", "-R", "acme/widgets", "-b", "testing", "-p", "db-backup", "-L", "5")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,5 +116,17 @@ func TestPipelineRunSecuredVarErrorsHideTheValue(t *testing.T) {
 		if len(fixture.Requests()) != 0 {
 			t.Fatal("a malformed variable reached Bitbucket")
 		}
+	}
+}
+
+func TestPipelineViewResultURLNeedsNoGit(t *testing.T) {
+	setupCLIEnv(t)
+	t.Chdir(t.TempDir())
+	out, err := runAtlas(t, pipelinetest.New(), "--no-cache", "pipeline", "view", "https://bitbucket.org/acme/widgets/pipelines/results/2090")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "## #2090 FAILED") {
+		t.Fatalf("output:\n%s", out)
 	}
 }

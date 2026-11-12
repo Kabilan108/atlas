@@ -10,7 +10,7 @@ import (
 
 func TestClose(t *testing.T) {
 	env, fixture := newTestEnv(t, "")
-	result, err := invoke(t, pr.Close, env, `{"repo":"acme/widgets","pr":"42","comment":"Superseded"}`)
+	result, err := invoke(t, pr.Close, env, `{"repo":"acme/widgets","pr":"42","body":"Superseded"}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -26,7 +26,7 @@ func TestClose(t *testing.T) {
 func TestCloseSaysTheCommentPosted(t *testing.T) {
 	env, fixture := newTestEnv(t, "")
 	fixture.Fail(http.MethodPost, "/repositories/acme/widgets/pullrequests/42/decline", 0)
-	_, err := invoke(t, pr.Close, env, `{"repo":"acme/widgets","pr":"42","comment":"bye"}`)
+	_, err := invoke(t, pr.Close, env, `{"repo":"acme/widgets","pr":"42","body":"bye"}`)
 	if err == nil || !strings.HasPrefix(err.Error(), "posted closing comment but failed to close pull request") {
 		t.Fatalf("err = %v", err)
 	}

@@ -49,3 +49,16 @@ func TestPRMergeRejectsUnknownStrategy(t *testing.T) {
 		t.Fatal("posted a merge with an invalid strategy")
 	}
 }
+
+func TestPRMergeMatchHeadCommit(t *testing.T) {
+	setupCLIEnv(t)
+	fixture := mergetest.New()
+	fixture.HeadCommit = "99887766aabb"
+	_, err := runAtlas(t, fixture, "--no-cache", "pr", "merge", "7", "-R", "acme/widgets", "--match-head-commit", mergetest.Head)
+	if err == nil || !strings.Contains(err.Error(), "head is now 99887766aabb") {
+		t.Fatalf("err = %v", err)
+	}
+	if fixture.Posted() {
+		t.Fatal("merged a PR whose head moved")
+	}
+}

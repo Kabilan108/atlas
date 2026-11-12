@@ -3,6 +3,7 @@ package pipeline
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -106,24 +107,49 @@ func newStep(s bitbucket.PipelineStep) Step {
 	}
 }
 
-// parseBuilds validates build references: build numbers (2090 or #2090) or
-// pipeline UUIDs, with or without braces.
-func parseBuilds(raw []string) ([]string, error) {
+// resolveBuilds validates build references (build numbers such as 2090 or
+// #2090, pipeline UUIDs with or without braces, or Pipelines result URLs)
+// and finds their repository. A URL names its own repository: ref may then
+// be empty, and must name the same one if set.
+func resolveBuilds(env ops.Env, ref ops.RepoRef, raw []string) ([]string, ops.Repository, error) {
 	if len(raw) == 0 {
-		return nil, ops.Errorf(ops.Invalid, "builds is required: give build numbers such as 2090 (see pipeline_list) or pipeline UUIDs")
+		return nil, ops.Repository{}, ops.Errorf(ops.Invalid, "builds is required: give build numbers such as 2090 (see pipeline_list) or pipeline UUIDs")
 	}
 	if len(raw) > maxBuilds {
-		return nil, ops.Errorf(ops.Invalid, "%d builds requested; read at most %d per call", len(raw), maxBuilds)
+		return nil, ops.Repository{}, ops.Errorf(ops.Invalid, "%d builds requested; read at most %d per call", len(raw), maxBuilds)
 	}
 	builds := make([]string, 0, len(raw))
+	var fromURL *ops.Repository
 	for _, value := range raw {
+		if run, ok := bitbucket.ParsePipelineResultURL(value); ok {
+			repo, err := ops.RepoRef{Repo: run.Workspace + "/" + run.Repo}.Resolve(env)
+			if err != nil {
+				return nil, ops.Repository{}, ops.Errorf(ops.Invalid, "build URL %q: %w", value, err)
+			}
+			if fromURL != nil && *fromURL != repo {
+				return nil, ops.Repository{}, ops.Errorf(ops.Invalid, "builds name runs in %s and %s; read one repository per call", *fromURL, repo)
+			}
+			fromURL = &repo
+			builds = append(builds, strconv.Itoa(run.BuildNumber))
+			continue
+		}
 		build, err := parseBuild(value)
 		if err != nil {
-			return nil, err
+			return nil, ops.Repository{}, err
 		}
 		builds = append(builds, build)
 	}
-	return builds, nil
+	if fromURL == nil || strings.TrimSpace(ref.Repo) != "" {
+		repo, err := ref.Resolve(env)
+		if err != nil {
+			return nil, ops.Repository{}, err
+		}
+		if fromURL != nil && *fromURL != repo {
+			return nil, ops.Repository{}, ops.Errorf(ops.Invalid, "build URLs are in %s, not repo %s", *fromURL, repo)
+		}
+		return builds, repo, nil
+	}
+	return builds, *fromURL, nil
 }
 
 func parseBuild(raw string) (string, error) {
@@ -137,7 +163,7 @@ func parseBuild(raw string) (string, error) {
 		}
 	}
 	if !valid {
-		return "", ops.Errorf(ops.Invalid, "invalid build %q: expected a build number such as 2090 or a pipeline UUID", raw)
+		return "", ops.Errorf(ops.Invalid, "invalid build %q: expected a build number such as 2090, a pipeline UUID, or a result URL", raw)
 	}
 	return build, nil
 }

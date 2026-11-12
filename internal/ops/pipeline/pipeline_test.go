@@ -41,7 +41,7 @@ func mustContain(t *testing.T, text string, wants ...string) {
 func TestListFiltersAndShowsRunDetails(t *testing.T) {
 	env, fixture := newEnv(t)
 	result, err := pipeline.List.Call(context.Background(), env, pipeline.ListInput{
-		RepoRef: ops.RepoRef{Repo: "widgets"}, Branch: "testing", Pattern: "db-backup", Commit: "333ec33226f2aa11bb22cc33dd44ee55ff667788",
+		RepoRef: ops.RepoRef{Repo: "widgets"}, Branch: "testing", Pipeline: "db-backup", Commit: "333ec33226f2aa11bb22cc33dd44ee55ff667788",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -60,7 +60,7 @@ func TestListFiltersAndShowsRunDetails(t *testing.T) {
 		"| 2090 | FAILED | testing | 333ec33226f2 | custom:db-backup | MANUAL | Merge Console | 2026-11-02T18:45:37Z | 1m24s |",
 		"| 2095 | SUCCESSFUL |")
 
-	empty, err := pipeline.List.Call(context.Background(), env, pipeline.ListInput{RepoRef: ops.RepoRef{Repo: repo}, Pattern: "nightly"})
+	empty, err := pipeline.List.Call(context.Background(), env, pipeline.ListInput{RepoRef: ops.RepoRef{Repo: repo}, Pipeline: "nightly"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,6 +125,43 @@ func TestViewValidatesBuilds(t *testing.T) {
 		_, err := pipeline.View.Call(context.Background(), env, pipeline.ViewInput{RepoRef: ops.RepoRef{Repo: repo}, Builds: builds})
 		if ops.KindOf(err) != ops.Invalid {
 			t.Errorf("builds %q: err = %v, want invalid", builds, err)
+		}
+	}
+	if n := len(fixture.Requests()); n != 0 {
+		t.Fatalf("made %d requests", n)
+	}
+}
+
+func TestViewAndLogTakeResultURLs(t *testing.T) {
+	env, _ := newEnv(t)
+	view, err := pipeline.View.Call(context.Background(), env, pipeline.ViewInput{Builds: []string{
+		"https://bitbucket.org/acme/widgets/pipelines/results/2090",
+		"https://bitbucket.org/acme/widgets/addon/pipelines/home#!/results/2096/steps/{x}",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.Repo != repo || view.Results[0].Build != "2090" || view.Results[1].Build != "2096" {
+		t.Fatalf("view = %+v", view)
+	}
+	logs, err := pipeline.Log.Call(context.Background(), env, pipeline.LogInput{
+		RepoRef: ops.RepoRef{Repo: "widgets"}, Builds: []string{"https://bitbucket.org/acme/widgets/pipelines/results/2090"},
+	})
+	if err != nil || logs.Results[0].BuildNumber != 2090 {
+		t.Fatalf("logs = %+v, err = %v", logs, err)
+	}
+}
+
+func TestBuildURLsMustShareTheRepo(t *testing.T) {
+	env, fixture := newEnv(t)
+	for _, in := range []pipeline.ViewInput{
+		{Builds: []string{"https://bitbucket.org/acme/widgets/pipelines/results/1", "https://bitbucket.org/acme/gadgets/pipelines/results/2"}},
+		{RepoRef: ops.RepoRef{Repo: "acme/gadgets"}, Builds: []string{"https://bitbucket.org/acme/widgets/pipelines/results/1"}},
+		{Builds: []string{"https://bitbucket.org/acme/widgets/pipelines/results/1", "2090"}, RepoRef: ops.RepoRef{Repo: "acme/other"}},
+	} {
+		_, err := pipeline.View.Call(context.Background(), env, in)
+		if ops.KindOf(err) != ops.Invalid || !strings.Contains(err.Error(), "acme/") {
+			t.Errorf("%+v: err = %v, want invalid naming the repos", in, err)
 		}
 	}
 	if n := len(fixture.Requests()); n != 0 {

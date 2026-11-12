@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/kabilan108/atlas/internal/bitbucket"
 	"github.com/kabilan108/atlas/internal/ops"
 	"github.com/kabilan108/atlas/internal/ops/pipeline"
 	"github.com/spf13/cobra"
@@ -30,6 +31,24 @@ func pipelineRepo(cmd *cobra.Command, env *cliEnv) (ops.RepoRef, error) {
 	return ops.RepoRef{Repo: repo}, nil
 }
 
+// pipelineBuildsRepo is pipelineRepo for build arguments, except that
+// result URLs name their own repository, so git is not asked when every
+// build is one and -R is not set.
+func pipelineBuildsRepo(cmd *cobra.Command, env *cliEnv, builds []string) (ops.RepoRef, error) {
+	if repoFlag, _ := cmd.Flags().GetString("repo"); repoFlag == "" {
+		allURLs := len(builds) > 0
+		for _, build := range builds {
+			if _, ok := bitbucket.ParsePipelineResultURL(build); !ok {
+				allURLs = false
+			}
+		}
+		if allURLs {
+			return ops.RepoRef{}, nil
+		}
+	}
+	return pipelineRepo(cmd, env)
+}
+
 func newPipelineListCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
@@ -39,7 +58,7 @@ func newPipelineListCmd() *cobra.Command {
 	addPRRepoFlag(cmd)
 	cmd.Flags().StringP("branch", "b", "", "Only runs on this branch")
 	cmd.Flags().String("commit", "", "Only runs on this commit (full SHA)")
-	cmd.Flags().String("pattern", "", "Only runs of this selector pattern, e.g. a custom pipeline name")
+	cmd.Flags().StringP("pipeline", "p", "", "Only runs of this custom pipeline or selector pattern, e.g. db-backup")
 	cmd.Flags().IntP("limit", "L", 20, "Maximum number of runs (max 100)")
 	return bind(cmd, binding[pipeline.ListInput, *pipeline.ListResult]{
 		op: pipeline.List,
@@ -50,9 +69,9 @@ func newPipelineListCmd() *cobra.Command {
 			}
 			branch, _ := cmd.Flags().GetString("branch")
 			commit, _ := cmd.Flags().GetString("commit")
-			pattern, _ := cmd.Flags().GetString("pattern")
+			custom, _ := cmd.Flags().GetString("pipeline")
 			limit, _ := cmd.Flags().GetInt("limit")
-			return pipeline.ListInput{RepoRef: repo, Branch: branch, Commit: commit, Pattern: pattern, Limit: limit}, nil
+			return pipeline.ListInput{RepoRef: repo, Branch: branch, Commit: commit, Pipeline: custom, Limit: limit}, nil
 		},
 	})
 }
@@ -61,14 +80,14 @@ func newPipelineViewCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "view <build>...",
 		Short: "Show pipeline runs and their steps",
-		Long:  "Show pipeline runs and their steps. A build is a build number (2090 or #2090) or a pipeline UUID.",
+		Long:  "Show pipeline runs and their steps. A build is a build number (2090 or #2090), a pipeline UUID, or a result URL.",
 		Args:  cobra.RangeArgs(1, 10),
 	}
 	addPRRepoFlag(cmd)
 	return bind(cmd, binding[pipeline.ViewInput, *pipeline.ViewResult]{
 		op: pipeline.View,
 		input: func(cmd *cobra.Command, args []string, env *cliEnv) (pipeline.ViewInput, error) {
-			repo, err := pipelineRepo(cmd, env)
+			repo, err := pipelineBuildsRepo(cmd, env, args)
 			if err != nil {
 				return pipeline.ViewInput{}, err
 			}
@@ -94,7 +113,7 @@ func newPipelineLogCmd() *cobra.Command {
 	return bind(cmd, binding[pipeline.LogInput, *pipeline.LogResult]{
 		op: pipeline.Log,
 		input: func(cmd *cobra.Command, args []string, env *cliEnv) (pipeline.LogInput, error) {
-			repo, err := pipelineRepo(cmd, env)
+			repo, err := pipelineBuildsRepo(cmd, env, args)
 			if err != nil {
 				return pipeline.LogInput{}, err
 			}

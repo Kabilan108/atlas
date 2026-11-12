@@ -16,6 +16,9 @@ import (
 
 const defaultViewComments = 10
 
+// maxViewChildren caps the child issues an epic's view lists.
+const maxViewChildren = 50
+
 // ViewInput is the input to jira_issue_view.
 type ViewInput struct {
 	IssueRef
@@ -31,15 +34,20 @@ type ViewResult struct {
 	History       []jiraapi.ChangelogHistory `json:"history,omitempty"`
 	TotalHistory  int                        `json:"total_history,omitempty"`
 	URL           string                     `json:"url"`
+	// Children are the issues whose parent is this one, read for issue
+	// types above the standard level (epics); subtasks come with the issue.
+	Children     []jiraapi.Issue `json:"children,omitempty"`
+	MoreChildren bool            `json:"more_children,omitempty"`
 
-	site  string
-	media map[string]jiraapi.RenderedAttachment
+	site        string
+	media       map[string]jiraapi.RenderedAttachment
+	childrenErr error
 }
 
 var View = &ops.Op[ViewInput, *ViewResult]{
 	Meta: ops.Meta{
 		Name: "jira_issue_view",
-		Description: "Show a Jira issue as markdown: status, people, parent, labels, links, attachments, custom fields by name, " +
+		Description: "Show a Jira issue as markdown: status, people, parent, subtasks or an epic's children, labels, links, attachments, custom fields by name, " +
 			"description and recent comments (marked internal where they are). Set history for the changelog.",
 		Surfaces: ops.Both,
 		ReadOnly: true,
@@ -90,7 +98,29 @@ func view(ctx context.Context, env ops.Env, in ViewInput) (*ViewResult, error) {
 			return nil, fmt.Errorf("fetch history: %w", err)
 		}
 	}
+	if t := issue.Fields.IssueType; t != nil && t.HierarchyLevel > 0 {
+		result.Children, result.MoreChildren, result.childrenErr = children(ctx, client, issue.Key)
+	}
 	return result, nil
+}
+
+// children reads the first maxViewChildren issues whose parent is key. The
+// view still renders without them, so a failed search is noted, not
+// returned.
+func children(ctx context.Context, client *jiraapi.Client, key string) ([]jiraapi.Issue, bool, error) {
+	page, err := client.SearchPage(ctx, jiraapi.SearchRequest{
+		JQL:        fmt.Sprintf("parent = %s ORDER BY created ASC", key),
+		Fields:     []string{"summary", "status", "issuetype", "assignee"},
+		MaxResults: maxViewChildren,
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	issues := page.Issues
+	if len(issues) > maxViewChildren {
+		issues = issues[:maxViewChildren]
+	}
+	return issues, !page.IsLast, nil
 }
 
 // recentComments returns the newest limit comments, oldest first, and the
@@ -158,6 +188,7 @@ func (r *ViewResult) Markdown() (string, error) {
 	} else {
 		body.WriteString(strings.TrimRight(description, "\n") + "\n")
 	}
+	r.writeChildren(&body)
 	r.writeLinks(&body)
 	r.writeAttachments(&body)
 	if err := r.writeComments(&body, render); err != nil {
@@ -348,6 +379,53 @@ func (r *ViewResult) mediaLink(m adf.Media) (string, string) {
 		}
 	}
 	return m.Alt, m.URL
+}
+
+func (r *ViewResult) writeChildren(w *bytes.Buffer) {
+	var subtasks []jiraapi.IssueRef
+	if raw, ok := r.Issue.RawFields["subtasks"]; ok {
+		_ = json.Unmarshal(raw, &subtasks)
+	}
+	if len(subtasks) > 0 {
+		w.WriteString("\n## Subtasks\n\n")
+		for _, sub := range subtasks {
+			writeChild(w, sub.Key, sub.Fields.IssueType, sub.Fields.Summary, sub.Fields.Status, nil)
+		}
+	}
+	if t := r.Issue.Fields.IssueType; t == nil || t.HierarchyLevel <= 0 {
+		return
+	}
+	w.WriteString("\n## Child issues\n\n")
+	switch {
+	case r.childrenErr != nil:
+		fmt.Fprintf(w, "Could not list them (%v); search parent = %s.\n", r.childrenErr, r.Issue.Key)
+		return
+	case len(r.Children) == 0:
+		w.WriteString("None.\n")
+		return
+	}
+	for _, child := range r.Children {
+		f := child.Fields
+		writeChild(w, child.Key, f.IssueType, f.Summary, f.Status, f.Assignee)
+	}
+	if r.MoreChildren {
+		fmt.Fprintf(w, "\nShowing the first %d; search parent = %s for the rest.\n", len(r.Children), r.Issue.Key)
+	}
+}
+
+func writeChild(w *bytes.Buffer, key string, issueType *jiraapi.IssueType, summary string, status *jiraapi.Status, assignee *jiraapi.User) {
+	w.WriteString("- " + key)
+	if issueType != nil && issueType.Name != "" {
+		w.WriteString(" [" + issueType.Name + "]")
+	}
+	w.WriteString(" " + strings.Join(strings.Fields(summary), " "))
+	if status != nil && status.Name != "" {
+		w.WriteString(" (" + status.Name + ")")
+	}
+	if name := userName(assignee); name != "" {
+		w.WriteString(" · " + name)
+	}
+	w.WriteString("\n")
 }
 
 func (r *ViewResult) writeLinks(w *bytes.Buffer) {

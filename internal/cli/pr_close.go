@@ -15,13 +15,13 @@ func newPRCloseCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 	}
 	addPRRepoFlag(cmd)
-	cmd.Flags().StringP("comment", "c", "", "Leave a closing comment")
+	cmd.Flags().StringP("body", "b", "", "Leave a closing comment")
 	return bind(cmd, binding[pr.CloseInput, *pr.CloseResult]{
 		op: pr.Close,
 		input: func(cmd *cobra.Command, args []string, env *cliEnv) (pr.CloseInput, error) {
-			comment, _ := cmd.Flags().GetString("comment")
+			body, _ := cmd.Flags().GetString("body")
 			ref, err := env.requiredPRRef(cmd, args[0])
-			return pr.CloseInput{Ref: ref, Comment: comment}, err
+			return pr.CloseInput{Ref: ref, Body: body}, err
 		},
 		human: func(w io.Writer, closed *pr.CloseResult) error {
 			if closed.Failed != nil {

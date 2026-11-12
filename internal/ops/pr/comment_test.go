@@ -73,8 +73,8 @@ func TestCommentDelete(t *testing.T) {
 		t.Fatalf("receipt = %s", result.Text)
 	}
 	wantCalls(t, fixture, "GET "+prPath, "DELETE "+prPath+"/comments/101")
-	if !pr.CommentDelete.Destructive || pr.Comment.Destructive {
-		t.Fatal("only pr_comment_delete is destructive")
+	if !pr.CommentDelete.Destructive || !pr.Comment.Destructive {
+		t.Fatal("pr_comment_delete and pr_comment (whose edit replaces a body) are destructive")
 	}
 
 	env, fixture = newTestEnv(t, "")

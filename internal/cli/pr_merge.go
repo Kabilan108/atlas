@@ -21,6 +21,7 @@ func newPRMergeCmd() *cobra.Command {
 	cmd.Flags().String("strategy", "", "Merge strategy: "+strings.Join(pr.MergeStrategy("").Enum(), ", ")+" (default: the destination branch's)")
 	cmd.Flags().String("message", "", "Merge commit message")
 	cmd.Flags().Bool("close-source-branch", false, "Delete the source branch after merging (default: the PR's setting)")
+	cmd.Flags().String("match-head-commit", "", "Merge only if the PR head is still this commit SHA")
 	cmd.Flags().Duration("wait", 0, "How long to wait for a queued merge (default 2m, max 10m)")
 	return bind(cmd, binding[pr.MergeInput, *pr.MergeReceipt]{
 		op:    pr.Merge,
@@ -46,7 +47,8 @@ func prMergeInput(cmd *cobra.Command, args []string, env *cliEnv) (pr.MergeInput
 	if err != nil {
 		return pr.MergeInput{}, err
 	}
-	in := pr.MergeInput{Ref: ref, Strategy: pr.MergeStrategy(strategy), Message: message, WaitSeconds: seconds}
+	head, _ := cmd.Flags().GetString("match-head-commit")
+	in := pr.MergeInput{Ref: ref, Strategy: pr.MergeStrategy(strategy), Message: message, Head: head, WaitSeconds: seconds}
 	if cmd.Flags().Changed("close-source-branch") {
 		closeBranch, _ := cmd.Flags().GetBool("close-source-branch")
 		in.CloseSourceBranch = &closeBranch

@@ -14,10 +14,17 @@ import (
 // Ref is the input that names a pull request. Every PR op embeds it.
 type Ref struct {
 	ops.RepoRef
-	PR string `json:"pr" jsonschema:"PR number, source branch name, or Bitbucket PR URL (which needs no repo)"`
+	PR string `json:"pr" jsonschema:"PR number, source branch name, or Bitbucket PR URL"`
 
 	// CurrentBranch is used when PR is empty. Only the CLI sets it, from git.
 	CurrentBranch string `json:"-"`
+}
+
+// prRepoDescription is the repo property's description on every PR op.
+const prRepoDescription = "workspace/repo or bare repo name (default workspace); required unless pr is a URL"
+
+func (Ref) PropertyDescriptions() map[string]string {
+	return map[string]string{"repo": prRepoDescription}
 }
 
 // Selector is a parsed PR argument. A URL fills Workspace and Repo.

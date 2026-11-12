@@ -19,7 +19,7 @@ func TestStatus(t *testing.T) {
 	if result.Text != want {
 		t.Fatalf("text:\n%s\nwant:\n%s", result.Text, want)
 	}
-	wantCalls(t, fixture, "GET /2.0/user", "GET /2.0/repositories/acme/widgets/pullrequests?state=OPEN")
+	wantCalls(t, fixture, "GET /2.0/user", "GET /2.0/repositories/acme/widgets/pullrequests?pagelen=50&sort=-updated_on&state=OPEN")
 
 	result, err = invoke(t, pr.Status, env, `{"repo":"acme/widgets"}`)
 	if err != nil {

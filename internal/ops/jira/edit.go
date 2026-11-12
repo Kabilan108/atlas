@@ -48,7 +48,8 @@ var Edit = &ops.Op[EditInput, *Edited]{
 		Name: "jira_issue_edit",
 		Description: "Edit a Jira issue: summary, description, labels, assignee, fields by display name (see jira_fields). " +
 			"Replacing one with media, complex tables etc. needs force; body_mode append keeps it.",
-		Surfaces: ops.Both,
+		Surfaces:    ops.Both,
+		Destructive: true,
 	},
 	Run: edit,
 }

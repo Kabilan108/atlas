@@ -171,10 +171,10 @@ func TestAttach(t *testing.T) {
 		}
 		jiratest.Write(w, http.StatusOK, `[{"id":"12001","filename":"notes.txt","size":11},{"id":"12002","filename":"b.log","size":3}]`)
 	})
-	args := fmt.Sprintf(`{"issue":"CSM-756","files":[{"filename":"notes.txt","content":"%s"},{"filename":"b.log","content":"%s"}]}`,
-		base64.StdEncoding.EncodeToString([]byte("hello atlas")), base64.StdEncoding.EncodeToString([]byte("abc")))
+	args := fmt.Sprintf(`{"issue":"CSM-756","files":[{"filename":"notes.txt","content":"%s"},{"filename":"b.log","text":"abc"},{"filename":"empty.csv","text":""}]}`,
+		base64.StdEncoding.EncodeToString([]byte("hello atlas")))
 	res := mustInvoke(t, fake, Attach, args)
-	if parts["notes.txt"] != "hello atlas" || parts["b.log"] != "abc" {
+	if len(parts) != 3 || parts["notes.txt"] != "hello atlas" || parts["b.log"] != "abc" || parts["empty.csv"] != "" {
 		t.Errorf("uploaded parts = %v", parts)
 	}
 	wantContains(t, res.Text, `{"id":"12001","filename":"notes.txt","size":11,"url":"https://acme.atlassian.net/rest/api/3/attachment/content/12001"}`)
@@ -183,6 +183,9 @@ func TestAttach(t *testing.T) {
 		{`[]`, "1 to 20 files"},
 		{`[{"filename":"../etc/passwd","content":"YQ=="}]`, "bare file name"},
 		{`[{"filename":"a.txt","content":"not base64!"}]`, "not base64"},
+		{`[{"filename":"a.txt"}]`, "give its text, or its bytes base64-encoded as content"},
+		{`[{"filename":"a.txt","text":"x","content":"YQ=="}]`, "not both"},
+		{`[{"filename":"a.log","text":"` + strings.Repeat("a", MaxAttachBytes-1) + `"},{"filename":"b.log","text":"ab"}]`, "files[1] b.log brings the files to 10485761 bytes"},
 		{`[{"filename":"big.bin","content":"` + base64.StdEncoding.EncodeToString(make([]byte, MaxAttachBytes+1)) + `"}]`, "over the 10485760-byte limit"},
 	} {
 		fake := jiratest.New()

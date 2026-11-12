@@ -95,7 +95,7 @@ func TestRepoCommandsUseFlags(t *testing.T) {
 		req  string
 		out  string
 	}{
-		{[]string{"repo", "list", "-L", "1", "--name", "gad"}, "GET /2.0/repositories/acme?pagelen=2&q=name+~+%22gad%22&sort=-updated_on", "| gadgets | main | public |"},
+		{[]string{"repo", "list", "-L", "1", "-q", "gad"}, "GET /2.0/repositories/acme?pagelen=2&q=name+~+%22gad%22&sort=-updated_on", "| gadgets | main | public |"},
 		{[]string{"branch", "list", "-R", "widgets", "-L", "1"}, "GET /2.0/repositories/acme/widgets/refs/branches?pagelen=2&sort=-target.date", "| main | a1b2c3d4e5f6 |"},
 		{[]string{"commit", "list", "main", "-R", "widgets", "--path", "src"}, "GET /2.0/repositories/acme/widgets/commits/main?pagelen=31&path=src", "Commits in acme/widgets main"},
 		{[]string{"user", "search", "ada"}, "GET /2.0/workspaces/acme/members?pagelen=100", "| Ada Lovelace | ada | 557058:ada | {ada} |"},

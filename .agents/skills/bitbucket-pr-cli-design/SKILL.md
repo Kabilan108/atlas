@@ -29,7 +29,7 @@ Use this skill to keep Atlas PR commands consistent, scriptable, and honest abou
 ## Bitbucket Caveats
 
 - Bitbucket closed PRs in this CLI map to Bitbucket `DECLINED` state.
-- Bitbucket reviewer display names and mentions are not stable `/users/{identifier}` inputs. Avoid implying that `@Display Name` is sufficient; stable account IDs, UUIDs, or an explicit lookup flow are safer.
+- Bitbucket reviewer display names and mentions are not stable `/users/{identifier}` inputs. Only account IDs and UUIDs go to `/users`; a name resolves as an exact display name (or nickname) among the workspace members, and an ambiguous or unknown name fails with the candidates rather than guessing.
 - Bitbucket API PR diffs can remain available after the source branch is deleted. Structured local diff generation must handle missing remote source refs by falling back to local branches or commit hashes where possible.
 - Repository selectors should accept `workspace/repo` and plain `repo` forms consistently with existing Atlas config resolution.
 

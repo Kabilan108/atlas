@@ -161,3 +161,31 @@ func TestMergeDecidesOnTheCurrentPRNotTheCache(t *testing.T) {
 		t.Fatal("merged a PR the cache still showed as open")
 	}
 }
+
+func TestMergeHeadGuard(t *testing.T) {
+	for _, head := range []string{mergetest.Head, mergetest.Head[:8], strings.ToUpper(mergetest.Head) + "00112233"} {
+		env, fixture := mergeEnv(t)
+		if _, err := pr.Merge.Call(context.Background(), env, pr.MergeInput{Ref: prRef("7"), Head: head}); err != nil {
+			t.Fatalf("head %s: %v", head, err)
+		}
+		if !fixture.Posted() {
+			t.Fatalf("head %s matches but nothing merged", head)
+		}
+	}
+
+	env, fixture := mergeEnv(t)
+	fixture.HeadCommit = "99887766aabb"
+	_, err := invoke(t, pr.Merge, env, `{"repo":"acme/widgets","pr":"7","head":"`+mergetest.Head+`"}`)
+	if ops.KindOf(err) != ops.Conflict || !strings.Contains(err.Error(), "PR #7's head is now 99887766aabb, not "+mergetest.Head) {
+		t.Fatalf("err = %v, want a conflict naming both heads", err)
+	}
+	if fixture.Posted() {
+		t.Fatal("merged a PR whose head moved")
+	}
+
+	env, fixture = mergeEnv(t)
+	_, err = invoke(t, pr.Merge, env, `{"repo":"acme/widgets","pr":"7","head":"main"}`)
+	if ops.KindOf(err) != ops.Invalid || len(fixture.Requests()) != 0 {
+		t.Fatalf("err = %v, requests = %d; want invalid before any request", err, len(fixture.Requests()))
+	}
+}

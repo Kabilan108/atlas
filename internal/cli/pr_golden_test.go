@@ -40,12 +40,15 @@ var prGoldenCases = []prGoldenCase{
 	{name: "list_all_repo_flag_json", args: []string{"list", "--all", "-R", "acme/ignored", "--json"}},
 	{name: "list_all_no_workspace", args: []string{"list", "--all"}},
 	{name: "list_inferred", args: []string{"list"}, git: true},
+	{name: "list_repos_since_limit", args: []string{"list", "--repos", "acme/gadgets,widgets", "--updated-since", "2025-03-01", "-L", "5", "--state", "all"}, env: map[string]string{"ATLAS_WORKSPACE": "acme"}},
+	{name: "list_repos_and_repo", args: []string{"list", "--repos", "acme/gadgets", "-R", "acme/widgets"}},
 
 	{name: "diff_patch", args: []string{"diff", "42", "-R", "acme/widgets", "--patch"}},
 	{name: "diff_pipe", args: []string{"diff", "42", "-R", "acme/widgets"}},
 	{name: "diff_name_only", args: []string{"diff", "42", "-R", "acme/widgets", "--name-only"}},
 	{name: "diff_structured_no_checkout", args: []string{"diff", "42", "-R", "acme/widgets", "-s"}},
 	{name: "diff_url", args: []string{"diff", prtest.URL, "--patch"}},
+	{name: "diff_line_numbers", args: []string{"diff", "42", "-R", "acme/widgets", "-n"}},
 
 	{name: "status", args: []string{"status", "-R", "acme/widgets"}, git: true},
 	{name: "status_json", args: []string{"status", "-R", "acme/widgets", "--json"}, git: true},
@@ -75,9 +78,9 @@ var prGoldenCases = []prGoldenCase{
 	{name: "edit_url", args: []string{"edit", prtest.URL, "-t", "Renamed"}},
 
 	{name: "close", args: []string{"close", "42", "-R", "acme/widgets"}},
-	{name: "close_comment", args: []string{"close", "42", "-R", "acme/widgets", "-c", "Superseded by #44"}},
-	{name: "close_comment_decline_fails", args: []string{"close", "42", "-R", "acme/widgets", "-c", "bye"}, fail: [][]string{{"POST", "/repositories/acme/widgets/pullrequests/42/decline"}}},
-	{name: "close_comment_decline_fails_json", args: []string{"close", "42", "-R", "acme/widgets", "-c", "bye", "--json"}, fail: [][]string{{"POST", "/repositories/acme/widgets/pullrequests/42/decline"}}},
+	{name: "close_comment", args: []string{"close", "42", "-R", "acme/widgets", "-b", "Superseded by #44"}},
+	{name: "close_comment_decline_fails", args: []string{"close", "42", "-R", "acme/widgets", "-b", "bye"}, fail: [][]string{{"POST", "/repositories/acme/widgets/pullrequests/42/decline"}}},
+	{name: "close_comment_decline_fails_json", args: []string{"close", "42", "-R", "acme/widgets", "-b", "bye", "--json"}, fail: [][]string{{"POST", "/repositories/acme/widgets/pullrequests/42/decline"}}},
 	{name: "close_decline_fails", args: []string{"close", "42", "-R", "acme/widgets"}, fail: [][]string{{"POST", "/repositories/acme/widgets/pullrequests/42/decline"}}},
 	{name: "close_no_arg", args: []string{"close", "-R", "acme/widgets"}},
 
@@ -137,7 +140,7 @@ var prGoldenCases = []prGoldenCase{
 	// Legacy close and checkout required a selector; every other command
 	// fell back to the current branch for an empty or blank one.
 	{name: "close_empty_selector", args: []string{"close", "", "-R", "acme/widgets"}, git: true},
-	{name: "close_blank_selector", args: []string{"close", "  ", "-R", "acme/widgets", "-c", "bye"}, git: true},
+	{name: "close_blank_selector", args: []string{"close", "  ", "-R", "acme/widgets", "-b", "bye"}, git: true},
 	{name: "checkout_empty_selector", args: []string{"checkout", "", "-R", "acme/widgets"}, git: true},
 	{name: "approve_empty_selector", args: []string{"approve", "", "-R", "acme/widgets"}, git: true},
 	{name: "approve_blank_selector", args: []string{"approve", "  ", "-R", "acme/widgets"}, git: true},

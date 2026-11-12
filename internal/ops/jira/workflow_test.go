@@ -27,7 +27,7 @@ func transitionFake() *jiratest.Fake {
 }
 
 func TestTransitionsList(t *testing.T) {
-	res := mustInvoke(t, transitionFake(), Transitions, `{"issue":"CSM-756"}`)
+	res := mustInvoke(t, transitionFake(), TransitionList, `{"issue":"CSM-756"}`)
 	wantContains(t, res.Text,
 		"| Start Progress | In Progress | 11 | — |",
 		"| Resolved (2) | Resolved | 31 | Resolution (Done, Won't Do) |")
@@ -68,7 +68,20 @@ func TestTransitionRequiredFieldErrorNamesField(t *testing.T) {
 	fake := transitionFake()
 	fake.JSON("POST /rest/api/3/issue/CSM-756/transitions", http.StatusBadRequest, `{"errors":{"resolution":"Resolution is required."}}`)
 	_, err := invoke(t, fake, Transition, `{"issue":"CSM-756","transition":"Resolved"}`)
-	wantKind(t, err, ops.Invalid, "Resolution is required.", "resolution is Resolution (allowed: Done, Won't Do)")
+	wantKind(t, err, ops.Invalid, "Resolution is required.", "resolution is Resolution (allowed: Done, Won't Do)",
+		"[Resolved (2) requires Resolution (allowed: Done, Won't Do); pass them in fields]")
+
+	fake = transitionFake()
+	fake.JSON("POST /rest/api/3/issue/CSM-756/transitions", http.StatusBadRequest, `{"errorMessages":["You must specify a resolution."]}`)
+	_, err = invoke(t, fake, Transition, `{"issue":"CSM-756","transition":"Resolved"}`)
+	wantKind(t, err, ops.Invalid, "You must specify a resolution.", "Resolved (2) requires Resolution (allowed: Done, Won't Do)")
+
+	fake = transitionFake()
+	fake.JSON("POST /rest/api/3/issue/CSM-756/transitions", http.StatusBadRequest, `{"errorMessages":["Workflow condition failed."]}`)
+	_, err = invoke(t, fake, Transition, `{"issue":"CSM-756","transition":"Resolved","fields":{"Resolution":"Done"}}`)
+	if err == nil || strings.Contains(err.Error(), "requires") {
+		t.Errorf("err = %v; a field that was set is not missing", err)
+	}
 }
 
 func commentFake(projectType string) *jiratest.Fake {

@@ -10,7 +10,7 @@ import (
 // CloseInput is the input to pr_close.
 type CloseInput struct {
 	Ref
-	Comment string `json:"comment,omitempty" jsonschema:"comment to post before declining"`
+	Body string `json:"body,omitempty" jsonschema:"comment to post before declining"`
 }
 
 // CloseResult is the declined pull request. It marshals to the JSON `atlas
@@ -49,8 +49,8 @@ func closePR(ctx context.Context, env ops.Env, in CloseInput) (*CloseResult, err
 		return nil, err
 	}
 	var comment *bitbucket.Comment
-	if in.Comment != "" {
-		if comment, err = client.CreatePullRequestCommentText(ctx, target.Workspace, target.Repo, target.PR.ID, in.Comment); err != nil {
+	if in.Body != "" {
+		if comment, err = client.CreatePullRequestCommentText(ctx, target.Workspace, target.Repo, target.PR.ID, in.Body); err != nil {
 			return nil, err
 		}
 	}

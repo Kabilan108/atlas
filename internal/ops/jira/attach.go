@@ -14,16 +14,18 @@ import (
 	"github.com/kabilan108/atlas/internal/ops"
 )
 
-// AttachFile is one file to upload.
+// AttachFile is one file to upload: Text as is, or Content decoded from
+// base64.
 type AttachFile struct {
-	Filename string `json:"filename"`
-	Content  string `json:"content" jsonschema:"file bytes, base64"`
+	Filename string  `json:"filename"`
+	Text     *string `json:"text,omitempty" jsonschema:"UTF-8 content sent as is (logs, JSON, CSV); use instead of content"`
+	Content  string  `json:"content,omitempty" jsonschema:"file bytes, base64, for binaries"`
 }
 
 // AttachInput is the input to jira_attach.
 type AttachInput struct {
 	IssueRef
-	Files []AttachFile `json:"files" jsonschema:"files to upload: up to 20, 10 MB in all"`
+	Files []AttachFile `json:"files" jsonschema:"up to 20 files, 10 MB in all after decoding"`
 }
 
 // AttachedFile is one uploaded attachment.
@@ -43,7 +45,7 @@ type Attached struct {
 var Attach = &ops.Op[AttachInput, *Attached]{
 	Meta: ops.Meta{
 		Name:        "jira_attach",
-		Description: "Attach files to a Jira issue. Send each file's bytes base64-encoded with its file name.",
+		Description: "Attach files to a Jira issue. Give each file a filename and either text or base64 content. The receipt has each file's URL to link from a description or comment.",
 		Surfaces:    ops.Both,
 	},
 	Run: attach,
@@ -63,9 +65,18 @@ func attach(ctx context.Context, env ops.Env, in AttachInput) (*Attached, error)
 		if err := validFilename(f.Filename); err != nil {
 			return nil, ops.Errorf(ops.Invalid, "files[%d]: %w", i, err)
 		}
-		size, err := decodedSize(f.Content)
-		if err != nil {
-			return nil, ops.Errorf(ops.Invalid, "files[%d] %s: content is not base64: %w", i, f.Filename, err)
+		var size int
+		switch {
+		case f.Text != nil && f.Content != "":
+			return nil, ops.Errorf(ops.Invalid, "files[%d] %s: give text or content, not both", i, f.Filename)
+		case f.Text != nil:
+			size = len(*f.Text)
+		case f.Content == "":
+			return nil, ops.Errorf(ops.Invalid, "files[%d] %s: give its text, or its bytes base64-encoded as content", i, f.Filename)
+		default:
+			if size, err = decodedSize(f.Content); err != nil {
+				return nil, ops.Errorf(ops.Invalid, "files[%d] %s: content is not base64: %w", i, f.Filename, err)
+			}
 		}
 		sizes[i] = size
 		if total += size; total > MaxAttachBytes {
@@ -74,6 +85,10 @@ func attach(ctx context.Context, env ops.Env, in AttachInput) (*Attached, error)
 	}
 	files := make([]jiraapi.AttachmentFile, len(in.Files))
 	for i, f := range in.Files {
+		if f.Text != nil {
+			files[i] = jiraapi.AttachmentFile{Name: f.Filename, Content: strings.NewReader(*f.Text)}
+			continue
+		}
 		content, err := decodeBase64(f.Content, sizes[i])
 		if err != nil {
 			return nil, ops.Errorf(ops.Invalid, "files[%d] %s: content is not base64: %w", i, f.Filename, err)

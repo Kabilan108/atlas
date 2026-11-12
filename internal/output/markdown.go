@@ -25,6 +25,7 @@ type reviewerEntry struct {
 	name       string
 	label      string
 	rawMention string
+	accountID  string
 	status     string
 }
 
@@ -72,6 +73,7 @@ func (m *PRMarkdownWriter) reviewerEntries(pr *bitbucket.PullRequest) []reviewer
 			name:       reviewer.Handle(),
 			label:      formatUserMention(reviewer),
 			rawMention: rawUserMention(reviewer),
+			accountID:  reviewer.AccountID,
 			status:     "pending",
 		}
 	}
@@ -96,6 +98,7 @@ func (m *PRMarkdownWriter) reviewerEntries(pr *bitbucket.PullRequest) []reviewer
 			name:       participant.User.Handle(),
 			label:      formatUserMention(participant.User),
 			rawMention: rawUserMention(participant.User),
+			accountID:  participant.User.AccountID,
 			status:     status,
 		}
 	}
@@ -129,7 +132,16 @@ func (m *PRMarkdownWriter) writeFrontmatter(pr *bitbucket.PullRequest) {
 	fmt.Fprintf(m.w, "  name: %s\n", yamlString(pr.Author.Handle()))
 	fmt.Fprintf(m.w, "  mention: %s\n", yamlString(rawUserMention(pr.Author)))
 	fmt.Fprintf(m.w, "source_branch: %s\n", yamlString(pr.Source.Branch.Name))
+	if pr.Source.Commit.Hash != "" {
+		fmt.Fprintf(m.w, "head_commit: %s\n", yamlString(pr.Source.Commit.Hash))
+	}
 	fmt.Fprintf(m.w, "destination_branch: %s\n", yamlString(pr.Destination.Branch.Name))
+	if pr.MergeCommit != nil && pr.MergeCommit.Hash != "" {
+		fmt.Fprintf(m.w, "merge_commit: %s\n", yamlString(pr.MergeCommit.Hash))
+	}
+	if !pr.CreatedOn.IsZero() {
+		fmt.Fprintf(m.w, "created_at: %s\n", yamlString(pr.CreatedOn.UTC().Format(time.RFC3339)))
+	}
 	fmt.Fprintf(m.w, "updated_at: %s\n", yamlString(pr.UpdatedOn.UTC().Format(time.RFC3339)))
 	fmt.Fprintf(m.w, "bitbucket_url: %s\n", yamlString(pr.Links.HTML.Href))
 	fmt.Fprintf(m.w, "comment_count: %d\n", pr.CommentCount)
@@ -146,6 +158,9 @@ func (m *PRMarkdownWriter) writeFrontmatter(pr *bitbucket.PullRequest) {
 			fmt.Fprintln(m.w, "  -")
 			fmt.Fprintf(m.w, "    name: %s\n", yamlString(reviewer.name))
 			fmt.Fprintf(m.w, "    mention: %s\n", yamlString(reviewer.rawMention))
+			if reviewer.accountID != "" {
+				fmt.Fprintf(m.w, "    account_id: %s\n", yamlString(reviewer.accountID))
+			}
 			fmt.Fprintf(m.w, "    status: %s\n", yamlString(reviewer.status))
 		}
 	}

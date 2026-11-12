@@ -16,7 +16,7 @@ func Ops() []ops.Def {
 		Search,
 		Create,
 		Edit,
-		Transitions,
+		TransitionList,
 		Transition,
 		Comment,
 		InternalComment,

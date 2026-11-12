@@ -166,3 +166,42 @@ func TestIssueKey(t *testing.T) {
 		}
 	}
 }
+
+func TestViewListsSubtasks(t *testing.T) {
+	fake := jiratest.New()
+	fake.JSON("GET /rest/api/3/issue/CSM-1", http.StatusOK, `{"id":"1","key":"CSM-1","fields":{"summary":"Story",
+		"issuetype":{"name":"Story","hierarchyLevel":0},
+		"subtasks":[{"key":"CSM-2","fields":{"summary":"Write  tests","status":{"name":"Open"},"issuetype":{"name":"Subtask","subtask":true}}}]}}`)
+	fake.JSON("GET /rest/api/3/issue/CSM-1/comment", http.StatusOK, `{"startAt":0,"total":0,"comments":[]}`)
+	res := mustInvoke(t, fake, View, `{"issue":"CSM-1"}`)
+	wantContains(t, res.Text, "\n## Subtasks\n\n- CSM-2 [Subtask] Write tests (Open)\n")
+	if strings.Contains(res.Text, "Child issues") || len(fake.Find("POST /rest/api/3/search/jql")) != 0 {
+		t.Errorf("a story's view searched for children:\n%s", res.Text)
+	}
+}
+
+func TestViewListsAnEpicsChildren(t *testing.T) {
+	epic := func() *jiratest.Fake {
+		fake := jiratest.New()
+		fake.JSON("GET /rest/api/3/issue/MCP-12", http.StatusOK, `{"id":"12","key":"MCP-12","fields":{"summary":"Epic","issuetype":{"name":"Epic","hierarchyLevel":1}}}`)
+		fake.JSON("GET /rest/api/3/issue/MCP-12/comment", http.StatusOK, `{"startAt":0,"total":0,"comments":[]}`)
+		return fake
+	}
+	fake := epic()
+	fake.JSON("POST /rest/api/3/search/jql", http.StatusOK, `{"issues":[
+		{"key":"MCP-13","fields":{"summary":"Export","status":{"name":"Done"},"issuetype":{"name":"Story"},"assignee":{"accountId":"a","displayName":"Mia"}}},
+		{"key":"MCP-14","fields":{"summary":"Import","status":{"name":"Open"},"issuetype":{"name":"Task"}}}],"nextPageToken":"t2"}`)
+	res := mustInvoke(t, fake, View, `{"issue":"MCP-12"}`)
+	wantContains(t, res.Text,
+		"\n## Child issues\n\n- MCP-13 [Story] Export (Done) · Mia\n- MCP-14 [Task] Import (Open)\n",
+		"Showing the first 2; search parent = MCP-12 for the rest.")
+	search := body(t, fake.Find("POST /rest/api/3/search/jql")[0])
+	if search["jql"] != "parent = MCP-12 ORDER BY created ASC" || search["maxResults"] != float64(50) {
+		t.Errorf("search = %v", search)
+	}
+
+	fake = epic()
+	fake.JSON("POST /rest/api/3/search/jql", http.StatusBadRequest, `{"errorMessages":["Field 'parent' does not exist"]}`)
+	res = mustInvoke(t, fake, View, `{"issue":"MCP-12"}`)
+	wantContains(t, res.Text, "## Child issues\n\nCould not list them (", "search parent = MCP-12.")
+}

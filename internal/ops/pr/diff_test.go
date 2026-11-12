@@ -55,3 +55,26 @@ func TestDiffCap(t *testing.T) {
 		t.Fatalf("max_bytes at the maximum: truncated=%v err=%v", whole.Truncated, err)
 	}
 }
+
+func TestDiffLineNumbers(t *testing.T) {
+	env, _ := newTestEnv(t, "")
+	result, err := invoke(t, pr.Diff, env, `{"repo":"acme/widgets","pr":"42","line_numbers":true}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "diff --git a/src/login.go b/src/login.go\n" +
+		"index 1111111..2222222 100644\n" +
+		"--- a/src/login.go\n" +
+		"+++ b/src/login.go\n" +
+		"@@ -8,5 +8,7 @@ func Login(user string) error {\n" +
+		" 8  8  \tif user == \"\" {\n" +
+		" 9  9  \t\treturn errEmpty\n" +
+		"10 10  \t}\n" +
+		"   11 +\ttoken, err := issue(user)\n" +
+		"   12 +\tif err != nil { return err }\n" +
+		"11 13  \treturn save(token)\n" +
+		"12 14  }\n"
+	if result.Text != want {
+		t.Fatalf("text:\n%s\nwant:\n%s", result.Text, want)
+	}
+}

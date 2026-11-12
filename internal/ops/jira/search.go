@@ -21,7 +21,7 @@ var searchColumns = []string{"issuetype", "status", "priority", "assignee", "upd
 // SearchInput is the input to jira_search.
 type SearchInput struct {
 	JQL       string   `json:"jql" jsonschema:"JQL, sent unchanged (ORDER BY included)"`
-	Fields    []string `json:"fields,omitempty" jsonschema:"extra columns, by field name or ID"`
+	Columns   []string `json:"columns,omitempty" jsonschema:"extra columns, by field name or ID"`
 	Limit     int      `json:"limit,omitempty" jsonschema:"max issues (default 50, max 1000)"`
 	PageToken string   `json:"page_token,omitempty" jsonschema:"next_page_token from an earlier result, to continue"`
 }
@@ -36,10 +36,12 @@ type SearchResult struct {
 
 var Search = &ops.Op[SearchInput, *SearchResult]{
 	Meta: ops.Meta{
-		Name:        "jira_search",
-		Description: "Search Jira with JQL and list matching issues as a markdown table (key, type, status, priority, assignee, updated, summary, plus any fields you name). Pass next_page_token back as page_token for more.",
-		Surfaces:    ops.Both,
-		ReadOnly:    true,
+		Name: "jira_search",
+		Description: "Search Jira with JQL; returns a markdown table (key, type, status, priority, assignee, updated, summary, plus columns you name). " +
+			"Examples: duplicates: project = CSM AND summary ~ \"export crash\"; an epic's children: parent = MCP-12; " +
+			"my week's worklogs: worklogAuthor = currentUser() AND worklogDate >= startOfWeek(). Pass next_page_token back as page_token for more.",
+		Surfaces: ops.Both,
+		ReadOnly: true,
 	},
 	Run:      search,
 	Markdown: (*SearchResult).Markdown,
@@ -55,12 +57,12 @@ func search(ctx context.Context, env ops.Env, in SearchInput) (*SearchResult, er
 	}
 	result := &SearchResult{}
 	fields := append([]string{}, searchColumns...)
-	if len(in.Fields) > 0 {
+	if len(in.Columns) > 0 {
 		all, err := client.ListFields(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("list fields: %w", err)
 		}
-		ids, err := jiraapi.ResolveFieldIDs(all, in.Fields)
+		ids, err := jiraapi.ResolveFieldIDs(all, in.Columns)
 		if err != nil {
 			return nil, invalid(err)
 		}

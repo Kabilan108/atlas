@@ -1,0 +1,5 @@
+$ atlas pr list --repos acme/gadgets -R acme/widgets
+--- stdout
+--- requests
+--- error
+use -R or --repos, not both

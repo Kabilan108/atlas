@@ -113,7 +113,7 @@ func TestListsRenderTables(t *testing.T) {
 				"| widgets | main | private | 2024-06-20 | The widgets service |\n| gadgets | main | public | 2024-06-19 | The gadgets service |\n" +
 				"\nShowing the first 2; raise limit or narrow the filter for more.\n",
 			"GET /2.0/repositories/acme?pagelen=3&sort=-updated_on"},
-		{repo.BranchList, `{"repo":"acme/widgets","filter":"log"}`,
+		{repo.BranchList, `{"repo":"acme/widgets","query":"log"}`,
 			"| Branch | Head | Date | Author | Message |\n| --- | --- | --- | --- | --- |\n" +
 				"| main | a1b2c3d4e5f6 | 2024-06-01 12:30 | Ada Lovelace | Release 1.2.3 |\n| feature/login | 0f0e0d0c0b0a | 2024-06-01 12:30 | Ada Lovelace | Add login |\n",
 			"GET /2.0/repositories/acme/widgets/refs/branches?pagelen=31&q=name+~+%22log%22&sort=-target.date"},

@@ -21,7 +21,19 @@ const (
 var toolBudgetExceptions = map[string]int{
 	"pr_review":         1434,
 	"pr_create":         1434,
-	"jira_issue_create": 1434,
+	"jira_issue_create": 1480,
+	// pr_list's scope (repo, repos, workspace/*), filters, and limit.
+	"pr_list": 1152,
+	// pr_comment's line says where to read line numbers.
+	"pr_comment": 1152,
+	// pr_edit's two reviewer lists say how names resolve.
+	"pr_edit": 1152,
+	// pr_merge's strategy enum and the head guard.
+	"pr_merge": 1248,
+	// file_read's batch form and the pointer to directory listings.
+	"file_read": 1088,
+	// pipeline_run's variables list.
+	"pipeline_run": 1088,
 }
 
 func TestToolsListBudget(t *testing.T) {

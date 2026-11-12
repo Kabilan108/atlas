@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kabilan108/atlas/internal/ops"
 	"github.com/kabilan108/atlas/internal/ops/opstest"
@@ -58,7 +59,7 @@ func TestChecksReadsTheHeadCommit(t *testing.T) {
 			if !strings.HasPrefix(text, "# Checks for PR #7 at abc123def456 (acme/widgets)\n\n"+tc.text) {
 				t.Fatalf("markdown:\n%s", text)
 			}
-			if tc.overall != pr.ChecksNone && !strings.Contains(text, " | Lint | lint | 2026-11-10T12:00:00Z | https://ci.example/lint |") {
+			if tc.overall != pr.ChecksNone && !strings.Contains(text, " | Lint | lint |  | 2026-11-10T12:00:00Z | https://ci.example/lint |") {
 				t.Fatalf("markdown lacks the lint row:\n%s", text)
 			}
 			data, _ := json.Marshal(result)
@@ -133,5 +134,75 @@ func TestChecksNeedsAPROrCommit(t *testing.T) {
 	}
 	if len(fixture.Requests()) != 0 {
 		t.Fatal("invalid input reached Bitbucket")
+	}
+}
+
+func TestChecksBuildFromPipelinesURL(t *testing.T) {
+	env, fixture := mergeEnv(t)
+	fixture.Statuses[mergetest.Head] = statuses(
+		mergetest.StatusAt("{uuid}", "Pipeline #2090 for feature/login", "FAILED", "https://bitbucket.org/acme/widgets/addon/pipelines/home#!/results/2090"),
+		mergetest.Status("lint", "Lint", "SUCCESSFUL"))
+	result, err := pr.Checks.Call(context.Background(), env, pr.ChecksInput{RepoRef: ops.RepoRef{Repo: "acme/widgets"}, PR: "7"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Checks[0].Build != 2090 || result.Checks[1].Build != 0 {
+		t.Fatalf("checks = %+v", result.Checks)
+	}
+	text, _ := result.Markdown()
+	if !strings.Contains(text, "| State | Name | Key | Build | Updated | URL |\n") ||
+		!strings.Contains(text, "| FAILED | Pipeline #2090 for feature/login | {uuid} | 2090 | 2026-11-10T12:00:00Z |") {
+		t.Fatalf("markdown:\n%s", text)
+	}
+}
+
+func TestChecksWaitsUntilNothingIsPending(t *testing.T) {
+	pr.FastChecksPolls(t)
+	env, fixture := mergeEnv(t)
+	pending := statuses(mergetest.Status("build", "Build", "INPROGRESS"))
+	fixture.Statuses[mergetest.Head] = pending
+	fixture.LaterStatuses[mergetest.Head] = []string{pending, statuses(mergetest.Status("build", "Build", "SUCCESSFUL"))}
+	result, err := invoke(t, pr.Checks, env, `{"repo":"acme/widgets","pr":"7","wait_seconds":30}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := result.Value.(*pr.ChecksResult).Overall; got != pr.ChecksPassed {
+		t.Fatalf("overall = %s, want passed after waiting", got)
+	}
+	reads := 0
+	for _, req := range fixture.Requests() {
+		if strings.HasSuffix(req.Path, "/statuses") {
+			reads++
+		}
+	}
+	if reads != 3 {
+		t.Fatalf("read statuses %d times, want 3", reads)
+	}
+}
+
+func TestChecksWaitEndsStillPending(t *testing.T) {
+	pr.SetChecksPolls(t, 300*time.Millisecond)
+	env, fixture := mergeEnv(t)
+	fixture.Statuses[mergetest.Head] = statuses(mergetest.Status("build", "Build", "INPROGRESS"))
+	started := time.Now()
+	result, err := invoke(t, pr.Checks, env, `{"repo":"acme/widgets","pr":"7","wait_seconds":1}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if elapsed := time.Since(started); elapsed < time.Second || elapsed > 3*time.Second {
+		t.Fatalf("waited %s, want about 1s", elapsed)
+	}
+	if !strings.Contains(result.Text, "Still pending after waiting 1s: 1 inprogress.") {
+		t.Fatalf("text:\n%s", result.Text)
+	}
+}
+
+func TestChecksRejectsBadWait(t *testing.T) {
+	for _, wait := range []int{-1, 601} {
+		env, fixture := mergeEnv(t)
+		_, err := pr.Checks.Call(context.Background(), env, pr.ChecksInput{RepoRef: ops.RepoRef{Repo: "acme/widgets"}, PR: "7", WaitSeconds: wait})
+		if ops.KindOf(err) != ops.Invalid || len(fixture.Requests()) != 0 {
+			t.Fatalf("wait %d: err = %v, requests = %d", wait, err, len(fixture.Requests()))
+		}
 	}
 }

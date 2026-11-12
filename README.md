@@ -127,7 +127,7 @@ atlas pr review 123 --request-changes --comment-spec comments.json --body "Pleas
 
 # Checkout PR branch locally
 atlas pr checkout 123
-atlas pr close 123 --comment "Closing in favor of a newer PR"
+atlas pr close 123 --body "Closing in favor of a newer PR"
 
 # Snippets
 atlas snippet list

@@ -351,15 +351,59 @@ func (c *Client) GetRepository(ctx context.Context, workspace, repo string) (*Re
 	return &repository, nil
 }
 
-func (c *Client) ListPullRequests(ctx context.Context, workspace, repo string, opts *PRListOptions) ([]PullRequest, error) {
-	var prs []PullRequest
-	values := url.Values{}
-	if opts != nil && opts.State != "" {
-		values.Set("state", opts.State)
+// MaxPRListLimit is the most pull requests one ListPullRequests call
+// returns, and maxPRListScan the most it reads while filtering by author or
+// reviewer, so no listing walks a repository's whole history.
+const (
+	MaxPRListLimit = 500
+	maxPRListScan  = 1000
+	prPageLen      = 50
+)
+
+// PullRequestList is one repository's pull requests, newest updated first.
+type PullRequestList struct {
+	PullRequests []PullRequest
+	// More is set when the listing stopped at its limit, or after reading
+	// maxPRListScan pull requests, with more left on the server.
+	More bool
+}
+
+// ListPullRequests lists a repository's pull requests newest updated first,
+// reading pages only until opts.Limit match or the pull requests get older
+// than opts.UpdatedSince.
+func (c *Client) ListPullRequests(ctx context.Context, workspace, repo string, opts *PRListOptions) (*PullRequestList, error) {
+	var o PRListOptions
+	if opts != nil {
+		o = *opts
 	}
+	limit := o.Limit
+	if limit <= 0 || limit > MaxPRListLimit {
+		limit = MaxPRListLimit
+	}
+	filtered := o.Author != "" || o.Reviewer != ""
+	pageLen := prPageLen
+	if !filtered {
+		pageLen = min(limit, prPageLen)
+	}
+	values := url.Values{}
+	for _, state := range o.States {
+		values.Add("state", state)
+	}
+	if !o.UpdatedSince.IsZero() {
+		values.Set("q", "updated_on >= "+o.UpdatedSince.UTC().Format("2006-01-02T15:04:05-07:00"))
+	}
+	values.Set("sort", "-updated_on")
+	values.Set("pagelen", strconv.Itoa(pageLen))
 	path := withQuery(repoPath(workspace, repo)+"/pullrequests", values)
 
+	list := &PullRequestList{}
+	scanned := 0
+	visited := map[string]bool{}
 	for path != "" {
+		if visited[path] {
+			return nil, fmt.Errorf("pull requests pagination did not advance: %s", path)
+		}
+		visited[path] = true
 		data, err := c.get(ctx, path)
 		if err != nil {
 			return nil, err
@@ -371,18 +415,30 @@ func (c *Client) ListPullRequests(ctx context.Context, workspace, repo string, o
 		}
 
 		for _, pr := range page.Values {
-			if opts != nil && opts.Author != "" && !pr.Author.MatchesStableIdentifier(opts.Author) {
+			if !o.UpdatedSince.IsZero() && pr.UpdatedOn.Before(o.UpdatedSince) {
+				return list, nil
+			}
+			scanned++
+			if o.Author != "" && !pr.Author.MatchesStableIdentifier(o.Author) {
 				continue
 			}
-			if opts != nil && opts.Reviewer != "" && !hasReviewer(pr, opts.Reviewer) {
+			if o.Reviewer != "" && !hasReviewer(pr, o.Reviewer) {
 				continue
 			}
-			prs = append(prs, pr)
+			if len(list.PullRequests) == limit {
+				list.More = true
+				return list, nil
+			}
+			list.PullRequests = append(list.PullRequests, pr)
 		}
 		path = c.extractNextPath(page.Next)
+		if path != "" && (len(list.PullRequests) == limit || scanned >= maxPRListScan) {
+			list.More = true
+			return list, nil
+		}
 	}
 
-	return prs, nil
+	return list, nil
 }
 
 func hasReviewer(pr PullRequest, reviewer string) bool {
@@ -405,8 +461,9 @@ type RepositoryError struct {
 	Err        error
 }
 
-// RepositoryListError is returned by ListAllPullRequests together with the
-// pull requests of every repository that did answer.
+// RepositoryListError reports the repositories a multi-repository listing
+// could not read; it comes with the results of every repository that did
+// answer.
 type RepositoryListError struct {
 	Repositories int
 	Failed       []RepositoryError
@@ -420,44 +477,6 @@ func (e *RepositoryListError) Error() string {
 		fmt.Fprintf(&b, "\n  %s: %s", failed.Repository, message)
 	}
 	return b.String()
-}
-
-// ListAllPullRequests lists pull requests in every repository of workspace.
-// Repositories that fail are reported in a *RepositoryListError returned
-// with the pull requests from the rest.
-func (c *Client) ListAllPullRequests(ctx context.Context, workspace string, opts *PRListOptions) ([]PullRequest, error) {
-	repos, err := c.ListRepositories(ctx, workspace)
-	if err != nil {
-		return nil, err
-	}
-
-	var allPRs []PullRequest
-	listErr := &RepositoryListError{Repositories: len(repos)}
-	for _, repo := range repos {
-		slug := repositorySlug(repo)
-		prs, err := c.ListPullRequests(ctx, workspace, slug, opts)
-		if err != nil {
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				return allPRs, ctxErr
-			}
-			listErr.Failed = append(listErr.Failed, RepositoryError{Repository: slug, Err: err})
-			continue
-		}
-		allPRs = append(allPRs, prs...)
-	}
-	if len(listErr.Failed) > 0 {
-		return allPRs, listErr
-	}
-	return allPRs, nil
-}
-
-// repositorySlug is the path segment for repo: the part of full_name after
-// the workspace, since a repository's display name may differ from its slug.
-func repositorySlug(repo Repository) string {
-	if _, slug, ok := strings.Cut(repo.FullName, "/"); ok && slug != "" {
-		return slug
-	}
-	return repo.Name
 }
 
 func (c *Client) FindPullRequestByBranch(ctx context.Context, workspace, repo, branch string) (*PullRequest, error) {
