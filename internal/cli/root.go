@@ -84,6 +84,7 @@ func NewRootCmd(version string, opts ...Option) *cobra.Command {
 	rootCmd.AddCommand(newLoginCmd())
 	rootCmd.AddCommand(newMCPCmd(version))
 	rootCmd.AddCommand(newPRCmd())
+	rootCmd.AddCommand(newPipelineCmd())
 	rootCmd.AddCommand(newSnippetCmd())
 	rootCmd.AddCommand(newUpdateCmd(version))
 	rootCmd.AddCommand(newAPICmd())

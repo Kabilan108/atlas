@@ -19,5 +19,7 @@ func Ops() []ops.Def {
 		Unapprove,
 		RequestChanges,
 		ClearChangeRequest,
+		Checks,
+		Merge,
 	}
 }

@@ -223,7 +223,7 @@ func TestGetPipelineStepLogFollowsRedirectWithoutCredentials(t *testing.T) {
 		}
 		w.Header().Set("Content-Range", "bytes 990-999/1000")
 		w.WriteHeader(http.StatusPartialContent)
-		_, _ = io.WriteString(w, "tail of log")
+		_, _ = io.WriteString(w, "end of log")
 	}))
 	t.Cleanup(storage.Close)
 
@@ -254,11 +254,11 @@ func TestGetPipelineStepLogFollowsRedirectWithoutCredentials(t *testing.T) {
 	}
 	client := newClientForTest(api.URL, authenticated)
 
-	log, err := client.GetPipelineStepLog(context.Background(), "ws", "repo", testPipelineUUID, "{step-1}", "bytes=-10")
+	log, err := client.GetPipelineStepLog(context.Background(), "ws", "repo", testPipelineUUID, "{step-1}", 10)
 	if err != nil {
 		t.Fatalf("GetPipelineStepLog() error = %v", err)
 	}
-	if string(log.Content) != "tail of log" || !log.Partial || log.TotalSize != 1000 || log.ContentRange != "bytes 990-999/1000" {
+	if string(log.Content) != "end of log" || !log.Partial || log.TotalSize != 1000 || log.ContentRange != "bytes 990-999/1000" {
 		t.Fatalf("log = %#v", log)
 	}
 
@@ -300,7 +300,7 @@ func TestGetPipelineStepLogDirectAndEmpty(t *testing.T) {
 		}
 	})
 
-	full, err := client.GetPipelineStepLog(context.Background(), "ws", "repo", testPipelineUUID, "full", "")
+	full, err := client.GetPipelineStepLog(context.Background(), "ws", "repo", testPipelineUUID, "full", 64)
 	if err != nil {
 		t.Fatalf("full log error = %v", err)
 	}
@@ -308,7 +308,7 @@ func TestGetPipelineStepLogDirectAndEmpty(t *testing.T) {
 		t.Fatalf("full log = %#v", full)
 	}
 
-	empty, err := client.GetPipelineStepLog(context.Background(), "ws", "repo", testPipelineUUID, "empty", "bytes=-10")
+	empty, err := client.GetPipelineStepLog(context.Background(), "ws", "repo", testPipelineUUID, "empty", 10)
 	if err != nil {
 		t.Fatalf("empty log error = %v", err)
 	}
@@ -316,7 +316,7 @@ func TestGetPipelineStepLogDirectAndEmpty(t *testing.T) {
 		t.Fatalf("empty log = %#v", empty)
 	}
 
-	_, err = client.GetPipelineStepLog(context.Background(), "ws", "repo", testPipelineUUID, "missing", "")
+	_, err = client.GetPipelineStepLog(context.Background(), "ws", "repo", testPipelineUUID, "missing", 10)
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("missing log error = %v, want not found", err)
 	}
@@ -425,5 +425,21 @@ func TestPipelineWebURL(t *testing.T) {
 
 	if got := PipelineWebURL("ws", "repo", 42); got != "https://bitbucket.org/ws/repo/pipelines/results/42" {
 		t.Fatalf("PipelineWebURL() = %q", got)
+	}
+}
+
+func TestGetPipelineStepLogKeepsTheTailWhenTheRangeIsIgnored(t *testing.T) {
+	t.Parallel()
+
+	client, _, _ := newRecordingClient(t, func(w http.ResponseWriter, r *http.Request, _ []byte) {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		_, _ = io.WriteString(w, strings.Repeat("a", 100<<10)+"the tail")
+	})
+	log, err := client.GetPipelineStepLog(context.Background(), "ws", "repo", testPipelineUUID, "full", 8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(log.Content) != "the tail" || log.TotalSize != 100<<10+8 {
+		t.Fatalf("log = %q of %d bytes", log.Content, log.TotalSize)
 	}
 }
