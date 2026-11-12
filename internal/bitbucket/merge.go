@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -110,26 +109,40 @@ func (c *Client) MergePullRequest(workspace, repo string, id int, opts PullReque
 }
 
 func (c *Client) GetMergeTaskStatus(location string) (*MergeTaskStatus, error) {
+	return c.getMergeTaskStatus(context.Background(), location)
+}
+
+func (c *Client) getMergeTaskStatus(ctx context.Context, location string) (*MergeTaskStatus, error) {
 	path, err := c.apiPathFromLocation(location)
 	if err != nil {
 		return nil, err
 	}
 
 	var status MergeTaskStatus
-	if err := c.getJSON(path, &status, "merge task status"); err != nil {
+	if err := c.getJSONContext(ctx, path, &status, "merge task status"); err != nil {
 		return nil, err
 	}
 	return &status, nil
 }
 
 // WaitForMerge polls a merge task until it succeeds, fails, or the deadline
-// passes. On timeout the error wraps ErrMergePending and names the task URL.
+// passes. Cancelling ctx or reaching the deadline also aborts an in-flight
+// poll. On timeout the error wraps ErrMergePending and names the task URL.
 // The returned pull request is nil when Bitbucket omits merge_result.
 func (c *Client) WaitForMerge(ctx context.Context, location string, deadline time.Time) (*PullRequest, error) {
+	pollCtx, cancel := context.WithDeadline(ctx, deadline)
+	defer cancel()
+
 	delay := mergePollInitialDelay
 	for {
-		status, err := c.GetMergeTaskStatus(location)
+		if pollCtx.Err() != nil {
+			return nil, mergeWaitError(ctx, location)
+		}
+		status, err := c.getMergeTaskStatus(pollCtx, location)
 		if err != nil {
+			if pollCtx.Err() != nil {
+				return nil, mergeWaitError(ctx, location)
+			}
 			return nil, err
 		}
 
@@ -142,37 +155,28 @@ func (c *Client) WaitForMerge(ctx context.Context, location string, deadline tim
 			return nil, fmt.Errorf("merge task finished with status %s", status.TaskStatus)
 		}
 
-		remaining := time.Until(deadline)
-		if remaining <= 0 {
-			return nil, fmt.Errorf("%w at deadline; task status: %s", ErrMergePending, location)
-		}
-
-		timer := time.NewTimer(min(delay, remaining))
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return nil, ctx.Err()
-		case <-timer.C:
+		if err := sleepContext(pollCtx, delay); err != nil {
+			return nil, mergeWaitError(ctx, location)
 		}
 		delay = min(delay*2, mergePollMaxDelay)
 	}
 }
 
-// apiPathFromLocation turns a Location header into a path under the client's
-// base URL and refuses anything else, so credentials never leave the API host.
-func (c *Client) apiPathFromLocation(location string) (string, error) {
-	base, err := url.Parse(c.baseURL + "/")
-	if err != nil {
-		return "", err
+// mergeWaitError reports the caller's cancellation as is and anything else,
+// which can only be the polling deadline, as a still-pending merge.
+func mergeWaitError(ctx context.Context, location string) error {
+	if err := ctx.Err(); err != nil {
+		return err
 	}
-	resolved, err := base.Parse(location)
-	if err != nil {
-		return "", fmt.Errorf("invalid task-status location %q: %w", location, err)
-	}
+	return fmt.Errorf("%w at deadline; task status: %s", ErrMergePending, location)
+}
 
-	full := resolved.String()
-	if !strings.HasPrefix(full, c.baseURL+"/") {
-		return "", fmt.Errorf("refusing to poll task-status location outside %s: %s", c.baseURL, location)
+// apiPathFromLocation turns a Location header into a path under the client's
+// base URL and refuses anything else, so credentials never leave the API.
+func (c *Client) apiPathFromLocation(location string) (string, error) {
+	path, err := c.apiPath(location)
+	if err != nil {
+		return "", fmt.Errorf("task-status location: %w", err)
 	}
-	return strings.TrimPrefix(full, c.baseURL), nil
+	return path, nil
 }

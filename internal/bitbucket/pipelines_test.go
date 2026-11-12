@@ -77,14 +77,16 @@ func TestListPipelinesSendsFilters(t *testing.T) {
 	}
 }
 
-func TestListPipelinesWithLimitUsesPageNumbers(t *testing.T) {
+func TestListPipelinesWithLimitFollowsNextLinks(t *testing.T) {
 	t.Parallel()
 
-	client, recorder, _ := newRecordingClient(t, func(w http.ResponseWriter, r *http.Request, _ []byte) {
+	var serverURL string
+	client, recorder, server := newRecordingClient(t, func(w http.ResponseWriter, r *http.Request, _ []byte) {
 		page := r.URL.Query().Get("page")
 		switch page {
 		case "", "1":
-			writeJSON(w, http.StatusOK, `{"page":1,"pagelen":2,"size":5,"values":[{"build_number":5},{"build_number":4}]}`)
+			next := serverURL + "/repositories/ws/repo/pipelines/?page=2&pagelen=2&sort=created_on"
+			writeJSON(w, http.StatusOK, `{"page":1,"pagelen":2,"size":5,"next":"`+next+`","values":[{"build_number":5},{"build_number":4}]}`)
 		case "2":
 			writeJSON(w, http.StatusOK, `{"page":2,"pagelen":2,"size":5,"values":[{"build_number":3},{"build_number":2}]}`)
 		default:
@@ -92,6 +94,7 @@ func TestListPipelinesWithLimitUsesPageNumbers(t *testing.T) {
 			writeJSON(w, http.StatusOK, `{"values":[]}`)
 		}
 	})
+	serverURL = server.URL
 
 	pipelines, err := client.ListPipelines("ws", "repo", &PipelineListOptions{Limit: 3, PageLen: 2, Sort: "created_on"})
 	if err != nil {

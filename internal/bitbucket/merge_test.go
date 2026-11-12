@@ -32,6 +32,9 @@ func TestMergePullRequestSendsParametersAndParses200(t *testing.T) {
 	if result.Pending() || result.PullRequest == nil || result.PullRequest.State != "MERGED" {
 		t.Fatalf("result = %#v, want merged PR", result)
 	}
+	if result.PullRequest.MergeCommit == nil || result.PullRequest.MergeCommit.Hash != "deadbeef" {
+		t.Fatalf("merge commit = %#v, want deadbeef", result.PullRequest.MergeCommit)
+	}
 
 	req := recorder.all()[0]
 	expectRequest(t, req, http.MethodPost, "/repositories/ws/repo/pullrequests/7/merge")
@@ -146,6 +149,9 @@ func TestMergePullRequest202PollsTaskStatusToSuccess(t *testing.T) {
 	}
 	if pr == nil || pr.State != "MERGED" {
 		t.Fatalf("pr = %#v, want merged", pr)
+	}
+	if pr.MergeCommit == nil || pr.MergeCommit.Hash != "cafe" {
+		t.Fatalf("merge commit = %#v, want cafe", pr.MergeCommit)
 	}
 	if got := polls.Load(); got != 3 {
 		t.Fatalf("polls = %d, want 3", got)

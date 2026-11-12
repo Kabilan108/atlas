@@ -2,13 +2,13 @@ package bitbucket
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 )
 
@@ -17,6 +17,10 @@ const maxPageLen = 100
 // send performs an uncached JSON request. New endpoints use it instead of get
 // because statuses, pipelines, and merge tasks change faster than the cache TTL.
 func (c *Client) send(method, path string, body any) (*http.Response, []byte, error) {
+	return c.sendContext(context.Background(), method, path, body)
+}
+
+func (c *Client) sendContext(ctx context.Context, method, path string, body any) (*http.Response, []byte, error) {
 	var payload io.Reader
 	if body != nil {
 		data, err := json.Marshal(body)
@@ -26,7 +30,7 @@ func (c *Client) send(method, path string, body any) (*http.Response, []byte, er
 		payload = bytes.NewReader(data)
 	}
 
-	req, err := http.NewRequest(method, c.baseURL+path, payload)
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, payload)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -51,7 +55,11 @@ func (c *Client) send(method, path string, body any) (*http.Response, []byte, er
 }
 
 func (c *Client) getJSON(path string, out any, what string) error {
-	_, data, err := c.send(http.MethodGet, path, nil)
+	return c.getJSONContext(context.Background(), path, out, what)
+}
+
+func (c *Client) getJSONContext(ctx context.Context, path string, out any, what string) error {
+	_, data, err := c.sendContext(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return err
 	}
@@ -61,11 +69,17 @@ func (c *Client) getJSON(path string, out any, what string) error {
 	return nil
 }
 
-// collectPages follows Bitbucket pagination until the last page or until limit
-// values are collected. A limit of zero or less collects every page.
+// collectPages follows Bitbucket's next links until the last page or until
+// limit values are collected. A limit of zero or less collects every page.
 func collectPages[T any](c *Client, path string, limit int, what string) ([]T, error) {
 	var values []T
+	visited := map[string]bool{}
 	for path != "" {
+		if visited[path] {
+			return nil, fmt.Errorf("%s pagination did not advance: %s", what, path)
+		}
+		visited[path] = true
+
 		var page PaginatedResponse[T]
 		if err := c.getJSON(path, &page, what); err != nil {
 			return nil, err
@@ -75,32 +89,81 @@ func collectPages[T any](c *Client, path string, limit int, what string) ([]T, e
 		if limit > 0 && len(values) >= limit {
 			return values[:limit], nil
 		}
-		if len(page.Values) == 0 {
+		if len(page.Values) == 0 || page.Next == "" {
 			break
 		}
-		path = c.nextPagePath(path, page.Next, page.Page, page.PageLen, page.Size)
+		next, err := c.apiPath(page.Next)
+		if err != nil {
+			return nil, fmt.Errorf("%s next page: %w", what, err)
+		}
+		path = next
 	}
 	return values, nil
 }
 
-// nextPagePath prefers the server's next link. Pipelines endpoints report only
-// page, pagelen, and size, so fall back to requesting the following page number.
-func (c *Client) nextPagePath(current, next string, page, pageLen, size int) string {
-	if next != "" {
-		return c.extractNextPath(next)
+// apiPath turns a server-supplied URL, absolute or relative to the base URL,
+// into a path to append to the base URL. Anything outside the base URL is
+// refused because the result is requested with credentials.
+func (c *Client) apiPath(raw string) (string, error) {
+	base, err := url.Parse(c.baseURL + "/")
+	if err != nil {
+		return "", err
 	}
-	if page <= 0 || pageLen <= 0 || page*pageLen >= size {
-		return ""
+	target, err := base.Parse(raw)
+	if err != nil {
+		return "", fmt.Errorf("invalid URL %q: %w", raw, err)
+	}
+	basePath, ok := c.apiScopePath(target)
+	if !ok {
+		return "", fmt.Errorf("refusing URL outside %s: %s", c.baseURL, target.Redacted())
 	}
 
-	parsed, err := url.Parse(current)
-	if err != nil {
-		return ""
+	path := strings.TrimPrefix(target.EscapedPath(), basePath)
+	if target.RawQuery != "" {
+		path += "?" + target.RawQuery
 	}
-	query := parsed.Query()
-	query.Set("page", strconv.Itoa(page+1))
-	parsed.RawQuery = query.Encode()
-	return parsed.String()
+	return path, nil
+}
+
+// apiScopePath reports whether target has the base URL's scheme, host, and
+// port, no user info, and a path at or below the base path, and returns the
+// escaped base path. Dot segments are refused so servers cannot normalize the
+// path back out of the base path.
+func (c *Client) apiScopePath(target *url.URL) (string, bool) {
+	base, err := url.Parse(c.baseURL)
+	if err != nil || base.Host == "" || target.User != nil || target.Opaque != "" {
+		return "", false
+	}
+	if !strings.EqualFold(target.Scheme, base.Scheme) ||
+		!strings.EqualFold(target.Hostname(), base.Hostname()) ||
+		effectivePort(target) != effectivePort(base) {
+		return "", false
+	}
+
+	basePath := strings.TrimSuffix(base.EscapedPath(), "/")
+	targetPath := target.EscapedPath()
+	if targetPath != basePath && !strings.HasPrefix(targetPath, basePath+"/") {
+		return "", false
+	}
+	for _, segment := range strings.Split(target.Path, "/") {
+		if segment == "." || segment == ".." {
+			return "", false
+		}
+	}
+	return basePath, true
+}
+
+func effectivePort(u *url.URL) string {
+	if port := u.Port(); port != "" {
+		return port
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "https":
+		return "443"
+	case "http":
+		return "80"
+	}
+	return ""
 }
 
 func pageLenFor(limit, explicit int) int {

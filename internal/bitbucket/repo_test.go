@@ -154,6 +154,10 @@ func TestGetFileContent(t *testing.T) {
 			writeJSON(w, http.StatusOK, `{"name":"release/1.2","target":{"hash":"feedface"}}`)
 		case "/repositories/ws/repo/src/feedface/version.json":
 			_, _ = io.WriteString(w, "from release")
+		case "/repositories/ws/repo/refs/tags/releases/v2":
+			writeJSON(w, http.StatusOK, `{"name":"releases/v2","target":{"hash":"0ddba11"}}`)
+		case "/repositories/ws/repo/src/0ddba11/version.json":
+			_, _ = io.WriteString(w, "from tag")
 		default:
 			writeJSON(w, http.StatusNotFound, `{"type":"error","error":{"message":"No such file or directory"}}`)
 		}
@@ -176,6 +180,19 @@ func TestGetFileContent(t *testing.T) {
 	}
 	if string(data) != "from release" {
 		t.Fatalf("slash ref content = %q", data)
+	}
+
+	data, err = client.GetFileContent("ws", "repo", "releases/v2", "version.json")
+	if err != nil {
+		t.Fatalf("GetFileContent(slash tag) error = %v", err)
+	}
+	if string(data) != "from tag" {
+		t.Fatalf("slash tag content = %q", data)
+	}
+
+	_, err = client.GetFileContent("ws", "repo", "no/such-ref", "version.json")
+	if !errors.Is(err, ErrNotFound) || !strings.Contains(err.Error(), "no/such-ref") {
+		t.Fatalf("unknown slash ref error = %v", err)
 	}
 
 	_, err = client.GetFileContent("ws", "repo", "main", "missing.json")

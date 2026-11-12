@@ -111,6 +111,7 @@ type PullRequest struct {
 	Links        PullRequestLinks `json:"links"`
 	CommentCount int              `json:"comment_count"`
 	TaskCount    int              `json:"task_count"`
+	MergeCommit  *Commit          `json:"merge_commit,omitempty"`
 }
 
 type PRListOptions struct {

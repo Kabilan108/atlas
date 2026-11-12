@@ -2,7 +2,9 @@ package bitbucket
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -101,10 +103,17 @@ func newClientForTest(baseURL string, httpClient *http.Client) *Client {
 }
 
 func (c *Client) do(req *http.Request) (*http.Response, error) {
-	req.SetBasicAuth(c.username, c.password)
 	req.Header.Set("Accept", "application/json")
+	return c.doAuthenticated(req)
+}
 
-	resp, err := c.httpClient.Do(req)
+// doAuthenticated sends req with the client's credentials. The rate-limit
+// wait and retry stop when the request's context ends.
+func (c *Client) doAuthenticated(req *http.Request) (*http.Response, error) {
+	req.SetBasicAuth(c.username, c.password)
+	httpClient := c.authenticatedHTTPClient()
+
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -113,14 +122,56 @@ func (c *Client) do(req *http.Request) (*http.Response, error) {
 		resetTime := parseRateLimitReset(resp.Header)
 		resp.Body.Close()
 
-		waitDuration := time.Until(resetTime)
-		if waitDuration > 0 {
-			time.Sleep(waitDuration)
+		if err := sleepContext(req.Context(), time.Until(resetTime)); err != nil {
+			return nil, err
 		}
-		return c.httpClient.Do(req)
+		if req.GetBody != nil {
+			body, err := req.GetBody()
+			if err != nil {
+				return nil, err
+			}
+			req.Body = body
+		}
+		return httpClient.Do(req)
 	}
 
 	return resp, nil
+}
+
+// authenticatedHTTPClient copies the configured client, including one injected
+// with WithHTTPClient, and refuses redirects that leave the base URL before its
+// own policy runs. Go's default policy forwards Authorization to the same host
+// on any port and to subdomains, which would leak credentials.
+func (c *Client) authenticatedHTTPClient() *http.Client {
+	clone := *c.httpClient
+	callerPolicy := c.httpClient.CheckRedirect
+	clone.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if _, ok := c.apiScopePath(req.URL); !ok {
+			return fmt.Errorf("refusing redirect outside %s: %s", c.baseURL, req.URL.Redacted())
+		}
+		if callerPolicy != nil {
+			return callerPolicy(req, via)
+		}
+		if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
+		}
+		return nil
+	}
+	return &clone
+}
+
+func sleepContext(ctx context.Context, d time.Duration) error {
+	if d <= 0 {
+		return ctx.Err()
+	}
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 func (c *Client) get(path string) ([]byte, error) {
@@ -167,9 +218,7 @@ func (c *Client) getRaw(path string) ([]byte, error) {
 		return nil, err
 	}
 
-	req.SetBasicAuth(c.username, c.password)
-
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doAuthenticated(req)
 	if err != nil {
 		return nil, err
 	}
@@ -628,14 +677,17 @@ func (c *Client) ListPullRequestTasks(workspace, repo string, id int) ([]Task, e
 	return tasks, nil
 }
 
+// extractNextPath returns the path of a next link under the base URL, or ""
+// to stop paging when the link is missing or points elsewhere.
 func (c *Client) extractNextPath(nextURL string) string {
 	if nextURL == "" {
 		return ""
 	}
-	if len(nextURL) > len(c.baseURL) && nextURL[:len(c.baseURL)] == c.baseURL {
-		return nextURL[len(c.baseURL):]
+	path, err := c.apiPath(nextURL)
+	if err != nil {
+		return ""
 	}
-	return ""
+	return path
 }
 
 func escapePathPreservingSlashes(path string) (string, error) {

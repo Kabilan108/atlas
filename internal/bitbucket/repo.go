@@ -153,8 +153,8 @@ func (c *Client) ListCommits(workspace, repo, revision string, opts *CommitListO
 }
 
 // GetFileContent returns the raw bytes of path at ref (a branch, tag, or hash).
-// A ref containing a slash is resolved to its branch head first, since
-// /src/{ref}/{path} cannot tell where such a ref ends.
+// A ref containing a slash is resolved to the commit of the branch or tag it
+// names first, since /src/{ref}/{path} cannot tell where such a ref ends.
 func (c *Client) GetFileContent(workspace, repo, ref, path string) ([]byte, error) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
@@ -167,14 +167,11 @@ func (c *Client) GetFileContent(workspace, repo, ref, path string) ([]byte, erro
 
 	revision := ref
 	if strings.Contains(ref, "/") {
-		branch, err := c.GetBranch(workspace, repo, ref)
+		hash, err := c.resolveSlashRef(workspace, repo, ref)
 		if err != nil {
 			return nil, err
 		}
-		if branch.Target.Hash == "" {
-			return nil, fmt.Errorf("branch %s has no target commit in Bitbucket's response", ref)
-		}
-		revision = branch.Target.Hash
+		revision = hash
 	}
 
 	requestURL := c.baseURL + repoPath(workspace, repo) + "/src/" + url.PathEscape(revision) + "/" + escapedPath
@@ -182,9 +179,7 @@ func (c *Client) GetFileContent(workspace, repo, ref, path string) ([]byte, erro
 	if err != nil {
 		return nil, err
 	}
-	req.SetBasicAuth(c.username, c.password)
-
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doAuthenticated(req)
 	if err != nil {
 		return nil, err
 	}
@@ -201,4 +196,41 @@ func (c *Client) GetFileContent(workspace, repo, ref, path string) ([]byte, erro
 		return nil, err
 	}
 	return body, nil
+}
+
+type repositoryTag struct {
+	Name   string     `json:"name"`
+	Target CommitInfo `json:"target"`
+}
+
+// resolveSlashRef returns the commit of the branch, else the tag, named ref.
+// A ref containing a slash cannot be a commit hash.
+func (c *Client) resolveSlashRef(workspace, repo, ref string) (string, error) {
+	branch, err := c.GetBranch(workspace, repo, ref)
+	if err == nil {
+		return refTargetHash("branch", ref, branch.Target.Hash)
+	}
+	if !errors.Is(err, ErrNotFound) {
+		return "", err
+	}
+
+	escapedName, err := escapeSegments("tag name", ref)
+	if err != nil {
+		return "", err
+	}
+	var tag repositoryTag
+	if err := c.getJSON(repoPath(workspace, repo)+"/refs/tags/"+escapedName, &tag, "tag"); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return "", NewNotFoundError("branch or tag", ref)
+		}
+		return "", err
+	}
+	return refTargetHash("tag", ref, tag.Target.Hash)
+}
+
+func refTargetHash(kind, ref, hash string) (string, error) {
+	if hash == "" {
+		return "", fmt.Errorf("%s %s has no target commit in Bitbucket's response", kind, ref)
+	}
+	return hash, nil
 }
