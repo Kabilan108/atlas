@@ -28,15 +28,15 @@ func invoke(t *testing.T, def ops.Def, args string) (ops.Result, error) {
 func TestFileReadBatchReportsEachRepository(t *testing.T) {
 	env, fixture := newEnv(t)
 	res, err := repo.FileRead.Invoke(context.Background(), env, json.RawMessage(`{"repos":["*","widgets"],"path":"version.json"}`))
-	if ops.KindOf(err) != ops.Partial || !strings.Contains(err.Error(), "1 of 4 files failed") {
-		t.Fatalf("err = %v, want Partial for 1 of 4", err)
+	if err != nil {
+		t.Fatalf("err = %v, want none: a missing file is not a failure", err)
 	}
 	result := res.Value.(*repo.FileReadResult)
 	var got []string
 	for _, entry := range result.Results {
 		got = append(got, entry.Repo+":"+string(entry.Status))
 	}
-	if want := []string{"acme/widgets:ok", "acme/gadgets:ok", "acme/legacy:failed", "acme/blob:ok"}; !slices.Equal(got, want) {
+	if want := []string{"acme/widgets:ok", "acme/gadgets:ok", "acme/legacy:not_found", "acme/blob:ok"}; !slices.Equal(got, want) {
 		t.Fatalf("results = %v, want %v", got, want)
 	}
 	for i, entry := range result.Results {
@@ -47,10 +47,10 @@ func TestFileReadBatchReportsEachRepository(t *testing.T) {
 	if !result.Results[3].Binary || result.Results[3].Content != "" {
 		t.Fatalf("blob entry = %+v, want binary without content", result.Results[3])
 	}
-	want := "version.json at main branch: read from 3 of 4 repositories\n" +
+	want := "version.json at main branch: read from 3 of 4 repositories; not found in 1\n" +
 		"\n## acme/widgets\n\n```json\n{\"version\":\"1.2.3\"}\n```\n" +
 		"\n## acme/gadgets\n\n```json\n{\"version\":\"2.0.0\"}\n```\n" +
-		"\n## acme/legacy\n\nError: file: file 'HEAD:version.json' not found\n" +
+		"\n## acme/legacy\n\nNot found: file: file 'HEAD:version.json' not found\n" +
 		"\n## acme/blob\n\nBinary file, 8 bytes; not shown.\n"
 	if res.Text != want {
 		t.Fatalf("markdown =\n%q\nwant\n%q", res.Text, want)
@@ -60,8 +60,22 @@ func TestFileReadBatchReportsEachRepository(t *testing.T) {
 	}
 }
 
+func TestFileReadBatchCountsOnlyRealFailures(t *testing.T) {
+	res, err := invoke(t, repo.FileRead, `{"repos":["widgets","legacy","broken"],"path":"version.json"}`)
+	if ops.KindOf(err) != ops.Partial || !strings.Contains(err.Error(), "1 of 3 files failed") {
+		t.Fatalf("err = %v, want Partial for 1 of 3", err)
+	}
+	var got []string
+	for _, entry := range res.Value.(*repo.FileReadResult).Results {
+		got = append(got, entry.Repo+":"+string(entry.Status))
+	}
+	if want := []string{"acme/widgets:ok", "acme/legacy:not_found", "acme/broken:failed"}; !slices.Equal(got, want) {
+		t.Fatalf("results = %v, want %v", got, want)
+	}
+}
+
 func TestFileReadSingleRepo(t *testing.T) {
-	res, err := invoke(t, repo.FileRead, `{"repo":"widgets","path":"/version.json","ref":"v1","max_bytes":5}`)
+	res, err := invoke(t, repo.FileRead, `{"repo":"widgets","path":"version.json","ref":"v1","max_bytes":5}`)
 	if err != nil {
 		t.Fatal(err)
 	}

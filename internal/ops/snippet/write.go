@@ -140,11 +140,14 @@ func rename(ctx context.Context, env ops.Env, in RenameInput) (Receipt, error) {
 	if err != nil {
 		return Receipt{}, err
 	}
-	content, err := client.GetSnippetFileContent(ctx, ref.Workspace, ref.ID, in.From)
+	body, err := client.GetSnippetFileContentLimit(ctx, ref.Workspace, ref.ID, in.From, maxFileBytes)
 	if err != nil {
 		return Receipt{}, fmt.Errorf("failed to fetch file %s: %w", in.From, err)
 	}
-	if err := client.UpdateSnippet(ctx, ref.Workspace, ref.ID, "", map[string][]byte{in.To: content}, []string{in.From}); err != nil {
+	if body.Truncated {
+		return Receipt{}, ops.Errorf(ops.Invalid, "file %s is over %d bytes, too large to rename here; rename it on bitbucket.org", in.From, maxFileBytes)
+	}
+	if err := client.UpdateSnippet(ctx, ref.Workspace, ref.ID, "", map[string][]byte{in.To: body.Data}, []string{in.From}); err != nil {
 		return Receipt{}, err
 	}
 	return Receipt{Workspace: ref.Workspace, ID: ref.ID, From: in.From, To: in.To}, nil

@@ -27,11 +27,14 @@ func TestGetFileContentLimitTruncates(t *testing.T) {
 	if string(body.Data) != `{"ver` || !body.Truncated {
 		t.Fatalf("body = %q truncated=%v", body.Data, body.Truncated)
 	}
-	body, err = client.GetFileContentLimit(context.Background(), "acme", "widgets", "HEAD", "version.json", -1)
+	body, err = client.GetFileContentLimit(context.Background(), "acme", "widgets", "HEAD", "version.json", 19)
 	if err != nil || body.Truncated || string(body.Data) != `{"version":"1.2.3"}` {
-		t.Fatalf("unlimited body = %+v, %v", body, err)
+		t.Fatalf("exact-limit body = %+v, %v", body, err)
 	}
-	_, err = client.GetFileContentLimit(context.Background(), "acme", "widgets", "HEAD", "missing.json", -1)
+	if _, err := client.GetFileContentLimit(context.Background(), "acme", "widgets", "HEAD", "version.json", -1); err == nil {
+		t.Fatal("negative limit succeeded, want an error")
+	}
+	_, err = client.GetFileContentLimit(context.Background(), "acme", "widgets", "HEAD", "missing.json", 100)
 	if !errors.Is(err, ErrNotFound) || !strings.Contains(err.Error(), "HEAD:missing.json") {
 		t.Fatalf("err = %v, want not found naming the file", err)
 	}

@@ -17,10 +17,13 @@ import (
 
 const defaultMaxBytes = 32 << 10
 
+// HardMaxBytes is the largest max_bytes any caller may ask for.
+const HardMaxBytes = 4 << 20
+
 // GetInput is the input to api.
 type GetInput struct {
 	Path     string `json:"path" jsonschema:"API path with optional query, e.g. /2.0/repositories/acme/app/refs/tags?q=name~\"v1\""`
-	MaxBytes int    `json:"max_bytes,omitempty" jsonschema:"response byte cap, default 32768"`
+	MaxBytes int    `json:"max_bytes,omitempty" jsonschema:"response byte cap, default 32768, max 4194304"`
 }
 
 // GetResult is a GET response, possibly truncated.
@@ -101,8 +104,10 @@ func get(ctx context.Context, env ops.Env, in GetInput) (*GetResult, error) {
 	switch {
 	case maxBytes == 0:
 		maxBytes = defaultMaxBytes
-	case maxBytes < -1:
+	case maxBytes < 0:
 		return nil, ops.Errorf(ops.Invalid, "max_bytes must be positive")
+	case maxBytes > HardMaxBytes:
+		return nil, ops.Errorf(ops.Invalid, "max_bytes %d is over the maximum of %d", maxBytes, HardMaxBytes)
 	}
 	observe(ctx, Call{Method: "GET", Template: Template(path)})
 	resp, err := route.Fetch(ctx, env, path, int64(maxBytes))

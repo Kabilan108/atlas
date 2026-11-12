@@ -19,14 +19,11 @@ func newAPICmd() *cobra.Command {
 Only GET is supported. Prefer the dedicated commands where one exists.`,
 		Args: cobra.ExactArgs(1),
 	}
-	cmd.Flags().Int("max-bytes", 0, "Response byte cap (default: none)")
+	cmd.Flags().Int("max-bytes", api.HardMaxBytes, "Response byte cap (at most 4194304)")
 	return bind(cmd, binding[api.GetInput, *api.GetResult]{
 		op: api.Get,
 		input: func(cmd *cobra.Command, args []string, _ *cliEnv) (api.GetInput, error) {
 			maxBytes, _ := cmd.Flags().GetInt("max-bytes")
-			if !cmd.Flags().Changed("max-bytes") {
-				maxBytes = -1
-			}
 			return api.GetInput{Path: args[0], MaxBytes: maxBytes}, nil
 		},
 		human: func(w io.Writer, out *api.GetResult) error {
