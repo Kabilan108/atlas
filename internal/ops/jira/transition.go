@@ -3,6 +3,8 @@ package jira
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
 	jiraapi "github.com/kabilan108/atlas/internal/jira"
@@ -68,6 +70,7 @@ type TransitionInput struct {
 	IssueRef
 	Transition string         `json:"transition" jsonschema:"transition name or target status, any case (Resolved finds Resolved (2))"`
 	Fields     map[string]any `json:"fields,omitempty" jsonschema:"transition screen fields by name, e.g. {\"Resolution\": \"Done\"}"`
+	Force      bool           `json:"force,omitempty" jsonschema:"replace or clear a rich-text screen field even if content is lost"`
 }
 
 // Transitioned is the receipt for a transition.
@@ -112,6 +115,20 @@ func transition(ctx context.Context, env ops.Env, in TransitionInput) (*Transiti
 	fields := map[string]any{}
 	if err := shapeFields(ctx, client, screen{metas: metas}, in.Fields, fields, jiraapi.AssignableSearch{IssueKey: key}); err != nil {
 		return nil, err
+	}
+	var richText []jiraapi.FieldMeta
+	for _, id := range slices.Sorted(maps.Keys(fields)) {
+		if meta := fieldMeta(metas, id); jiraapi.IsRichText(meta.Schema) {
+			richText = append(richText, meta)
+		}
+	}
+	if in.Force && len(richText) == 0 {
+		return nil, ops.Errorf(ops.Invalid, "force applies only when a transition sets a rich-text field")
+	}
+	if !in.Force {
+		if err := guardRichText(ctx, client, key, richText, fields); err != nil {
+			return nil, err
+		}
 	}
 	site, err := siteURL(ctx, client)
 	if err != nil {

@@ -345,3 +345,29 @@ func TestCreateCapsRichTextFields(t *testing.T) {
 	fields := body(t, fake.Find("POST /rest/api/3/issue")[0])["fields"].(map[string]any)
 	wantContains(t, jsonOf(t, fields["description"]), `"type":"heading"`)
 }
+
+// A transition screen can carry Description; it gets the same protection
+// as edit.
+func TestTransitionRichTextFieldsAreGuarded(t *testing.T) {
+	fakeFor := func() *jiratest.Fake {
+		fake := richEditFake(richDescription)
+		fake.JSON("GET /rest/api/3/issue/CSM-756/transitions", http.StatusOK, `{"transitions":[{"id":"61","name":"Resolved (2)","to":{"name":"Resolved"},
+			"fields":{"description":{"name":"Description","required":false,"schema":{"type":"string","system":"description"}}}}]}`)
+		fake.JSON("POST /rest/api/3/issue/CSM-756/transitions", http.StatusNoContent, ``)
+		return fake
+	}
+	fake := fakeFor()
+	_, err := invoke(t, fake, Transition, `{"issue":"CSM-756","transition":"Resolved","fields":{"Description":"closing note"}}`)
+	wantKind(t, err, ops.Invalid, "Description has content markdown can't hold", "force")
+	noWrites(t, fake)
+
+	fake = fakeFor()
+	_, err = invoke(t, fake, Transition, `{"issue":"CSM-756","transition":"Resolved","force":true}`)
+	wantKind(t, err, ops.Invalid, "force applies only when a transition sets a rich-text field")
+	noWrites(t, fake)
+
+	fake = fakeFor()
+	if _, err := invoke(t, fake, Transition, `{"issue":"CSM-756","transition":"Resolved","force":true,"fields":{"Description":"closing note"}}`); err != nil {
+		t.Fatalf("forced transition: %v", err)
+	}
+}

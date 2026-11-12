@@ -112,6 +112,7 @@ atlas jira transition
   use: transition <issue> <transition-or-status>
   aliases: move
   flag --field stringArray default="[]"
+  flag --force bool default="false"
   flag --json bool default="false"
 atlas jira transitions
   use: transitions <issue>

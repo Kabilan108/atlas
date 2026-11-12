@@ -191,6 +191,7 @@ func newJiraTransitionCmd() *cobra.Command {
 		Args:    cobra.ExactArgs(2),
 	}
 	addJiraFieldFlag(cmd)
+	cmd.Flags().Bool("force", false, "Replace or clear a rich-text screen field even if content is lost")
 	return bind(cmd, binding[jiraops.TransitionInput, *jiraops.Transitioned]{
 		op: jiraops.Transition,
 		input: func(cmd *cobra.Command, args []string, _ *cliEnv) (jiraops.TransitionInput, error) {
@@ -198,7 +199,8 @@ func newJiraTransitionCmd() *cobra.Command {
 			if err != nil {
 				return jiraops.TransitionInput{}, err
 			}
-			return jiraops.TransitionInput{IssueRef: jiraops.IssueRef{Issue: args[0]}, Transition: args[1], Fields: fields}, nil
+			force, _ := cmd.Flags().GetBool("force")
+			return jiraops.TransitionInput{IssueRef: jiraops.IssueRef{Issue: args[0]}, Transition: args[1], Fields: fields, Force: force}, nil
 		},
 		human: func(w io.Writer, out *jiraops.Transitioned) error {
 			_, err := fmt.Fprintf(w, "Moved %s with %q; status is now %s\n", out.Key, out.Transition, out.Status)
