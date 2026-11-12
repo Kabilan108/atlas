@@ -41,7 +41,7 @@ type GetResult struct {
 var Get = &ops.Op[GetInput, *GetResult]{
 	Meta: ops.Meta{
 		Name:        "api",
-		Description: "GET a Bitbucket REST path (/2.0/...) no other tool covers. Read-only; prefer the dedicated tools.",
+		Description: "GET a Bitbucket (/2.0/...) or Jira (/rest/api/3/..., /rest/agile/1.0/..., /rest/servicedeskapi/...) REST path no other tool covers. Read-only; prefer the dedicated tools.",
 		Surfaces:    ops.Both,
 		ReadOnly:    true,
 	},
@@ -70,10 +70,31 @@ type Response struct {
 	Truncated   bool
 }
 
-// routes lists every API the op may call. The Jira slice adds its gateway
-// paths (/rest/api/3/..., /rest/agile/...) here.
+// routes lists every API the op may call.
 var routes = []Route{
 	bitbucketRoute,
+	jiraRoute("/rest/api/3/"),
+	jiraRoute("/rest/api/2/"),
+	jiraRoute("/rest/agile/1.0/"),
+	jiraRoute("/rest/servicedeskapi/"),
+}
+
+// jiraRoute serves one Jira REST family through the Atlassian gateway.
+func jiraRoute(prefix string) Route {
+	return Route{
+		Prefix: prefix,
+		Fetch: func(ctx context.Context, env ops.Env, path string, maxBytes int64) (*Response, error) {
+			client, err := env.Jira(ctx)
+			if err != nil {
+				return nil, err
+			}
+			body, err := client.GetAPI(ctx, path, maxBytes)
+			if err != nil {
+				return nil, err
+			}
+			return &Response{Status: body.Status, ContentType: body.ContentType, Body: body.Body, Truncated: body.Truncated}, nil
+		},
+	}
 }
 
 var bitbucketRoute = Route{

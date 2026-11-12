@@ -30,7 +30,8 @@ func TestGetRejectsPathsOutsideTheAPI(t *testing.T) {
 		"/2.0/user#frag",
 		"/2.0/user\n",
 		"/1.0/user",
-		"/rest/api/3/myself",
+		"/rest/api/1/myself",
+		"/rest/auth/1/session",
 		"/2.0",
 	} {
 		_, err := api.Get.Invoke(context.Background(), env, mustJSON(t, map[string]any{"path": path}))
@@ -121,4 +122,56 @@ func mustJSON(t *testing.T, v any) json.RawMessage {
 		t.Fatal(err)
 	}
 	return data
+}
+
+func TestGetRoutesJiraPathsThroughTheJiraClient(t *testing.T) {
+	var got []string
+	env := opstest.New("acme").WithJira(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = append(got, r.Method+" "+r.URL.RequestURI())
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"accountId":"abc","displayName":"Ada"}`))
+	}))
+	var calls []api.Call
+	ctx := api.WithObserver(context.Background(), func(call api.Call) { calls = append(calls, call) })
+
+	res, err := api.Get.Invoke(ctx, env, json.RawMessage(`{"path":"/rest/api/3/myself?expand=groups"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0] != "GET /rest/api/3/myself?expand=groups" {
+		t.Fatalf("requests = %v", got)
+	}
+	if !strings.Contains(res.Text, `"displayName": "Ada"`) {
+		t.Fatalf("text = %q", res.Text)
+	}
+	if len(calls) != 1 || calls[0].Method != "GET" {
+		t.Fatalf("observed = %+v", calls)
+	}
+
+	res, err = api.Get.Invoke(ctx, env, json.RawMessage(`{"path":"/rest/api/3/myself","max_bytes":5}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result := res.Value.(*api.GetResult); !result.Truncated || result.Body != `{"acc` {
+		t.Fatalf("truncated result = %+v", result)
+	}
+}
+
+func TestGetRejectsUnsafeJiraPaths(t *testing.T) {
+	var served int
+	env := opstest.New("acme").WithJira(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { served++ }))
+	for _, path := range []string{
+		"/rest/api/3/../../wiki/rest/api/content",
+		"/rest/api/3/%2e%2e/x",
+		"/rest/api/3/issue%2fCSM-1",
+		"/rest/api/3/",
+	} {
+		_, err := api.Get.Invoke(context.Background(), env, mustJSON(t, map[string]any{"path": path}))
+		if err == nil {
+			t.Errorf("path %q: succeeded, want an error", path)
+		}
+	}
+	if served != 0 {
+		t.Fatalf("served %d requests for rejected paths", served)
+	}
 }

@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/kabilan108/atlas/internal/ops/api"
 )
 
 // callRecord collects what the MCP layer learns about a request, for the
@@ -17,6 +19,7 @@ type callRecord struct {
 	rpc       string
 	tool      string
 	toolError bool
+	apiPath   string
 }
 
 func (c *callRecord) set(update func(*callRecord)) {
@@ -34,6 +37,9 @@ func (c *callRecord) attrs() []any {
 	}
 	if c.tool != "" {
 		attrs = append(attrs, "tool", c.tool, "tool_error", c.toolError)
+	}
+	if c.apiPath != "" {
+		attrs = append(attrs, "api_path", c.apiPath)
 	}
 	return attrs
 }
@@ -72,6 +78,11 @@ func recordCall(next mcp.MethodHandler) mcp.MethodHandler {
 			if call, ok := req.(*mcp.CallToolRequest); ok && call.Params != nil {
 				c.tool = call.Params.Name
 			}
+		})
+		// The api tool reports the path template it called (ids collapsed),
+		// so frequent paths show up in the log as candidates for real tools.
+		ctx = api.WithObserver(ctx, func(call api.Call) {
+			record.set(func(c *callRecord) { c.apiPath = call.Method + " " + call.Template })
 		})
 		result, err := next(ctx, method, req)
 		if toolResult, ok := result.(*mcp.CallToolResult); ok {

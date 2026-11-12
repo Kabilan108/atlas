@@ -133,7 +133,7 @@ func shouldCheckForUpdate(cmd *cobra.Command) bool {
 		return false
 	}
 	switch fields[1] {
-	case "login", "pr", "snippet":
+	case "login", "pr", "snippet", "pipeline", "jira", "repo", "branch", "commit", "file", "user", "whoami", "api":
 		return true
 	default:
 		return false

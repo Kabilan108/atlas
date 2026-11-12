@@ -349,3 +349,25 @@ func TestToolPanicIsRecovered(t *testing.T) {
 		t.Fatalf("panic not logged:\n%s", logs.String())
 	}
 }
+
+func TestLogsRecordAPIPathTemplates(t *testing.T) {
+	srv := startServer(t, mcpserver.Options{})
+	session := connect(t, srv.url, credentials())
+	if text, isError := callText(t, session, "api", map[string]any{"path": "/2.0/repositories/acme/widgets/pullrequests/42"}); isError {
+		t.Fatal(text)
+	}
+	srv.close()
+	var paths []string
+	for _, line := range strings.Split(strings.TrimSpace(srv.logs.String()), "\n") {
+		var entry map[string]any
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			t.Fatalf("log line is not JSON: %q", line)
+		}
+		if path, ok := entry["api_path"].(string); ok {
+			paths = append(paths, path)
+		}
+	}
+	if len(paths) != 1 || !strings.HasPrefix(paths[0], "GET /2.0/repositories/") || strings.Contains(paths[0], "widgets") {
+		t.Fatalf("api_path entries = %q, want one templated GET path", paths)
+	}
+}
