@@ -3,6 +3,8 @@ package bitbucket
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"sort"
@@ -10,15 +12,43 @@ import (
 )
 
 const (
-	// maxErrorBody bounds how much of a failed log response is read for its
+	// MaxResponseBytes bounds every response body the client reads. No
+	// Bitbucket response atlas asks for comes close; readers with their own
+	// smaller caps (diffs, files, logs, the api passthrough) apply those.
+	MaxResponseBytes = 32 << 20
+	// maxErrorBody bounds how much of a failed response is read for its
 	// error message.
 	maxErrorBody = 64 << 10
-	// maxErrorMessage bounds the message an APIError keeps from a body.
+	// maxErrorMessage bounds the message an APIError keeps from that body.
 	maxErrorMessage = 4 << 10
 )
 
 func success(status int) bool {
 	return status >= 200 && status < 300
+}
+
+// readBody reads a response body without ever holding more than
+// MaxResponseBytes of it, or maxErrorBody of a failed response, however
+// much the server sends.
+func readBody(resp *http.Response) ([]byte, error) {
+	if !success(resp.StatusCode) {
+		return io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, MaxResponseBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > MaxResponseBytes {
+		return nil, fmt.Errorf("%s response is larger than %d bytes; not reading it", requestPath(resp), MaxResponseBytes)
+	}
+	return data, nil
+}
+
+func requestPath(resp *http.Response) string {
+	if resp.Request == nil || resp.Request.URL == nil {
+		return "Bitbucket"
+	}
+	return resp.Request.Method + " " + resp.Request.URL.Path
 }
 
 // redactError scrubs a transport or URL error.

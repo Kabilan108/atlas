@@ -87,9 +87,10 @@ func view(ctx context.Context, env ops.Env, in ViewInput) (*ViewResult, error) {
 			return nil, fmt.Errorf("failed to fetch tasks: %w", err)
 		}
 		// The diff only adds code context to inline threads; without it the
-		// threads still render.
-		if diff, err := client.GetPullRequestDiff(ctx, target.Workspace, target.Repo, id); err == nil {
-			result.diff = diff
+		// threads still render. It is read with pr_diff's download cap, so a
+		// huge diff only leaves threads on its later files without context.
+		if diff, err := client.GetPullRequestDiffLimit(ctx, target.Workspace, target.Repo, id, MaxDiffDownload); err == nil {
+			result.diff = diff.Data
 		}
 	}
 	if err := result.resolveMentions(ctx, client); err != nil {

@@ -39,7 +39,7 @@ func (c *Client) send(ctx context.Context, method, path string, body any) (*http
 	}
 	defer resp.Body.Close()
 
-	data, err := io.ReadAll(resp.Body)
+	data, err := readBody(resp)
 	if err != nil {
 		return nil, nil, err
 	}

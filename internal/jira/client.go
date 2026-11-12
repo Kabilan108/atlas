@@ -22,6 +22,8 @@ const (
 	defaultUserAgent = "atlas"
 	defaultPageSize  = 100
 	maxErrorBody     = 4096
+	// maxErrorRead bounds how much of a failed response is read.
+	maxErrorRead = 64 << 10
 	// maxResponseBytes bounds every response body the client reads; no
 	// single Jira response atlas asks for comes close.
 	maxResponseBytes = 32 << 20
@@ -155,12 +157,16 @@ func (c *Client) do(req *http.Request) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		data, err := io.ReadAll(io.LimitReader(resp.Body, maxErrorRead))
+		if err != nil {
+			return nil, err
+		}
+		return nil, newAPIError(req, resp, data, c.redact)
+	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
 	if err != nil {
 		return nil, err
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, newAPIError(req, resp, data, c.redact)
 	}
 	if len(data) > maxResponseBytes {
 		return nil, fmt.Errorf("jira: %s %s: response is larger than %d bytes", req.Method, req.URL.Path, maxResponseBytes)

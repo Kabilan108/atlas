@@ -176,7 +176,7 @@ func (c *Client) get(ctx context.Context, path string) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readBody(resp)
 	if err != nil {
 		return nil, err
 	}
@@ -206,7 +206,7 @@ func (c *Client) getRaw(ctx context.Context, path string) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readBody(resp)
 	if err != nil {
 		return nil, err
 	}
@@ -254,7 +254,7 @@ func (c *Client) sendJSON(ctx context.Context, method, path string, body any) ([
 	}
 	defer resp.Body.Close()
 
-	data, err := io.ReadAll(resp.Body)
+	data, err := readBody(resp)
 	if err != nil {
 		return nil, err
 	}
@@ -819,7 +819,7 @@ func (c *Client) CreateSnippet(ctx context.Context, workspace, title string, fil
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readBody(resp)
 	if err != nil {
 		return nil, err
 	}
@@ -880,7 +880,7 @@ func (c *Client) UpdateSnippet(ctx context.Context, workspace, id, title string,
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readBody(resp)
 	if err != nil {
 		return err
 	}
@@ -902,7 +902,7 @@ func (c *Client) DeleteSnippet(ctx context.Context, workspace, id string) error 
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readBody(resp)
 	if err != nil {
 		return err
 	}

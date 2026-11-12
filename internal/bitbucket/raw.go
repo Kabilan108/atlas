@@ -92,7 +92,7 @@ func (c *Client) getLimited(ctx context.Context, path string, maxBytes int64, ac
 
 	body := &LimitedBody{ContentType: resp.Header.Get("Content-Type"), StatusCode: resp.StatusCode}
 	if !success(resp.StatusCode) {
-		data, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
+		data, err := readBody(resp)
 		if err != nil {
 			return nil, err
 		}

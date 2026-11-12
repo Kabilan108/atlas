@@ -39,12 +39,16 @@ func (c *Client) GetAPI(ctx context.Context, path string, maxBytes int64) (*Limi
 		return nil, c.redactor.Error(err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		data, err := io.ReadAll(io.LimitReader(resp.Body, maxErrorRead))
+		if err != nil {
+			return nil, err
+		}
+		return nil, newAPIError(req, resp, data, c.redact)
+	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
 	if err != nil {
 		return nil, err
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, newAPIError(req, resp, data, c.redact)
 	}
 	out := &LimitedResponse{Status: resp.StatusCode, ContentType: resp.Header.Get("Content-Type"), Body: data}
 	if int64(len(data)) > maxBytes {
