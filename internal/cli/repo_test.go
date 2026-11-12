@@ -11,18 +11,18 @@ import (
 	"github.com/kabilan108/atlas/internal/ops/repo/repotest"
 )
 
-func runRepoCmd(t *testing.T, args ...string) (string, error, []string) {
+func runRepoCmd(t *testing.T, args ...string) (string, []string, error) {
 	t.Helper()
 	setupCLIEnv(t)
 	t.Setenv("ATLAS_WORKSPACE", repotest.Workspace)
 	t.Chdir(t.TempDir())
 	fixture := repotest.New()
 	out, err := runAtlas(t, fixture, append([]string{"--no-cache"}, args...)...)
-	return out, err, fixture.Requests()
+	return out, fixture.Requests(), err
 }
 
 func TestFileReadPrintsOneFileAsIs(t *testing.T) {
-	out, err, _ := runRepoCmd(t, "file", "read", "version.json", "-R", "widgets")
+	out, _, err := runRepoCmd(t, "file", "read", "version.json", "-R", "widgets")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func TestFileReadReportsTruncationOnStderr(t *testing.T) {
 }
 
 func TestFileReadBatchPrintsSectionsThenFails(t *testing.T) {
-	out, err, _ := runRepoCmd(t, "file", "read", "version.json", "--repos", "widgets,legacy,broken")
+	out, _, err := runRepoCmd(t, "file", "read", "version.json", "--repos", "widgets,legacy,broken")
 	if ops.KindOf(err) != ops.Partial || !strings.Contains(err.Error(), "1 of 3") {
 		t.Fatalf("err = %v, want Partial for broken only", err)
 	}
@@ -63,7 +63,7 @@ func TestFileReadBatchPrintsSectionsThenFails(t *testing.T) {
 		t.Fatalf("stdout = %q", out)
 	}
 
-	out, err, _ = runRepoCmd(t, "file", "read", "version.json", "--repos", "widgets", "--json")
+	out, _, err = runRepoCmd(t, "file", "read", "version.json", "--repos", "widgets", "--json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +80,7 @@ func TestFileReadBatchPrintsSectionsThenFails(t *testing.T) {
 }
 
 func TestBranchViewFailsForMissingBranch(t *testing.T) {
-	out, err, _ := runRepoCmd(t, "branch", "view", "gone", "-R", "acme/widgets")
+	out, _, err := runRepoCmd(t, "branch", "view", "gone", "-R", "acme/widgets")
 	if ops.KindOf(err) != ops.NotFound {
 		t.Fatalf("err = %v, want NotFound", err)
 	}
@@ -103,7 +103,7 @@ func TestRepoCommandsUseFlags(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
-			out, err, reqs := runRepoCmd(t, tc.args...)
+			out, reqs, err := runRepoCmd(t, tc.args...)
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -23,31 +23,18 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 type hostRecorder struct {
 	mu    sync.Mutex
 	hosts []string
-	auth  map[string]bool
 }
 
 func (r *hostRecorder) record(req *http.Request) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.auth == nil {
-		r.auth = map[string]bool{}
-	}
 	r.hosts = append(r.hosts, req.URL.Scheme+"://"+req.URL.Host+req.URL.Path)
-	if req.Header.Get("Authorization") != "" {
-		r.auth[req.URL.Host] = true
-	}
 }
 
 func (r *hostRecorder) all() []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return append([]string(nil), r.hosts...)
-}
-
-func (r *hostRecorder) sentAuthTo(host string) bool {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.auth[host]
 }
 
 func cannedResponse(req *http.Request, status int, body string) *http.Response {

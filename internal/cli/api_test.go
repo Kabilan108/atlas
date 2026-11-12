@@ -8,7 +8,7 @@ import (
 )
 
 func TestAPICommandPrintsTheBody(t *testing.T) {
-	out, err, reqs := runRepoCmd(t, "api", "/2.0/user")
+	out, reqs, err := runRepoCmd(t, "api", "/2.0/user")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -18,7 +18,7 @@ func TestAPICommandPrintsTheBody(t *testing.T) {
 }
 
 func TestAPICommandRefusesNonAPIPaths(t *testing.T) {
-	_, err, reqs := runRepoCmd(t, "api", "https://evil.example/2.0/user")
+	_, reqs, err := runRepoCmd(t, "api", "https://evil.example/2.0/user")
 	if ops.KindOf(err) != ops.Invalid || len(reqs) != 0 {
 		t.Fatalf("err = %v, requests = %v", err, reqs)
 	}
