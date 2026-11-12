@@ -22,8 +22,10 @@ import (
 )
 
 const (
-	// DefaultMaxBodyBytes caps request bodies when Options.MaxBodyBytes is zero.
-	DefaultMaxBodyBytes = 1 << 20
+	// DefaultMaxBodyBytes caps request bodies when Options.MaxBodyBytes is
+	// zero. It fits the largest upload a tool advertises, jira_attach's
+	// 10 MiB of files, after base64 (14 MB) and the JSON-RPC envelope.
+	DefaultMaxBodyBytes = 16 << 20
 	// DefaultBodyReadTimeout bounds reading a request body when
 	// Options.BodyReadTimeout is zero.
 	DefaultBodyReadTimeout = 30 * time.Second

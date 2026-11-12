@@ -40,7 +40,10 @@ func newMCPServeCmd(version string) *cobra.Command {
 Each request carries its own credentials in headers: %s, plus
 %s for Bitbucket tools and %s for Jira tools.
 The server stores no credentials, keeps no sessions, and never uses the disk
-cache. Request logs go to stderr and never include headers.`, mcpserver.HeaderEmail, mcpserver.HeaderBitbucketToken, mcpserver.HeaderJiraToken),
+cache. Request logs go to stderr and never include headers. Request bodies
+are capped at %d MiB, enough for jira_attach's largest upload, and must
+arrive within %s.`, mcpserver.HeaderEmail, mcpserver.HeaderBitbucketToken, mcpserver.HeaderJiraToken,
+			mcpserver.DefaultMaxBodyBytes>>20, mcpserver.DefaultBodyReadTimeout),
 		Args: cobra.NoArgs,
 		RunE: runMCPServe(version),
 	}
