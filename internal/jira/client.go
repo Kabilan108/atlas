@@ -5,6 +5,7 @@ package jira
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -28,6 +29,8 @@ type Client struct {
 	email      string
 	token      string
 	userAgent  string
+	// secrets are the credential encodings scrubbed from error content.
+	secrets []string
 }
 
 type Option func(*Client)
@@ -78,7 +81,57 @@ func NewClientWithCredentials(email, token, cloudID string, opts ...Option) (*Cl
 	if c.baseURL == "" {
 		return nil, errors.New("jira: missing cloud ID")
 	}
+	base, err := url.Parse(c.baseURL)
+	if err != nil || base.Scheme == "" || base.Host == "" {
+		return nil, fmt.Errorf("jira: invalid base URL %q", c.baseURL)
+	}
+	c.httpClient = sameOriginRedirects(c.httpClient, origin(base))
+	c.secrets = credentialSecrets(email, token)
 	return c, nil
+}
+
+// sameOriginRedirects returns a copy of hc that refuses any redirect leaving
+// the base origin, so the Authorization header is never sent elsewhere. Go
+// forwards it to subdomains, other ports and plain HTTP by default.
+func sameOriginRedirects(hc *http.Client, baseOrigin string) *http.Client {
+	clone := *hc
+	next := hc.CheckRedirect
+	clone.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if got := origin(req.URL); got != baseOrigin {
+			return fmt.Errorf("jira: refusing redirect from %s to %s", baseOrigin, got)
+		}
+		if next != nil {
+			return next(req, via)
+		}
+		if len(via) >= 10 {
+			return errors.New("jira: stopped after 10 redirects")
+		}
+		return nil
+	}
+	return &clone
+}
+
+func origin(u *url.URL) string {
+	scheme := strings.ToLower(u.Scheme)
+	port := u.Port()
+	if port == "" {
+		switch scheme {
+		case "https":
+			port = "443"
+		case "http":
+			port = "80"
+		}
+	}
+	return scheme + "://" + strings.ToLower(u.Hostname()) + ":" + port
+}
+
+func credentialSecrets(email, token string) []string {
+	basic := base64.StdEncoding.EncodeToString([]byte(email + ":" + token))
+	secrets := []string{basic, strings.TrimRight(basic, "="), token}
+	if escaped := url.QueryEscape(token); escaped != token {
+		secrets = append(secrets, escaped)
+	}
+	return secrets
 }
 
 func (c *Client) BaseURL() string {
@@ -112,7 +165,7 @@ func (c *Client) do(req *http.Request) ([]byte, error) {
 		return nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, newAPIError(req, resp, data)
+		return nil, newAPIError(req, resp, data, c.redact)
 	}
 	return data, nil
 }

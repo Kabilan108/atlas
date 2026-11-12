@@ -2,6 +2,9 @@ package jira
 
 import (
 	"encoding/json"
+	"fmt"
+	"maps"
+	"slices"
 	"strings"
 )
 
@@ -186,15 +189,29 @@ func (i *Issue) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// FieldByName finds a field by its display name using the names expansion,
-// case-insensitively. It returns the field ID and raw value.
-func (i *Issue) FieldByName(name string) (string, json.RawMessage, bool) {
-	for id, n := range i.Names {
-		if strings.EqualFold(n, name) {
-			return id, i.RawFields[id], true
-		}
+// FieldByName finds a field by ID or display name using the names expansion,
+// with ResolveField's rules: an ID, then an exact name, then a
+// case-insensitive name. It returns the field ID and raw value, or a
+// *ResolveError when nothing or more than one field matches.
+func (i *Issue) FieldByName(name string) (string, json.RawMessage, error) {
+	name = strings.TrimSpace(name)
+	ids := slices.Sorted(maps.Keys(i.Names))
+	valid := make([]string, len(ids))
+	for n, id := range ids {
+		valid[n] = i.Names[id]
 	}
-	return "", nil, false
+	id, err := pick("field", name, ids,
+		func(id string) string { return id },
+		func(id string) string { return fmt.Sprintf("%s (%s)", i.Names[id], id) },
+		valid,
+		func(id string) bool { return id == name },
+		func(id string) bool { return i.Names[id] == name },
+		func(id string) bool { return strings.EqualFold(i.Names[id], name) },
+	)
+	if err != nil {
+		return "", nil, err
+	}
+	return id, i.RawFields[id], nil
 }
 
 type FieldSchema struct {
@@ -281,7 +298,13 @@ type Comment struct {
 	Visibility   *Visibility     `json:"visibility,omitempty"`
 	// JSDPublic is set on Service Management issues only; nil means Jira did
 	// not say, not that the comment is internal.
-	JSDPublic *bool `json:"jsdPublic,omitempty"`
+	JSDPublic  *bool            `json:"jsdPublic,omitempty"`
+	Properties []EntityProperty `json:"properties,omitempty"`
+}
+
+type EntityProperty struct {
+	Key   string          `json:"key"`
+	Value json.RawMessage `json:"value"`
 }
 
 type CommentPage struct {

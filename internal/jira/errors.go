@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -72,7 +73,25 @@ func (e *APIError) Unwrap() error {
 	return nil
 }
 
-func newAPIError(req *http.Request, resp *http.Response, body []byte) *APIError {
+const redacted = "[REDACTED]"
+
+var authorizationValue = regexp.MustCompile(`(?i)(authorization"?\s*[:=]\s*"?)[^\r\n"]*`)
+
+// redact removes the client's credentials, in any encoding it sends them,
+// and the value of anything labelled Authorization.
+func (c *Client) redact(s string) string {
+	for _, secret := range c.secrets {
+		if secret != "" {
+			s = strings.ReplaceAll(s, secret, redacted)
+		}
+	}
+	return authorizationValue.ReplaceAllString(s, "${1}"+redacted)
+}
+
+// newAPIError builds the error from a redacted copy of the body and redacts
+// every decoded string again, since JSON escapes can spell a secret that the
+// raw bytes do not contain.
+func newAPIError(req *http.Request, resp *http.Response, body []byte, redact func(string) string) *APIError {
 	e := &APIError{
 		StatusCode: resp.StatusCode,
 		Method:     req.Method,
@@ -85,20 +104,26 @@ func newAPIError(req *http.Request, resp *http.Response, body []byte) *APIError 
 		ErrorMessage  string            `json:"errorMessage"`
 		Message       string            `json:"message"`
 	}
-	if json.Unmarshal(body, &wire) == nil {
-		e.ErrorMessages = wire.ErrorMessages
+	text := redact(string(body))
+	if json.Unmarshal([]byte(text), &wire) == nil {
+		for _, m := range wire.ErrorMessages {
+			e.ErrorMessages = append(e.ErrorMessages, redact(m))
+		}
 		if wire.ErrorMessage != "" {
-			e.ErrorMessages = append(e.ErrorMessages, wire.ErrorMessage)
+			e.ErrorMessages = append(e.ErrorMessages, redact(wire.ErrorMessage))
 		}
 		if wire.Message != "" && len(e.ErrorMessages) == 0 {
-			e.ErrorMessages = append(e.ErrorMessages, wire.Message)
+			e.ErrorMessages = append(e.ErrorMessages, redact(wire.Message))
 		}
 		if len(wire.Errors) > 0 {
-			e.Errors = wire.Errors
+			e.Errors = make(map[string]string, len(wire.Errors))
+			for k, v := range wire.Errors {
+				e.Errors[redact(k)] = redact(v)
+			}
 		}
 	}
 	if len(e.ErrorMessages) == 0 && len(e.Errors) == 0 {
-		text := strings.TrimSpace(string(body))
+		text = strings.TrimSpace(text)
 		if len(text) > maxErrorBody {
 			text = text[:maxErrorBody] + "..."
 		}

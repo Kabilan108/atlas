@@ -49,12 +49,29 @@ func (c *Client) ListComments(ctx context.Context, issueKey string, opts Comment
 // AddComment posts an ADF body (e.g. from adf.FromMarkdown). Visibility may
 // be nil.
 func (c *Client) AddComment(ctx context.Context, issueKey string, body json.RawMessage, visibility *Visibility) (*Comment, error) {
-	payload := struct {
-		Body       json.RawMessage `json:"body"`
-		Visibility *Visibility     `json:"visibility,omitempty"`
-	}{body, visibility}
+	return c.CreateComment(ctx, issueKey, CommentInput{Body: body, Visibility: visibility})
+}
+
+// CommentInput is the body for CreateComment. Body is an ADF document.
+type CommentInput struct {
+	Body       json.RawMessage  `json:"body"`
+	Visibility *Visibility      `json:"visibility,omitempty"`
+	Properties []EntityProperty `json:"properties,omitempty"`
+}
+
+// InternalNoteProperty marks a comment on a Service Management issue as an
+// internal note. Jira reports the result as Comment.JSDPublic == false.
+func InternalNoteProperty() EntityProperty {
+	return EntityProperty{Key: "sd.public.comment", Value: json.RawMessage(`{"internal":true}`)}
+}
+
+// CreateComment posts a comment through the platform API, which also takes
+// entity properties such as InternalNoteProperty. Callers that need a
+// comment to be internal must check the returned JSDPublic, which is nil
+// when Jira did not report it.
+func (c *Client) CreateComment(ctx context.Context, issueKey string, input CommentInput) (*Comment, error) {
 	var comment Comment
-	if err := c.sendJSON(ctx, http.MethodPost, issuePath(issueKey, "comment"), nil, payload, &comment); err != nil {
+	if err := c.sendJSON(ctx, http.MethodPost, issuePath(issueKey, "comment"), nil, input, &comment); err != nil {
 		return nil, err
 	}
 	return &comment, nil
@@ -103,15 +120,53 @@ type WorklogInput struct {
 }
 
 type WorklogAddOptions struct {
-	// AdjustEstimate is "new", "leave", "manual" or "auto" (Jira's default).
+	// AdjustEstimate is "new" (set NewEstimate), "manual" (set ReduceBy),
+	// "leave" or "auto"; empty means Jira's default, "auto".
 	AdjustEstimate string
-	NotifyUsers    *bool
+	// NewEstimate is the remaining estimate for "new", e.g. "2d".
+	NewEstimate string
+	// ReduceBy is the amount to cut the remaining estimate by for "manual".
+	ReduceBy    string
+	NotifyUsers *bool
+}
+
+func (o WorklogAddOptions) query() (url.Values, error) {
+	q := url.Values{}
+	switch o.AdjustEstimate {
+	case "", "auto", "leave":
+	case "new":
+		if o.NewEstimate == "" {
+			return nil, fmt.Errorf("jira: adjustEstimate new needs NewEstimate")
+		}
+	case "manual":
+		if o.ReduceBy == "" {
+			return nil, fmt.Errorf("jira: adjustEstimate manual needs ReduceBy")
+		}
+	default:
+		return nil, fmt.Errorf("jira: unknown adjustEstimate %q; want new, leave, manual or auto", o.AdjustEstimate)
+	}
+	if o.NewEstimate != "" && o.AdjustEstimate != "new" {
+		return nil, fmt.Errorf("jira: NewEstimate needs adjustEstimate new")
+	}
+	if o.ReduceBy != "" && o.AdjustEstimate != "manual" {
+		return nil, fmt.Errorf("jira: ReduceBy needs adjustEstimate manual")
+	}
+	if o.AdjustEstimate != "" {
+		q.Set("adjustEstimate", o.AdjustEstimate)
+	}
+	if o.NewEstimate != "" {
+		q.Set("newEstimate", o.NewEstimate)
+	}
+	if o.ReduceBy != "" {
+		q.Set("reduceBy", o.ReduceBy)
+	}
+	return q, nil
 }
 
 func (c *Client) AddWorklog(ctx context.Context, issueKey string, input WorklogInput, opts WorklogAddOptions) (*Worklog, error) {
-	q := url.Values{}
-	if opts.AdjustEstimate != "" {
-		q.Set("adjustEstimate", opts.AdjustEstimate)
+	q, err := opts.query()
+	if err != nil {
+		return nil, err
 	}
 	if opts.NotifyUsers != nil {
 		q.Set("notifyUsers", fmt.Sprint(*opts.NotifyUsers))

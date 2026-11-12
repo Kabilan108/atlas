@@ -55,10 +55,15 @@ type SearchRequest struct {
 	FieldsByKeys  bool     `json:"fieldsByKeys,omitempty"`
 }
 
+// SearchResult is one page of search results. Names and Schema are the
+// "names" and "schema" expansions, which Jira returns once per page; they are
+// also copied onto each issue that lacks its own, so Issue.FieldByName works.
 type SearchResult struct {
-	Issues        []Issue `json:"issues"`
-	NextPageToken string  `json:"nextPageToken,omitempty"`
-	IsLast        bool    `json:"isLast"`
+	Issues        []Issue                `json:"issues"`
+	NextPageToken string                 `json:"nextPageToken,omitempty"`
+	IsLast        bool                   `json:"isLast"`
+	Names         map[string]string      `json:"names,omitempty"`
+	Schema        map[string]FieldSchema `json:"schema,omitempty"`
 }
 
 // SearchPage runs one page of an enhanced JQL search. The JQL, including any
@@ -71,11 +76,20 @@ func (c *Client) SearchPage(ctx context.Context, req SearchRequest) (*SearchResu
 	if res.NextPageToken == "" {
 		res.IsLast = true
 	}
+	for i := range res.Issues {
+		if res.Issues[i].Names == nil {
+			res.Issues[i].Names = res.Names
+		}
+		if res.Issues[i].Schema == nil {
+			res.Issues[i].Schema = res.Schema
+		}
+	}
 	return &res, nil
 }
 
-// Search follows nextPageToken until isLast. limit <= 0 returns every match;
-// req.NextPageToken is a starting point and req.MaxResults the page size.
+// Search follows nextPageToken until isLast, including across empty pages.
+// limit <= 0 returns every match; req.NextPageToken is a starting point and
+// req.MaxResults the page size.
 func (c *Client) Search(ctx context.Context, req SearchRequest, limit int) ([]Issue, error) {
 	if req.MaxResults <= 0 {
 		req.MaxResults = defaultPageSize
@@ -94,7 +108,7 @@ func (c *Client) Search(ctx context.Context, req SearchRequest, limit int) ([]Is
 		if limit > 0 && len(issues) >= limit {
 			return issues[:limit], nil
 		}
-		if page.IsLast || len(page.Issues) == 0 {
+		if page.IsLast {
 			return issues, nil
 		}
 		if seen[page.NextPageToken] {

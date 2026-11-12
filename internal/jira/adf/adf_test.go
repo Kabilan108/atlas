@@ -328,3 +328,71 @@ func TestADFRoundTripFixture(t *testing.T) {
 		t.Errorf("known gaps changed; update the notes:\n%s", again)
 	}
 }
+
+func TestToMarkdownMentionTokensCannotCollide(t *testing.T) {
+	tests := []struct {
+		name string
+		doc  string
+		opts []Option
+		want string
+	}{
+		{
+			name: "escaped token text",
+			doc:  `{"type":"doc","version":1,"content":[{"type":"paragraph","content":[{"type":"text","text":"` + `\` + `u0061tlasmention0x "},{"type":"mention","attrs":{"id":"a","text":"@Mia"}}]}]}`,
+			want: "atlasmention0x @[Mia]",
+		},
+		{
+			name: "literal prefix keeps emphasis",
+			doc:  `{"type":"doc","version":1,"content":[{"type":"paragraph","content":[{"type":"text","text":"atlasmention "},{"type":"mention","attrs":{"id":"a","text":"@Mia"}},{"type":"text","text":" "},{"type":"text","text":"now","marks":[{"type":"strong"}]}]}]}`,
+			want: "atlasmention @[Mia] **now**",
+		},
+		{
+			name: "callback output looks like a token",
+			doc:  `{"type":"doc","version":1,"content":[{"type":"paragraph","content":[{"type":"mention","attrs":{"id":"a","text":"@Mia"}},{"type":"text","text":" "},{"type":"mention","attrs":{"id":"b","text":"@Emma"}}]}]}`,
+			opts: []Option{WithMentionText(func(id, text string) string {
+				if id == "b" {
+					return "atlasmention0x"
+				}
+				return strings.TrimPrefix(text, "@")
+			})},
+			want: "@[Mia] @[atlasmention0x]",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := ToMarkdown(json.RawMessage(tc.doc), tc.opts...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestToMarkdownRetriesCollidingNonce(t *testing.T) {
+	orig := newNonce
+	t.Cleanup(func() { newNonce = orig })
+	nonces := []string{"atlasmentionfixed", "atlasmentionfresh"}
+	calls := 0
+	newNonce = func() (string, error) {
+		n := nonces[min(calls, len(nonces)-1)]
+		calls++
+		return n, nil
+	}
+	doc := json.RawMessage(`{"type":"doc","version":1,"content":[{"type":"paragraph","content":[{"type":"text","text":"` + `\` + `u0061tlasmentionfixed0x "},{"type":"mention","attrs":{"id":"a","text":"@Mia"}}]}]}`)
+	got, err := ToMarkdown(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "atlasmentionfixed0x @[Mia]"; got != want || calls != 2 {
+		t.Errorf("got %q after %d nonces, want %q after 2", got, calls, want)
+	}
+
+	nonces = []string{"atlasmentionfixed"}
+	calls = 0
+	if _, err := ToMarkdown(doc); err == nil {
+		t.Error("ToMarkdown with a nonce that always collides = nil error")
+	}
+}

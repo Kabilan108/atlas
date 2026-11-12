@@ -149,8 +149,13 @@ func ResolveLinkType(types []IssueLinkType, name string) (IssueLinkType, error) 
 //
 // Option and named values are checked against AllowedValues when present
 // and replaced by their canonical spelling. A map value is assumed to be
-// shaped already. Users must already be account IDs.
+// shaped already. Users must already be account IDs. A nil value returns nil,
+// which encodes as JSON null and clears the field; a nil inside a list is an
+// error.
 func ShapeFieldValue(field FieldMeta, value any) (any, error) {
+	if value == nil {
+		return nil, nil
+	}
 	if m, ok := value.(map[string]any); ok {
 		return m, nil
 	}
@@ -162,6 +167,9 @@ func ShapeFieldValue(field FieldMeta, value any) (any, error) {
 		}
 		out := make([]any, 0, len(items))
 		for _, it := range items {
+			if it == nil {
+				return nil, fieldErr(field, fmt.Errorf("null in a list; pass null for the whole field to clear it"))
+			}
 			v, err := shapeScalar(field, s.Items, it)
 			if err != nil {
 				return nil, err
@@ -181,6 +189,9 @@ func ShapeFieldValue(field FieldMeta, value any) (any, error) {
 			return nil, fieldErr(field, fmt.Errorf("takes one value, got %d", len(list)))
 		}
 		value = list[0]
+	}
+	if value == nil {
+		return nil, nil
 	}
 	return shapeScalar(field, s.Type, value)
 }

@@ -240,3 +240,17 @@ func TestParseAndFormatTime(t *testing.T) {
 		t.Errorf("FormatTime = %q", got)
 	}
 }
+
+func TestShapeFieldValueNilClears(t *testing.T) {
+	for _, name := range []string{"Product", "Team", "Software Version", "Story Points", "Assignee", "Reviewers", "Priority", "Labels", "Parent", "Fix versions", "Issue Type", "Description"} {
+		got, err := ShapeFieldValue(field(t, name), nil)
+		if err != nil {
+			t.Errorf("ShapeFieldValue(%s, nil) err = %v", name, err)
+			continue
+		}
+		jsonEqual(t, map[string]any{"f": got}, `{"f":null}`)
+	}
+	if _, err := ShapeFieldValue(field(t, "Reviewers"), []any{"acc-1", nil}); err == nil {
+		t.Error("nil element in an array = nil error")
+	}
+}

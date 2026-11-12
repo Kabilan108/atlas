@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -272,9 +273,9 @@ func TestGetIssue(t *testing.T) {
 	if !reflect.DeepEqual(f.Labels, []string{"auth", "staging"}) {
 		t.Errorf("labels = %v", f.Labels)
 	}
-	id, raw, ok := issue.FieldByName("product")
-	if !ok || id != "customfield_10153" || !strings.Contains(string(raw), `"Atlas"`) {
-		t.Errorf("FieldByName(product) = %q %s %v", id, raw, ok)
+	id, raw, err := issue.FieldByName("product")
+	if err != nil || id != "customfield_10153" || !strings.Contains(string(raw), `"Atlas"`) {
+		t.Errorf("FieldByName(product) = %q %s %v", id, raw, err)
 	}
 	if issue.Schema["customfield_10153"].Items != "option" {
 		t.Errorf("schema = %+v", issue.Schema)
@@ -852,5 +853,250 @@ func TestCollectOffsetStopsOnEmptyAndTotal(t *testing.T) {
 	})
 	if err != nil || !reflect.DeepEqual(got, []int{1, 2}) || calls != 2 {
 		t.Errorf("got %v calls %d err %v", got, calls, err)
+	}
+}
+
+func TestRedirectsKeepCredentialsOnOrigin(t *testing.T) {
+	const base = "https://jira.example.com"
+	tests := []struct {
+		name     string
+		location string
+		allowed  bool
+	}{
+		{"same origin", base + "/rest/api/3/myself2", true},
+		{"subdomain", "https://evil.jira.example.com/steal", false},
+		{"other port", "https://jira.example.com:8443/steal", false},
+		{"https to http", "http://jira.example.com/steal", false},
+		{"other host", "https://attacker.example/steal", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var leaked []string
+			hc := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+				if r.URL.Path == "/rest/api/3/myself" {
+					return &http.Response{
+						StatusCode: http.StatusFound,
+						Header:     http.Header{"Location": {tc.location}},
+						Body:       io.NopCloser(strings.NewReader("")),
+						Request:    r,
+					}, nil
+				}
+				if auth := r.Header.Get("Authorization"); auth != "" && r.URL.String() != base+"/rest/api/3/myself2" {
+					leaked = append(leaked, r.URL.String())
+				}
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": {"application/json"}},
+					Body:       io.NopCloser(strings.NewReader(`{"accountId":"abc"}`)),
+					Request:    r,
+				}, nil
+			})}
+			c, err := NewClientWithCredentials(testEmail, testToken, "", WithBaseURL(base), WithHTTPClient(hc))
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = c.Myself(ctx)
+			if len(leaked) > 0 {
+				t.Errorf("credentials sent to %v", leaked)
+			}
+			if tc.allowed && err != nil {
+				t.Errorf("same-origin redirect err = %v", err)
+			}
+			if !tc.allowed && err == nil {
+				t.Error("cross-origin redirect followed, want error")
+			}
+			if hc.CheckRedirect != nil {
+				t.Error("WithHTTPClient caller's client was mutated")
+			}
+		})
+	}
+}
+
+func TestAPIErrorRedactsCredentials(t *testing.T) {
+	basic := base64.StdEncoding.EncodeToString([]byte(testEmail + ":" + testToken))
+	escapedToken := `\` + "u0073ecret-token"
+	tests := []struct {
+		name   string
+		status int
+		body   string
+	}{
+		{"echoed request", 502, "GET /rest/api/3/issue/ED-1 HTTP/1.1\r\nAuthorization: Basic " + basic + "\r\nX-Debug: " + testToken + "\r\n"},
+		{"authorization line other scheme", 502, "authorization: Bearer opaque-value"},
+		{"error messages", 400, `{"errorMessages":["bad header Basic ` + basic + `","token ` + escapedToken + ` rejected"]}`},
+		{"field errors", 400, `{"errors":{"auth":"` + testToken + `","` + basic + `":"x"}}`},
+		{"service desk", 400, `{"errorMessage":"Authorization: Basic ` + basic + `"}`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tc.status)
+				_, _ = io.WriteString(w, tc.body)
+			})
+			_, err := c.GetIssue(ctx, "ED-1", GetIssueOptions{})
+			var apiErr *APIError
+			if !errors.As(err, &apiErr) {
+				t.Fatalf("err = %v, want *APIError", err)
+			}
+			dump := err.Error() + fmt.Sprintf("%#v", *apiErr)
+			for _, secret := range []string{testToken, basic, "opaque-value"} {
+				if strings.Contains(dump, secret) {
+					t.Errorf("error exposes %q: %s", secret, dump)
+				}
+			}
+			if !strings.Contains(dump, "[REDACTED]") {
+				t.Errorf("error has no redaction marker: %s", dump)
+			}
+		})
+	}
+}
+
+func TestSearchContinuesPastEmptyPage(t *testing.T) {
+	var tokens []any
+	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		body := readBody(t, r)
+		tokens = append(tokens, body["nextPageToken"])
+		switch body["nextPageToken"] {
+		case nil:
+			writeJSON(t, w, 200, `{"issues":[],"nextPageToken":"tok-2","isLast":false}`)
+		case "tok-2":
+			writeJSON(t, w, 200, `{"issues":[{"id":"3","key":"ED-3","fields":{}}],"isLast":true}`)
+		}
+	})
+	issues, err := c.Search(ctx, SearchRequest{JQL: "x"}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(issues) != 1 || issues[0].Key != "ED-3" || len(tokens) != 2 {
+		t.Errorf("issues = %+v tokens = %v", issues, tokens)
+	}
+}
+
+func TestSearchKeepsNamesAndSchema(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		body := readBody(t, r)
+		if body["expand"] != "names,schema" {
+			t.Errorf("expand = %v", body["expand"])
+		}
+		writeJSON(t, w, 200, `{"issues":[{"id":"1","key":"ED-1","fields":{"customfield_10153":[{"value":"Atlas"}]}}],
+			"names":{"customfield_10153":"Product"},
+			"schema":{"customfield_10153":{"type":"array","items":"option"}},"isLast":true}`)
+	})
+	page, err := c.SearchPage(ctx, SearchRequest{JQL: "x", Expand: "names,schema"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	issues, err := c.Search(ctx, SearchRequest{JQL: "x", Expand: "names,schema"}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, issue := range []Issue{page.Issues[0], issues[0]} {
+		id, raw, err := issue.FieldByName("Product")
+		if err != nil || id != "customfield_10153" || !strings.Contains(string(raw), "Atlas") {
+			t.Errorf("FieldByName(Product) = %q %s %v", id, raw, err)
+		}
+		if issue.Schema["customfield_10153"].Items != "option" {
+			t.Errorf("schema = %+v", issue.Schema)
+		}
+	}
+}
+
+func TestAddWorklogEstimateModes(t *testing.T) {
+	calls := 0
+	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		writeJSON(t, w, 201, `{"id":"1"}`)
+	})
+	input := WorklogInput{Started: "2026-11-11T09:30:00.000-0400", TimeSpent: "1h"}
+	for _, mode := range []string{"new", "manual", "sideways"} {
+		if _, err := c.AddWorklog(ctx, "ED-1", input, WorklogAddOptions{AdjustEstimate: mode}); err == nil {
+			t.Errorf("AdjustEstimate %q without its value = nil error", mode)
+		}
+	}
+	for _, opts := range []WorklogAddOptions{
+		{NewEstimate: "2d"},
+		{AdjustEstimate: "manual", NewEstimate: "2d", ReduceBy: "1h"},
+		{AdjustEstimate: "leave", ReduceBy: "1h"},
+	} {
+		if _, err := c.AddWorklog(ctx, "ED-1", input, opts); err == nil {
+			t.Errorf("AddWorklog(%+v) = nil error", opts)
+		}
+	}
+	if calls != 0 {
+		t.Errorf("invalid options sent %d requests", calls)
+	}
+
+	var queries []string
+	c = testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		queries = append(queries, r.URL.RawQuery)
+		writeJSON(t, w, 201, `{"id":"1"}`)
+	})
+	for _, opts := range []WorklogAddOptions{
+		{AdjustEstimate: "new", NewEstimate: "2d"},
+		{AdjustEstimate: "manual", ReduceBy: "1h 30m"},
+	} {
+		if _, err := c.AddWorklog(ctx, "ED-1", input, opts); err != nil {
+			t.Errorf("AddWorklog(%+v) err = %v", opts, err)
+		}
+	}
+	if want := []string{"adjustEstimate=new&newEstimate=2d", "adjustEstimate=manual&reduceBy=1h+30m"}; !reflect.DeepEqual(queries, want) {
+		t.Errorf("queries = %q, want %q", queries, want)
+	}
+}
+
+func TestIssueFieldByNameDuplicates(t *testing.T) {
+	issue := Issue{
+		Names:     map[string]string{"customfield_1": "Product", "customfield_2": "product", "customfield_3": "Team", "customfield_4": "TEAM"},
+		RawFields: map[string]json.RawMessage{"customfield_1": json.RawMessage(`"a"`), "customfield_2": json.RawMessage(`"b"`)},
+	}
+	for range 50 {
+		for name, want := range map[string]string{"Product": "customfield_1", "product": "customfield_2", "customfield_3": "customfield_3"} {
+			if id, _, err := issue.FieldByName(name); err != nil || id != want {
+				t.Fatalf("FieldByName(%q) = %q, %v; want %q", name, id, err, want)
+			}
+		}
+	}
+	for _, name := range []string{"PRODUCT", "team"} {
+		_, _, err := issue.FieldByName(name)
+		var re *ResolveError
+		if !errors.As(err, &re) || !re.Ambiguous {
+			t.Errorf("FieldByName(%q) err = %v, want ambiguous", name, err)
+		}
+	}
+	_, _, err := issue.FieldByName("Missing")
+	var re *ResolveError
+	if !errors.As(err, &re) || re.Ambiguous {
+		t.Errorf("FieldByName(Missing) err = %v, want not found", err)
+	}
+}
+
+func TestCreateCommentInternalNote(t *testing.T) {
+	yes, no := true, false
+	tests := []struct {
+		name     string
+		response string
+		want     *bool
+	}{
+		{"internal", `{"id":"10011","created":"2026-11-11T10:00:00.000+0000","jsdPublic":false}`, &no},
+		{"public", `{"id":"10011","created":"2026-11-11T10:00:00.000+0000","jsdPublic":true}`, &yes},
+		{"unreported", `{"id":"10011","created":"2026-11-11T10:00:00.000+0000"}`, nil},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+				expect(t, r, http.MethodPost, "/rest/api/3/issue/CSM-756/comment")
+				jsonEqual(t, readBody(t, r), `{"body":{"type":"doc","version":1,"content":[]},"properties":[{"key":"sd.public.comment","value":{"internal":true}}]}`)
+				writeJSON(t, w, 201, tc.response)
+			})
+			got, err := c.CreateComment(ctx, "CSM-756", CommentInput{
+				Body:       json.RawMessage(`{"type":"doc","version":1,"content":[]}`),
+				Properties: []EntityProperty{InternalNoteProperty()},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(got.JSDPublic, tc.want) {
+				t.Errorf("JSDPublic = %v, want %v", got.JSDPublic, tc.want)
+			}
+		})
 	}
 }

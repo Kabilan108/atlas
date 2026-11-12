@@ -6,7 +6,10 @@ package adf
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -78,32 +81,47 @@ func ToMarkdown(raw json.RawMessage, opts ...Option) (string, error) {
 	if err := json.Unmarshal(trimmed, &doc); err != nil {
 		return "", fmt.Errorf("adf: parse document: %w", err)
 	}
-	p := &preparer{config: newConfig(opts), tokens: !bytes.Contains(trimmed, []byte(mentionToken))}
-	prepared, err := json.Marshal(p.prepareRoot(doc))
-	if err != nil {
-		return "", err
+	cfg := newConfig(opts)
+	for range 4 {
+		nonce, err := newNonce()
+		if err != nil {
+			return "", err
+		}
+		p := &preparer{config: cfg, nonce: nonce}
+		prepared, err := json.Marshal(p.prepareRoot(doc))
+		if err != nil {
+			return "", err
+		}
+		if bytes.Count(prepared, []byte(nonce)) != len(p.mentions) {
+			continue
+		}
+		md, err := goadf.ToMarkdown(prepared)
+		if err != nil {
+			return "", err
+		}
+		return p.restoreMentions(md), nil
 	}
-	var gopts []goadf.Option
-	if p.mentionText != nil {
-		gopts = append(gopts, goadf.WithMentionText(p.mentionText))
-	}
-	md, err := goadf.ToMarkdown(prepared, gopts...)
-	if err != nil {
-		return "", err
-	}
-	return p.restoreMentions(md), nil
+	return "", errors.New("adf: document text keeps colliding with mention placeholders")
 }
 
 // go-adf v0.2.0 checks that emphasis reads back by re-parsing the paragraph
 // without a mention resolver, so a paragraph holding a mention always fails
 // the check and loses its bold and italics. Mentions are therefore rendered
-// as inert tokens and put back afterwards.
-const mentionToken = "atlasmention"
+// as inert tokens and put back afterwards. Each call picks a random nonce and
+// retries if the decoded document, as handed to go-adf, already contains it.
+var newNonce = func() (string, error) {
+	var b [12]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", fmt.Errorf("adf: mention placeholder: %w", err)
+	}
+	return "atlasmention" + hex.EncodeToString(b[:]), nil
+}
+
+func (p *preparer) mentionToken(i int) string {
+	return fmt.Sprintf("%s%dx", p.nonce, i)
+}
 
 func (p *preparer) mention(n goadf.Node) goadf.Node {
-	if !p.tokens {
-		return n
-	}
 	label := strings.TrimPrefix(attr(n, "text"), "@")
 	if p.mentionText != nil {
 		label = p.mentionText(attr(n, "id"), attr(n, "text"))
@@ -112,14 +130,17 @@ func (p *preparer) mention(n goadf.Node) goadf.Node {
 		label = attr(n, "id")
 	}
 	p.mentions = append(p.mentions, "@["+label+"]")
-	return text(fmt.Sprintf("%s%dx", mentionToken, len(p.mentions)-1))
+	return text(p.mentionToken(len(p.mentions) - 1))
 }
 
+// restoreMentions replaces every token in one pass, so a label that looks
+// like a token is never expanded again.
 func (p *preparer) restoreMentions(md string) string {
-	for i := len(p.mentions) - 1; i >= 0; i-- {
-		md = strings.ReplaceAll(md, fmt.Sprintf("%s%dx", mentionToken, i), p.mentions[i])
+	pairs := make([]string, 0, 2*len(p.mentions))
+	for i, m := range p.mentions {
+		pairs = append(pairs, p.mentionToken(i), m)
 	}
-	return md
+	return strings.NewReplacer(pairs...).Replace(md)
 }
 
 // FromMarkdown converts markdown to an ADF document for Jira's v3 API.
@@ -153,7 +174,7 @@ var inlineParents = map[string]bool{
 
 type preparer struct {
 	config
-	tokens   bool
+	nonce    string
 	mentions []string
 }
 
