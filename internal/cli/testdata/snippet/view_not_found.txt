@@ -1,0 +1,6 @@
+$ atlas snippet view zzz999 --workspace acme
+--- error ---
+resource: resource '/2.0/snippets/acme/zzz999' not found
+Hint: Check that the resource exists and you have access to it
+--- requests ---
+GET /2.0/snippets/acme/zzz999

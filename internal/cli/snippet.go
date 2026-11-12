@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,15 +16,13 @@ import (
 
 	"github.com/kabilan108/atlas/internal/bitbucket"
 	"github.com/kabilan108/atlas/internal/config"
+	snippetops "github.com/kabilan108/atlas/internal/ops/snippet"
 	"github.com/kabilan108/atlas/internal/output"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
 
-type snippetRef struct {
-	Workspace string
-	ID        string
-}
+type snippetRef = snippetops.Ref
 
 func newSnippetCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -106,7 +103,6 @@ func newSnippetListCmd() *cobra.Command {
 		Use:     "list",
 		Aliases: []string{"ls"},
 		Short:   "List your snippets",
-		RunE:    runSnippetList,
 	}
 
 	cmd.Flags().String("workspace", "", "Target workspace")
@@ -114,68 +110,58 @@ func newSnippetListCmd() *cobra.Command {
 	cmd.Flags().String("role", "", "Filter by role: owner, contributor, member")
 	cmd.Flags().Bool("public", false, "Show only public snippets")
 	cmd.Flags().Bool("private", false, "Show only private snippets")
-	cmd.Flags().Bool("json", false, "Output as JSON")
 
-	return cmd
+	return bind(cmd, binding[snippetops.ListInput, snippetops.ListResult]{
+		op:    snippetops.List,
+		input: snippetListInput,
+		human: writeSnippetTable,
+	})
 }
 
-func runSnippetList(cmd *cobra.Command, args []string) error {
+func snippetListInput(cmd *cobra.Command, _ []string, _ *cliEnv) (snippetops.ListInput, error) {
 	workspace, err := configuredWorkspace(cmd)
 	if err != nil {
-		return err
+		return snippetops.ListInput{}, err
 	}
 
 	limit, _ := cmd.Flags().GetInt("limit")
 	role, _ := cmd.Flags().GetString("role")
 	publicOnly, _ := cmd.Flags().GetBool("public")
 	privateOnly, _ := cmd.Flags().GetBool("private")
-	jsonOutput, _ := cmd.Flags().GetBool("json")
 
 	if publicOnly && privateOnly {
-		return fmt.Errorf("--public and --private cannot be used together")
+		return snippetops.ListInput{}, fmt.Errorf("--public and --private cannot be used together")
 	}
 	if role != "" && role != "owner" && role != "contributor" && role != "member" {
-		return fmt.Errorf("invalid role %q: expected owner, contributor, or member", role)
+		return snippetops.ListInput{}, fmt.Errorf("invalid role %q: expected owner, contributor, or member", role)
 	}
 	if limit < 1 {
-		return fmt.Errorf("--limit must be greater than 0")
+		return snippetops.ListInput{}, fmt.Errorf("--limit must be greater than 0")
 	}
 
-	client, err := newBitbucketClient(cmd, true)
-	if err != nil {
-		return err
+	in := snippetops.ListInput{Workspace: workspace, Role: snippetops.Role(role), Limit: limit}
+	switch {
+	case publicOnly:
+		in.Visibility = "public"
+	case privateOnly:
+		in.Visibility = "private"
 	}
+	return in, nil
+}
 
-	listLimit := limit
-	if publicOnly || privateOnly {
-		listLimit = 0
-	}
-	snippets, err := client.ListSnippets(cmd.Context(), workspace, &bitbucket.SnippetListOptions{
-		Limit: listLimit,
-		Role:  role,
-	})
-	if err != nil {
-		return err
-	}
-	snippets = filterSnippetsByVisibility(snippets, publicOnly, privateOnly)
-	snippets = limitSnippets(snippets, limit)
-
-	if jsonOutput {
-		return output.WriteJSON(os.Stdout, snippets)
-	}
-
+func writeSnippetTable(w io.Writer, snippets snippetops.ListResult) error {
 	if len(snippets) == 0 {
-		fmt.Println("No snippets found.")
-		return nil
+		_, err := fmt.Fprintln(w, "No snippets found.")
+		return err
 	}
 
-	tw := output.NewTableWriter(os.Stdout, "ID", "Title", "Files", "Visibility", "Updated")
+	tw := output.NewTableWriter(w, "ID", "Title", "Files", "Visibility", "Updated")
 	for _, s := range snippets {
 		tw.AddRow(
 			s.ID,
 			output.Truncate(s.Title, 40),
 			fmt.Sprintf("%d", len(s.Files)),
-			snippetVisibility(s),
+			snippetops.VisibilityOf(s),
 			output.FormatRelativeTime(s.UpdatedOn),
 		)
 	}
@@ -188,7 +174,6 @@ func newSnippetViewCmd() *cobra.Command {
 		Use:   "view [<snippet>]",
 		Short: "View a snippet",
 		Args:  cobra.MaximumNArgs(1),
-		RunE:  runSnippetView,
 	}
 
 	cmd.Flags().String("workspace", "", "Target workspace")
@@ -196,68 +181,63 @@ func newSnippetViewCmd() *cobra.Command {
 	cmd.Flags().Bool("files", false, "List file names from the snippet")
 	cmd.Flags().BoolP("raw", "r", false, "Print raw instead of paged snippet contents")
 	cmd.Flags().BoolP("web", "w", false, "Open snippet in the browser")
-	cmd.Flags().Bool("json", false, "Output as JSON")
 
-	return cmd
+	return bind(cmd, binding[snippetops.ViewInput, *snippetops.ViewResult]{
+		op:    snippetops.View,
+		input: snippetViewInput,
+		intercept: func(cmd *cobra.Command, env *cliEnv, in snippetops.ViewInput) (bool, error) {
+			if web, _ := cmd.Flags().GetBool("web"); !web {
+				return false, nil
+			}
+			client, err := env.Bitbucket(cmd.Context())
+			if err != nil {
+				return true, err
+			}
+			snippet, err := client.GetSnippet(cmd.Context(), in.Workspace, in.Snippet)
+			if err != nil {
+				return true, err
+			}
+			return true, openBrowser(snippet.Links.HTML.Href)
+		},
+		human: func(w io.Writer, result *snippetops.ViewResult) error {
+			if filesOnly, _ := cmd.Flags().GetBool("files"); filesOnly {
+				for _, filename := range snippetops.Filenames(result.Snippet) {
+					fmt.Fprintln(w, filename)
+				}
+				return nil
+			}
+			rawOutput, _ := cmd.Flags().GetBool("raw")
+			return renderSnippetFiles(w, result.FileContents, rawOutput)
+		},
+	})
 }
 
-type SnippetViewJSON struct {
-	*bitbucket.Snippet
-	FileContents map[string]string `json:"file_contents,omitempty"`
-}
-
-func runSnippetView(cmd *cobra.Command, args []string) error {
-	workspace, err := optionalWorkspace(cmd)
+func snippetViewInput(cmd *cobra.Command, args []string, env *cliEnv) (snippetops.ViewInput, error) {
+	ref, err := snippetArgTarget(cmd, env, args)
 	if err != nil {
-		return err
+		return snippetops.ViewInput{}, err
 	}
-
-	client, err := newBitbucketClient(cmd, true)
-	if err != nil {
-		return err
-	}
-
-	ref, err := resolveSnippetArg(cmd.Context(), client, workspace, args)
-	if err != nil {
-		return err
-	}
-
 	filename, _ := cmd.Flags().GetString("filename")
 	filesOnly, _ := cmd.Flags().GetBool("files")
-	rawOutput, _ := cmd.Flags().GetBool("raw")
-	webOutput, _ := cmd.Flags().GetBool("web")
-	jsonOutput, _ := cmd.Flags().GetBool("json")
+	return snippetops.ViewInput{Target: ref, Filename: filename, FilesOnly: filesOnly}, nil
+}
 
-	snippet, err := client.GetSnippet(cmd.Context(), ref.Workspace, ref.ID)
+// snippetArgTarget names the snippet in args, or asks the user to pick one
+// of theirs on a terminal.
+func snippetArgTarget(cmd *cobra.Command, env *cliEnv, args []string) (snippetops.Target, error) {
+	workspace, err := optionalWorkspace(cmd)
 	if err != nil {
-		return err
+		return snippetops.Target{}, err
 	}
-
-	if webOutput {
-		return openBrowser(snippet.Links.HTML.Href)
-	}
-
-	if jsonOutput {
-		result := SnippetViewJSON{Snippet: snippet}
-		if !filesOnly {
-			contents, err := snippetFileContents(cmd.Context(), client, ref, snippet, filename)
-			if err != nil {
-				return err
-			}
-			result.FileContents = contents
-		}
-		return output.WriteJSON(os.Stdout, result)
-	}
-
-	if filesOnly {
-		return printSnippetFiles(snippet)
-	}
-
-	contents, err := snippetFileContents(cmd.Context(), client, ref, snippet, filename)
+	ref, err := resolveSnippetArg(cmd.Context(), env, workspace, args)
 	if err != nil {
-		return err
+		return snippetops.Target{}, err
 	}
-	return renderSnippetFiles(contents, rawOutput)
+	return snippetTarget(ref), nil
+}
+
+func snippetTarget(ref snippetRef) snippetops.Target {
+	return snippetops.Target{Snippet: ref.ID, Workspace: ref.Workspace}
 }
 
 func newSnippetCreateCmd() *cobra.Command {
@@ -265,53 +245,35 @@ func newSnippetCreateCmd() *cobra.Command {
 		Use:     "create [<filename>... | -]",
 		Aliases: []string{"new"},
 		Short:   "Create a new snippet",
-		RunE:    runSnippetCreate,
 	}
 
 	cmd.Flags().String("workspace", "", "Target workspace")
 	cmd.Flags().String("title", "", "Snippet title")
 	cmd.Flags().StringP("filename", "f", "", "Filename to use when reading from standard input")
 	cmd.Flags().BoolP("public", "p", false, "List the snippet publicly")
-	cmd.Flags().Bool("json", false, "Output as JSON")
 	_ = cmd.MarkFlagRequired("title")
 
-	return cmd
+	return bind(cmd, binding[snippetops.CreateInput, *bitbucket.Snippet]{
+		op:    snippetops.Create,
+		input: snippetCreateInput,
+	})
 }
 
-func runSnippetCreate(cmd *cobra.Command, args []string) error {
+func snippetCreateInput(cmd *cobra.Command, args []string, _ *cliEnv) (snippetops.CreateInput, error) {
 	workspace, err := configuredWorkspace(cmd)
 	if err != nil {
-		return err
+		return snippetops.CreateInput{}, err
 	}
 
 	title, _ := cmd.Flags().GetString("title")
 	stdinFilename, _ := cmd.Flags().GetString("filename")
 	publicSnippet, _ := cmd.Flags().GetBool("public")
-	jsonOutput, _ := cmd.Flags().GetBool("json")
 
 	files, err := readSnippetCreateFiles(args, stdinFilename)
 	if err != nil {
-		return err
+		return snippetops.CreateInput{}, err
 	}
-
-	client, err := newBitbucketClient(cmd, true)
-	if err != nil {
-		return err
-	}
-
-	snippet, err := client.CreateSnippet(cmd.Context(), workspace, title, files, !publicSnippet)
-	if err != nil {
-		return err
-	}
-
-	if jsonOutput {
-		return output.WriteJSON(os.Stdout, snippet)
-	}
-
-	fmt.Printf("Created snippet: %s\n", snippet.ID)
-	fmt.Printf("URL: %s\n", snippet.Links.HTML.Href)
-
-	return nil
+	return snippetops.CreateInput{Workspace: workspace, Title: title, Files: fileStrings(files), Public: publicSnippet}, nil
 }
 
 func newSnippetEditCmd() *cobra.Command {
@@ -319,7 +281,6 @@ func newSnippetEditCmd() *cobra.Command {
 		Use:   "edit <snippet> [<filename>]",
 		Short: "Edit a snippet",
 		Args:  cobra.RangeArgs(1, 2),
-		RunE:  runSnippetEdit,
 	}
 
 	cmd.Flags().String("workspace", "", "Target workspace")
@@ -328,13 +289,18 @@ func newSnippetEditCmd() *cobra.Command {
 	cmd.Flags().StringP("filename", "f", "", "Select a file to edit")
 	cmd.Flags().StringP("remove", "r", "", "Remove a file from the snippet")
 
-	return cmd
+	return bind(cmd, binding[snippetops.EditInput, snippetops.Receipt]{
+		op:    snippetops.Edit,
+		input: snippetEditInput,
+	})
 }
 
-func runSnippetEdit(cmd *cobra.Command, args []string) error {
+// snippetEditInput reads --add from disk, or with no other change opens the
+// selected file in $VISUAL/$EDITOR, and turns the result into file contents.
+func snippetEditInput(cmd *cobra.Command, args []string, env *cliEnv) (snippetops.EditInput, error) {
 	ref, err := resolveExplicitSnippetRef(cmd, args[0])
 	if err != nil {
-		return err
+		return snippetops.EditInput{}, err
 	}
 
 	title, _ := cmd.Flags().GetString("title")
@@ -347,12 +313,7 @@ func runSnippetEdit(cmd *cobra.Command, args []string) error {
 		filename = args[1]
 	}
 	if filename != "" && title != "" && addFile == "" && removeFile == "" {
-		return fmt.Errorf("filename cannot be used with --title unless editing file contents or adding a file")
-	}
-
-	client, err := newBitbucketClient(cmd, true)
-	if err != nil {
-		return err
+		return snippetops.EditInput{}, fmt.Errorf("filename cannot be used with --title unless editing file contents or adding a file")
 	}
 
 	addFiles := make(map[string][]byte)
@@ -361,14 +322,14 @@ func runSnippetEdit(cmd *cobra.Command, args []string) error {
 	if addFile != "" {
 		content, err := os.ReadFile(addFile)
 		if err != nil {
-			return fmt.Errorf("failed to read file %s: %w", addFile, err)
+			return snippetops.EditInput{}, fmt.Errorf("failed to read file %s: %w", addFile, err)
 		}
 		targetFilename := filename
 		if targetFilename == "" {
 			targetFilename = snippetLocalFilename(addFile)
 		}
 		if err := addSnippetFileContent(addFiles, targetFilename, content, addFile); err != nil {
-			return err
+			return snippetops.EditInput{}, err
 		}
 	}
 
@@ -377,23 +338,18 @@ func runSnippetEdit(cmd *cobra.Command, args []string) error {
 	}
 
 	if title == "" && addFile == "" && removeFile == "" {
+		client, err := env.Bitbucket(cmd.Context())
+		if err != nil {
+			return snippetops.EditInput{}, err
+		}
 		editedName, editedContent, err := editSnippetFile(cmd.Context(), client, ref, filename)
 		if err != nil {
-			return err
+			return snippetops.EditInput{}, err
 		}
 		addFiles[editedName] = editedContent
 	}
 
-	if len(addFiles) == 0 && len(removeFiles) == 0 && title == "" {
-		return fmt.Errorf("nothing to edit")
-	}
-
-	if err := client.UpdateSnippet(cmd.Context(), ref.Workspace, ref.ID, title, addFiles, removeFiles); err != nil {
-		return err
-	}
-
-	fmt.Printf("Updated snippet: %s\n", ref.ID)
-	return nil
+	return snippetops.EditInput{Target: snippetTarget(ref), Title: title, Files: fileStrings(addFiles), Remove: removeFiles}, nil
 }
 
 func newSnippetRenameCmd() *cobra.Command {
@@ -401,39 +357,20 @@ func newSnippetRenameCmd() *cobra.Command {
 		Use:   "rename <snippet> <old-filename> <new-filename>",
 		Short: "Rename a file in a snippet",
 		Args:  cobra.ExactArgs(3),
-		RunE:  runSnippetRename,
 	}
 
 	cmd.Flags().String("workspace", "", "Target workspace")
 
-	return cmd
-}
-
-func runSnippetRename(cmd *cobra.Command, args []string) error {
-	ref, err := resolveExplicitSnippetRef(cmd, args[0])
-	if err != nil {
-		return err
-	}
-
-	oldFilename := args[1]
-	newFilename := args[2]
-
-	client, err := newBitbucketClient(cmd, true)
-	if err != nil {
-		return err
-	}
-
-	content, err := client.GetSnippetFileContent(cmd.Context(), ref.Workspace, ref.ID, oldFilename)
-	if err != nil {
-		return fmt.Errorf("failed to fetch file %s: %w", oldFilename, err)
-	}
-
-	if err := client.UpdateSnippet(cmd.Context(), ref.Workspace, ref.ID, "", map[string][]byte{newFilename: content}, []string{oldFilename}); err != nil {
-		return err
-	}
-
-	fmt.Printf("Renamed %s to %s in snippet %s\n", oldFilename, newFilename, ref.ID)
-	return nil
+	return bind(cmd, binding[snippetops.RenameInput, snippetops.Receipt]{
+		op: snippetops.Rename,
+		input: func(cmd *cobra.Command, args []string, _ *cliEnv) (snippetops.RenameInput, error) {
+			ref, err := resolveExplicitSnippetRef(cmd, args[0])
+			if err != nil {
+				return snippetops.RenameInput{}, err
+			}
+			return snippetops.RenameInput{Target: snippetTarget(ref), From: args[1], To: args[2]}, nil
+		},
+	})
 }
 
 func newSnippetDeleteCmd() *cobra.Command {
@@ -441,53 +378,47 @@ func newSnippetDeleteCmd() *cobra.Command {
 		Use:   "delete [<snippet>]",
 		Short: "Delete a snippet",
 		Args:  cobra.MaximumNArgs(1),
-		RunE:  runSnippetDelete,
 	}
 
 	cmd.Flags().String("workspace", "", "Target workspace")
 	cmd.Flags().Bool("yes", false, "Confirm deletion without prompting")
 
-	return cmd
+	return bind(cmd, binding[snippetops.DeleteInput, snippetops.Receipt]{
+		op: snippetops.Delete,
+		input: func(cmd *cobra.Command, args []string, env *cliEnv) (snippetops.DeleteInput, error) {
+			target, err := snippetArgTarget(cmd, env, args)
+			return snippetops.DeleteInput{Target: target}, err
+		},
+		intercept: confirmSnippetDeleteFlag,
+	})
 }
 
-func runSnippetDelete(cmd *cobra.Command, args []string) error {
-	workspace, err := optionalWorkspace(cmd)
+// confirmSnippetDeleteFlag asks before deleting unless --yes is set, and
+// handles the command itself when the user declines.
+func confirmSnippetDeleteFlag(cmd *cobra.Command, _ *cliEnv, in snippetops.DeleteInput) (bool, error) {
+	if yes, _ := cmd.Flags().GetBool("yes"); yes {
+		return false, nil
+	}
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		return true, fmt.Errorf("refusing to delete non-interactively without --yes")
+	}
+	confirmed, err := confirmSnippetDelete(in.Snippet)
 	if err != nil {
-		return err
+		return true, err
 	}
-
-	client, err := newBitbucketClient(cmd, true)
-	if err != nil {
-		return err
+	if !confirmed {
+		_, err := fmt.Fprintln(cmd.OutOrStdout(), "Deletion cancelled.")
+		return true, err
 	}
+	return false, nil
+}
 
-	ref, err := resolveSnippetArg(cmd.Context(), client, workspace, args)
-	if err != nil {
-		return err
+func fileStrings(files map[string][]byte) map[string]string {
+	out := make(map[string]string, len(files))
+	for name, content := range files {
+		out[name] = string(content)
 	}
-
-	yes, _ := cmd.Flags().GetBool("yes")
-	if !yes {
-		if !term.IsTerminal(int(os.Stdin.Fd())) {
-			return fmt.Errorf("refusing to delete non-interactively without --yes")
-		}
-		confirmed, err := confirmSnippetDelete(ref.ID)
-		if err != nil {
-			return err
-		}
-		if !confirmed {
-			fmt.Println("Deletion cancelled.")
-			return nil
-		}
-	}
-
-	if err := client.DeleteSnippet(cmd.Context(), ref.Workspace, ref.ID); err != nil {
-		return err
-	}
-
-	fmt.Printf("Deleted snippet: %s\n", ref.ID)
-
-	return nil
+	return out
 }
 
 func configuredWorkspace(cmd *cobra.Command) (string, error) {
@@ -496,7 +427,7 @@ func configuredWorkspace(cmd *cobra.Command) (string, error) {
 		return "", err
 	}
 	if workspace == "" {
-		return "", fmt.Errorf("workspace not configured. Run 'atlas config set workspace <name>' or use --workspace")
+		return "", errSnippetWorkspace
 	}
 	return workspace, nil
 }
@@ -521,7 +452,7 @@ func resolveExplicitSnippetRef(cmd *cobra.Command, raw string) (snippetRef, erro
 		return ref, nil
 	}
 
-	if isURLLike(raw) || workspaceFlag != "" {
+	if snippetops.IsURL(raw) || workspaceFlag != "" {
 		return snippetRef{}, err
 	}
 
@@ -533,66 +464,27 @@ func resolveExplicitSnippetRef(cmd *cobra.Command, raw string) (snippetRef, erro
 }
 
 func parseSnippetRef(raw, fallbackWorkspace string) (snippetRef, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return snippetRef{}, fmt.Errorf("snippet ID or URL is required")
+	if strings.TrimSpace(raw) != "" && !snippetops.IsURL(raw) && fallbackWorkspace == "" {
+		return snippetRef{}, errSnippetWorkspace
 	}
-
-	parsed, err := url.Parse(raw)
-	if err == nil && parsed.Host != "" {
-		host := parsed.Hostname()
-		parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
-		switch {
-		case host == "bitbucket.org" && len(parts) >= 3 && parts[0] == "snippets":
-			return snippetRefFromURLParts(parts[1], parts[2])
-		case host == "bitbucket.org" && len(parts) >= 4 && parts[1] == "workspace" && parts[2] == "snippets":
-			return snippetRefFromURLParts(parts[0], parts[3])
-		case isBitbucketHost(host) && len(parts) >= 4 && parts[0] == "2.0" && parts[1] == "snippets":
-			return snippetRefFromURLParts(parts[2], parts[3])
-		default:
-			return snippetRef{}, fmt.Errorf("unsupported snippet URL: %s", raw)
-		}
-	}
-
-	if fallbackWorkspace == "" {
-		return snippetRef{}, fmt.Errorf("workspace not configured. Run 'atlas config set workspace <name>' or use --workspace")
-	}
-	return snippetRef{Workspace: fallbackWorkspace, ID: raw}, nil
+	return snippetops.ParseRef(raw, fallbackWorkspace)
 }
 
-func isBitbucketHost(host string) bool {
-	return host == "bitbucket.org" || strings.HasSuffix(host, ".bitbucket.org")
-}
+var errSnippetWorkspace = errors.New("workspace not configured. Run 'atlas config set workspace <name>' or use --workspace")
 
-func snippetRefFromURLParts(workspacePart, idPart string) (snippetRef, error) {
-	workspace, err := url.PathUnescape(workspacePart)
-	if err != nil {
-		return snippetRef{}, fmt.Errorf("invalid snippet workspace in URL: %w", err)
-	}
-	id, err := url.PathUnescape(strings.TrimSuffix(idPart, ".git"))
-	if err != nil {
-		return snippetRef{}, fmt.Errorf("invalid snippet ID in URL: %w", err)
-	}
-	if workspace == "" || id == "" {
-		return snippetRef{}, fmt.Errorf("snippet URL must include workspace and ID")
-	}
-	return snippetRef{Workspace: workspace, ID: id}, nil
-}
-
-func isURLLike(raw string) bool {
-	parsed, err := url.Parse(raw)
-	return err == nil && parsed.Host != ""
-}
-
-func resolveSnippetArg(ctx context.Context, client *bitbucket.Client, workspace string, args []string) (snippetRef, error) {
+func resolveSnippetArg(ctx context.Context, env *cliEnv, workspace string, args []string) (snippetRef, error) {
 	if len(args) > 0 {
 		return parseSnippetRef(args[0], workspace)
 	}
 	if workspace == "" {
-		return snippetRef{}, fmt.Errorf("workspace not configured. Run 'atlas config set workspace <name>' or use --workspace")
+		return snippetRef{}, errSnippetWorkspace
 	}
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
 		return snippetRef{}, fmt.Errorf("snippet ID or URL is required")
+	}
+	client, err := env.Bitbucket(ctx)
+	if err != nil {
+		return snippetRef{}, err
 	}
 	return selectSnippet(ctx, client, workspace)
 }
@@ -692,78 +584,17 @@ func snippetLocalFilename(filePath string) string {
 	return filepath.ToSlash(cleaned)
 }
 
-func filterSnippetsByVisibility(snippets []bitbucket.Snippet, publicOnly, privateOnly bool) []bitbucket.Snippet {
-	if !publicOnly && !privateOnly {
-		return snippets
-	}
-
-	filtered := make([]bitbucket.Snippet, 0, len(snippets))
-	for _, snippet := range snippets {
-		if publicOnly && !snippet.IsPrivate {
-			filtered = append(filtered, snippet)
-		}
-		if privateOnly && snippet.IsPrivate {
-			filtered = append(filtered, snippet)
-		}
-	}
-	return filtered
-}
-
-func limitSnippets(snippets []bitbucket.Snippet, limit int) []bitbucket.Snippet {
-	if limit > 0 && len(snippets) > limit {
-		return snippets[:limit]
-	}
-	return snippets
-}
-
-func snippetVisibility(snippet bitbucket.Snippet) string {
-	if snippet.IsPrivate {
-		return "private"
-	}
-	return "public"
-}
-
-func printSnippetFiles(snippet *bitbucket.Snippet) error {
-	filenames := snippetFilenames(snippet)
-	for _, filename := range filenames {
-		fmt.Println(filename)
-	}
-	return nil
-}
-
-func snippetFileContents(ctx context.Context, client *bitbucket.Client, ref snippetRef, snippet *bitbucket.Snippet, filename string) (map[string]string, error) {
-	filenames := []string{}
-	if filename != "" {
-		if _, ok := snippet.Files[filename]; !ok {
-			return nil, fmt.Errorf("file %q not found in snippet %s", filename, ref.ID)
-		}
-		filenames = append(filenames, filename)
-	} else {
-		filenames = snippetFilenames(snippet)
-	}
-
-	contents := make(map[string]string, len(filenames))
-	for _, name := range filenames {
-		content, err := client.GetSnippetFileContent(ctx, ref.Workspace, ref.ID, name)
-		if err != nil {
-			return nil, fmt.Errorf("failed to fetch file %s: %w", name, err)
-		}
-		contents[name] = string(content)
-	}
-	return contents, nil
-}
-
-func renderSnippetFiles(contents map[string]string, rawOutput bool) error {
+func renderSnippetFiles(w io.Writer, contents map[string]string, rawOutput bool) error {
 	filenames := sortedMapKeys(contents)
-	if rawOutput || !term.IsTerminal(int(os.Stdout.Fd())) {
+	if rawOutput || !isTerminal(w) {
 		for _, filename := range filenames {
 			content := contents[filename]
 			if len(contents) > 1 {
-				fmt.Printf("=== %s ===\n", filename)
+				fmt.Fprintf(w, "=== %s ===\n", filename)
 			}
-			fmt.Print(content)
+			fmt.Fprint(w, content)
 			if !strings.HasSuffix(content, "\n") {
-				fmt.Println()
+				fmt.Fprintln(w)
 			}
 		}
 		return nil
@@ -792,17 +623,8 @@ func renderSnippetFiles(contents map[string]string, rawOutput bool) error {
 		return pipeToCommand(lessPath, nil, rendered.Bytes())
 	}
 
-	_, err := os.Stdout.Write(rendered.Bytes())
+	_, err := w.Write(rendered.Bytes())
 	return err
-}
-
-func snippetFilenames(snippet *bitbucket.Snippet) []string {
-	filenames := make([]string, 0, len(snippet.Files))
-	for filename := range snippet.Files {
-		filenames = append(filenames, filename)
-	}
-	sort.Strings(filenames)
-	return filenames
 }
 
 func sortedMapKeys(values map[string]string) []string {
@@ -905,7 +727,7 @@ func requireSnippetFile(snippet *bitbucket.Snippet, snippetID, filename string) 
 }
 
 func selectSnippetFile(snippet *bitbucket.Snippet) (string, error) {
-	filenames := snippetFilenames(snippet)
+	filenames := snippetops.Filenames(snippet)
 	for i, filename := range filenames {
 		fmt.Fprintf(os.Stderr, "%d. %s\n", i+1, filename)
 	}

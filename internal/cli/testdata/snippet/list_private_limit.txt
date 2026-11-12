@@ -1,0 +1,6 @@
+$ atlas snippet list --workspace acme --private -L 1
+ID      Title         Files  Visibility  Updated
+abc123  Deploy notes  2      private     Mar 4, 2024
+--- error ---
+--- requests ---
+GET /2.0/snippets/acme

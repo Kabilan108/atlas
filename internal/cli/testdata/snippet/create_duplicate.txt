@@ -1,0 +1,4 @@
+$ atlas snippet create a.txt ./a.txt --title Dup --workspace acme
+--- error ---
+duplicate snippet filename "a.txt" from ./a.txt
+--- requests ---

@@ -6,12 +6,18 @@ import (
 	"slices"
 
 	"github.com/kabilan108/atlas/internal/ops"
+	"github.com/kabilan108/atlas/internal/ops/api"
 	"github.com/kabilan108/atlas/internal/ops/pr"
+	"github.com/kabilan108/atlas/internal/ops/repo"
+	"github.com/kabilan108/atlas/internal/ops/snippet"
 )
 
 // All returns every op in a stable order.
 func All() []ops.Def {
 	return slices.Concat(
 		pr.Ops(),
+		snippet.Ops(),
+		repo.Ops(),
+		api.Ops(),
 	)
 }

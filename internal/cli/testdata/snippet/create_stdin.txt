@@ -1,0 +1,6 @@
+$ atlas snippet new - -f piped.txt --title Piped --workspace acme
+Created snippet: new001
+URL: https://bitbucket.org/snippets/acme/new001
+--- error ---
+--- requests ---
+POST /2.0/snippets/acme is_private=["true"] title=["Piped"] file[piped.txt]="from stdin\n"

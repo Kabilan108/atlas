@@ -1,0 +1,13 @@
+$ atlas snippet view abc123 --workspace acme
+=== notes.md ===
+# Deploy
+
+Run the script.
+=== run.sh ===
+#!/bin/sh
+echo deploy
+--- error ---
+--- requests ---
+GET /2.0/snippets/acme/abc123
+GET /2.0/snippets/acme/abc123/files/notes.md
+GET /2.0/snippets/acme/abc123/files/run.sh

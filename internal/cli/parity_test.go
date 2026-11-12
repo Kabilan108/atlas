@@ -26,14 +26,7 @@ var localOnlyCommands = map[string]string{
 // legacyCommands are not yet moved onto ops. This list only shrinks: each
 // slice that binds one of these to an op removes it here, and nothing new may
 // be added. Once it is empty, delete it.
-var legacyCommands = map[string]bool{
-	"atlas snippet create": true,
-	"atlas snippet delete": true,
-	"atlas snippet edit":   true,
-	"atlas snippet list":   true,
-	"atlas snippet rename": true,
-	"atlas snippet view":   true,
-}
+var legacyCommands = map[string]bool{}
 
 func leafCommands(cmd *cobra.Command) []*cobra.Command {
 	if !cmd.HasSubCommands() {

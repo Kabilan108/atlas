@@ -1,0 +1,8 @@
+$ atlas snippet list --workspace acme
+ID      Title                                     Files  Visibility  Updated
+abc123  Deploy notes                              2      private     Mar 4, 2024
+def456  A public query with a title long enou...  1      public      Feb 1, 2024
+ghi789  Private scratch                           1      private     Jan 1, 2024
+--- error ---
+--- requests ---
+GET /2.0/snippets/acme?pagelen=10

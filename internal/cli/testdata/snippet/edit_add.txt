@@ -1,0 +1,5 @@
+$ atlas snippet edit abc123 --add a.txt --workspace acme
+Updated snippet: abc123
+--- error ---
+--- requests ---
+PUT /2.0/snippets/acme/abc123 file[a.txt]="alpha\n"

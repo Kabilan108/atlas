@@ -1,0 +1,5 @@
+$ atlas snippet edit abc123 typo.md --workspace acme
+--- error ---
+file "typo.md" not found in snippet abc123; use --add to add new files
+--- requests ---
+GET /2.0/snippets/acme/abc123
