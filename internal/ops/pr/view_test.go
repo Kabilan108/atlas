@@ -25,12 +25,11 @@ func (e testEnv) DefaultWorkspace() string                             { return 
 
 func newTestEnv(t *testing.T, workspace string) (testEnv, *prtest.Fixture) {
 	t.Helper()
-	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	fixture := prtest.New()
 	server := httptest.NewServer(fixture)
 	t.Cleanup(server.Close)
 	client, err := bitbucket.NewClientWithCredentials("user", "token",
-		bitbucket.WithBaseURL(server.URL+"/2.0"), bitbucket.WithNoCache(true))
+		bitbucket.WithBaseURL(server.URL+"/2.0"))
 	if err != nil {
 		t.Fatal(err)
 	}

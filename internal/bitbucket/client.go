@@ -14,8 +14,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/kabilan108/atlas/internal/config"
 )
 
 const defaultBaseURL = "https://api.bitbucket.org/2.0"
@@ -25,32 +23,28 @@ type Client struct {
 	baseURL    string
 	username   string
 	password   string
-	cache      *Cache
-	noCache    bool
-	retry      bool
+	// cache is nil unless WithCache set one; without it the client never
+	// touches the disk.
+	cache *Cache
+	retry bool
 }
 
 type ClientOption func(*Client)
 
-func WithNoCache(noCache bool) ClientOption {
+// WithCache caches GET responses in cache, keyed by username and URL, and
+// clears it after writes.
+func WithCache(cache *Cache) ClientOption {
 	return func(c *Client) {
-		c.noCache = noCache
+		c.cache = cache
 	}
 }
 
+// WithRetry waits for the rate-limit reset and retries once when Bitbucket
+// answers 429. The wait ends early when the request's context does.
 func WithRetry(retry bool) ClientOption {
 	return func(c *Client) {
 		c.retry = retry
 	}
-}
-
-func NewClient(opts ...ClientOption) (*Client, error) {
-	creds, err := config.LoadCredentials()
-	if err != nil {
-		return nil, fmt.Errorf("failed to load credentials: %w", err)
-	}
-
-	return NewClientWithCredentials(creds.Username, creds.APIToken, opts...)
 }
 
 func NewClientWithCredentials(username, apiToken string, opts ...ClientOption) (*Client, error) {
@@ -58,17 +52,11 @@ func NewClientWithCredentials(username, apiToken string, opts ...ClientOption) (
 		return nil, NewAuthError(401, "missing credentials")
 	}
 
-	cache, err := NewCache()
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize cache: %w", err)
-	}
-
 	c := &Client{
 		httpClient: &http.Client{Timeout: 30 * time.Second},
 		baseURL:    defaultBaseURL,
 		username:   username,
 		password:   apiToken,
-		cache:      cache,
 	}
 
 	for _, opt := range opts {
@@ -84,7 +72,6 @@ func newClientForTest(baseURL string, httpClient *http.Client) *Client {
 		baseURL:    baseURL,
 		username:   "user",
 		password:   "password",
-		noCache:    true,
 	}
 }
 
@@ -162,9 +149,10 @@ func sleepContext(ctx context.Context, d time.Duration) error {
 
 func (c *Client) get(ctx context.Context, path string) ([]byte, error) {
 	requestURL := c.baseURL + path
+	cacheKey := c.username + "\x00" + requestURL
 
-	if !c.noCache {
-		if data, ok := c.cache.Get(requestURL); ok {
+	if c.cache.serves() {
+		if data, ok := c.cache.Get(cacheKey); ok {
 			return data, nil
 		}
 	}
@@ -189,8 +177,8 @@ func (c *Client) get(ctx context.Context, path string) ([]byte, error) {
 		return nil, err
 	}
 
-	if !c.noCache {
-		c.cache.Set(requestURL, body)
+	if c.cache.serves() {
+		c.cache.Set(cacheKey, body)
 	}
 
 	return body, nil
@@ -906,12 +894,12 @@ func (c *Client) DeleteSnippet(ctx context.Context, workspace, id string) error 
 
 // PR reads include detail, filtered lists, and branch lookups. Clear all cached
 // responses because the disk keys are hashes and cannot be matched by URL prefix.
-// This also applies to writes made with --no-cache.
+// An invalidate-only cache is cleared too.
 func (c *Client) invalidatePRCache() {
 	if c.cache == nil {
 		return
 	}
 	if err := c.cache.Clear(); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: pull request saved, but failed to invalidate cache: %v; use --no-cache for fresh reads\n", err)
+		fmt.Fprintf(os.Stderr, "Warning: pull request saved, but failed to clear the response cache: %v; cached reads may be stale for %s\n", err, c.cache.ttl)
 	}
 }

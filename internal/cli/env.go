@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/kabilan108/atlas/internal/bitbucket"
@@ -16,16 +17,17 @@ import (
 // cliEnv is the ops.Env for one CLI run: config file and env vars, stored
 // credentials, the disk cache unless --no-cache, and git inference.
 type cliEnv struct {
+	cmd    *cobra.Command
 	cfg    *config.Config
 	client *bitbucket.Client
 }
 
-func newCLIEnv() (*cliEnv, error) {
+func newCLIEnv(cmd *cobra.Command) (*cliEnv, error) {
 	cfg, err := config.Load()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
-	return &cliEnv{cfg: cfg}, nil
+	return &cliEnv{cmd: cmd, cfg: cfg}, nil
 }
 
 func (e *cliEnv) DefaultWorkspace() string {
@@ -36,12 +38,51 @@ func (e *cliEnv) Bitbucket(context.Context) (*bitbucket.Client, error) {
 	if e.client != nil {
 		return e.client, nil
 	}
-	client, err := bitbucket.NewClient(bitbucket.WithNoCache(noCache))
+	client, err := newBitbucketClient(e.cmd, true)
 	if err != nil {
 		return nil, err
 	}
 	e.client = client
 	return client, nil
+}
+
+// newBitbucketClient builds a client from the stored credentials. Reads use
+// the disk cache unless --no-cache is set or useCache is false; writes clear
+// it either way, so later cached reads see them.
+func newBitbucketClient(cmd *cobra.Command, useCache bool) (*bitbucket.Client, error) {
+	creds, err := config.LoadCredentials()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load credentials: %w", err)
+	}
+	opts := bitbucketOptions(cmd)
+	if dir, err := cacheDir(); err == nil {
+		cache := bitbucket.NewCache(dir)
+		if noCache || !useCache {
+			cache = cache.InvalidateOnly()
+		}
+		opts = append(opts, bitbucket.WithCache(cache))
+	}
+	return bitbucket.NewClientWithCredentials(creds.Username, creds.APIToken, opts...)
+}
+
+// bitbucketOptions are the options every CLI client gets, before the cache.
+func bitbucketOptions(cmd *cobra.Command) []bitbucket.ClientOption {
+	if httpClient := optionsFrom(cmd).httpClient; httpClient != nil {
+		return []bitbucket.ClientOption{bitbucket.WithHTTPClient(httpClient)}
+	}
+	return nil
+}
+
+func cacheDir() (string, error) {
+	dir := os.Getenv("XDG_CACHE_HOME")
+	if dir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		dir = filepath.Join(home, ".cache")
+	}
+	return filepath.Join(dir, "atlas"), nil
 }
 
 // repository turns -R, the configured workspace, and the git origin remote

@@ -141,7 +141,7 @@ func runSnippetList(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("--limit must be greater than 0")
 	}
 
-	client, err := bitbucket.NewClient(bitbucket.WithNoCache(noCache))
+	client, err := newBitbucketClient(cmd, true)
 	if err != nil {
 		return err
 	}
@@ -212,7 +212,7 @@ func runSnippetView(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	client, err := bitbucket.NewClient(bitbucket.WithNoCache(noCache))
+	client, err := newBitbucketClient(cmd, true)
 	if err != nil {
 		return err
 	}
@@ -294,7 +294,7 @@ func runSnippetCreate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	client, err := bitbucket.NewClient(bitbucket.WithNoCache(noCache))
+	client, err := newBitbucketClient(cmd, true)
 	if err != nil {
 		return err
 	}
@@ -350,7 +350,7 @@ func runSnippetEdit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("filename cannot be used with --title unless editing file contents or adding a file")
 	}
 
-	client, err := bitbucket.NewClient(bitbucket.WithNoCache(noCache))
+	client, err := newBitbucketClient(cmd, true)
 	if err != nil {
 		return err
 	}
@@ -418,7 +418,7 @@ func runSnippetRename(cmd *cobra.Command, args []string) error {
 	oldFilename := args[1]
 	newFilename := args[2]
 
-	client, err := bitbucket.NewClient(bitbucket.WithNoCache(noCache))
+	client, err := newBitbucketClient(cmd, true)
 	if err != nil {
 		return err
 	}
@@ -456,7 +456,7 @@ func runSnippetDelete(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	client, err := bitbucket.NewClient(bitbucket.WithNoCache(noCache))
+	client, err := newBitbucketClient(cmd, true)
 	if err != nil {
 		return err
 	}

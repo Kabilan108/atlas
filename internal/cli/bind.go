@@ -32,7 +32,7 @@ func bind[In, Out any](cmd *cobra.Command, b binding[In, Out]) *cobra.Command {
 		cmd.Flags().BoolP("raw", "r", false, "Print raw markdown to stdout")
 	}
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		env, err := newCLIEnv()
+		env, err := newCLIEnv(cmd)
 		if err != nil {
 			return err
 		}

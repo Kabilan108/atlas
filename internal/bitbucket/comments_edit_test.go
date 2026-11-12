@@ -102,7 +102,6 @@ func TestClientOptionsOverrideBaseURLAndHTTPClient(t *testing.T) {
 	client, err := NewClientWithCredentials("user", "token",
 		WithBaseURL(server.URL+"/"),
 		WithHTTPClient(server.Client()),
-		WithNoCache(true),
 	)
 	if err != nil {
 		t.Fatalf("NewClientWithCredentials() error = %v", err)

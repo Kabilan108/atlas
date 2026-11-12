@@ -32,8 +32,8 @@ type Options struct {
 	Logger *slog.Logger
 	// MaxBodyBytes caps each request body; zero means DefaultMaxBodyBytes.
 	MaxBodyBytes int64
-	// BitbucketOptions are applied to every Bitbucket client, after the
-	// server's own (no disk cache).
+	// BitbucketOptions are applied to every Bitbucket client. Never pass
+	// WithCache: the server keeps nothing between calls.
 	BitbucketOptions []bitbucket.ClientOption
 }
 

@@ -39,8 +39,7 @@ func (e *headerEnv) Bitbucket(context.Context) (*bitbucket.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	options := append([]bitbucket.ClientOption{bitbucket.WithNoCache(true)}, e.clientOptions...)
-	client, err := bitbucket.NewClientWithCredentials(values[0], values[1], options...)
+	client, err := bitbucket.NewClientWithCredentials(values[0], values[1], e.clientOptions...)
 	if err != nil {
 		return nil, err
 	}

@@ -113,7 +113,7 @@ func prContextForRef(cmd *cobra.Command, ref prRef, allowAll bool) (*prContext, 
 		return nil, fmt.Errorf("workspace not configured. Run 'atlas config set workspace <name>' or use -R workspace/repo")
 	}
 
-	client, err := bitbucket.NewClient(bitbucket.WithNoCache(noCache))
+	client, err := newBitbucketClient(cmd, true)
 	if err != nil {
 		return nil, err
 	}

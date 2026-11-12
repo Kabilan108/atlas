@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"context"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -14,7 +16,57 @@ var (
 	verbose bool
 )
 
-func NewRootCmd(version string) *cobra.Command {
+// Option configures NewRootCmd.
+type Option func(*rootOptions)
+
+type rootOptions struct {
+	httpClient *http.Client
+}
+
+// WithHTTPClient sends every Bitbucket and Jira request the CLI makes through
+// client, so tests can serve them in-process.
+func WithHTTPClient(client *http.Client) Option {
+	return func(o *rootOptions) {
+		o.httpClient = client
+	}
+}
+
+type rootOptionsKey struct{}
+
+// optionsFrom returns the options NewRootCmd was given, or none for a command
+// built outside it.
+func optionsFrom(cmd *cobra.Command) *rootOptions {
+	if cmd != nil && cmd.Context() != nil {
+		if o, ok := cmd.Context().Value(rootOptionsKey{}).(*rootOptions); ok {
+			return o
+		}
+	}
+	return &rootOptions{}
+}
+
+// attachOptions makes options visible to every command's RunE through its
+// context, whichever Execute variant runs the tree.
+func attachOptions(cmd *cobra.Command, options *rootOptions) {
+	if run := cmd.RunE; run != nil {
+		cmd.RunE = func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			if ctx == nil {
+				ctx = context.Background()
+			}
+			cmd.SetContext(context.WithValue(ctx, rootOptionsKey{}, options))
+			return run(cmd, args)
+		}
+	}
+	for _, child := range cmd.Commands() {
+		attachOptions(child, options)
+	}
+}
+
+func NewRootCmd(version string, opts ...Option) *cobra.Command {
+	options := &rootOptions{}
+	for _, opt := range opts {
+		opt(options)
+	}
 	rootCmd := &cobra.Command{
 		Use:     "atlas",
 		Short:   "CLI tool for interacting with Bitbucket Cloud",
@@ -34,6 +86,7 @@ func NewRootCmd(version string) *cobra.Command {
 	rootCmd.AddCommand(newPRCmd())
 	rootCmd.AddCommand(newSnippetCmd())
 	rootCmd.AddCommand(newUpdateCmd(version))
+	attachOptions(rootCmd, options)
 
 	return rootCmd
 }

@@ -140,7 +140,7 @@ func newConfigVerifyCmd() *cobra.Command {
 }
 
 func runConfigVerify(cmd *cobra.Command, args []string) error {
-	client, err := bitbucket.NewClient(bitbucket.WithNoCache(true))
+	client, err := newBitbucketClient(cmd, false)
 	if err != nil {
 		return fmt.Errorf("authentication failed: %w\nRun 'atlas login' to configure credentials", err)
 	}
