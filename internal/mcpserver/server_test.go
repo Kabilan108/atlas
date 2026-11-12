@@ -314,22 +314,7 @@ func TestToolPanicIsRecovered(t *testing.T) {
 		},
 	}
 	logs := &syncBuffer{}
-	server, err := mcpserver.NewServer(mcpserver.Options{Logger: slog.New(slog.NewJSONHandler(logs, nil))}, []ops.Def{boom})
-	if err != nil {
-		t.Fatal(err)
-	}
-	serverTransport, clientTransport := mcp.NewInMemoryTransports()
-	serverSession, err := server.Connect(context.Background(), serverTransport, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { serverSession.Close() })
-	client := mcp.NewClient(&mcp.Implementation{Name: "atlas-test", Version: "test"}, nil)
-	session, err := client.Connect(context.Background(), clientTransport, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { session.Close() })
+	session := connectInMemory(t, mcpserver.Options{Logger: slog.New(slog.NewJSONHandler(logs, nil))}, boom)
 
 	for range 2 {
 		text, isError := callText(t, session, "boom", nil)

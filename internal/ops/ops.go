@@ -76,8 +76,12 @@ func (o *Op[In, Out]) InputType() reflect.Type {
 	return reflect.TypeFor[In]()
 }
 
-// Call runs the op with typed input. CLI bindings use it.
+// Call checks in's Enum values and runs the op. CLI bindings use it.
 func (o *Op[In, Out]) Call(ctx context.Context, env Env, in In) (Out, error) {
+	if err := validateEnums(reflect.ValueOf(in), ""); err != nil {
+		var zero Out
+		return zero, err
+	}
 	return o.Run(ctx, env, in)
 }
 
@@ -100,7 +104,7 @@ func (o *Op[In, Out]) Invoke(ctx context.Context, env Env, args json.RawMessage)
 	if err != nil {
 		return Result{}, err
 	}
-	out, runErr := o.Run(ctx, env, in)
+	out, runErr := o.Call(ctx, env, in)
 	if runErr != nil && KindOf(runErr) != Partial {
 		return Result{}, runErr
 	}

@@ -80,7 +80,7 @@ func NewServer(opts Options, defs []ops.Def) (*mcp.Server, error) {
 		if !meta.Surfaces.Has(ops.MCP) {
 			continue
 		}
-		schema, err := jsonschema.ForType(def.InputType(), nil)
+		schema, err := ops.InputSchema(def.InputType())
 		if err != nil {
 			return nil, fmt.Errorf("input schema for %s: %w", meta.Name, err)
 		}
