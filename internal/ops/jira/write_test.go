@@ -3,6 +3,7 @@ package jira
 import (
 	"encoding/json"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 
@@ -369,5 +370,72 @@ func TestTransitionRichTextFieldsAreGuarded(t *testing.T) {
 	fake = fakeFor()
 	if _, err := invoke(t, fake, Transition, `{"issue":"CSM-756","transition":"Resolved","force":true,"fields":{"Description":"closing note"}}`); err != nil {
 		t.Fatalf("forced transition: %v", err)
+	}
+}
+
+func TestCreateAddsLinks(t *testing.T) {
+	fake := createFake()
+	fake.Links(`{"issueLinkTypes":[
+		{"id":"10000","name":"Blocks","inward":"is blocked by","outward":"blocks"},
+		{"id":"10003","name":"2 Relates","inward":"relates to","outward":"relates to"}]}`)
+	res := mustInvoke(t, fake, Create, `{"project":"CSM","type":"Bug","summary":"s",
+		"links":[{"type":"blocks","target":"csm-2"},{"type":"Relates","target":"CSM-3","direction":"inward"}]}`)
+	want := `{"key":"CSM-757","id":"30001","url":"https://acme.atlassian.net/browse/CSM-757","links":[` +
+		`{"index":0,"status":"ok","reads":"CSM-757 blocks CSM-2"},{"index":1,"status":"ok","reads":"CSM-757 relates to CSM-3"}]}`
+	if res.Text != want {
+		t.Errorf("receipt = %s\nwant      %s", res.Text, want)
+	}
+	routes := fake.Routes()
+	created := slices.Index(routes, "POST /rest/api/3/issue")
+	if created < 0 || slices.Index(routes, "POST /rest/api/3/issueLink") < created {
+		t.Fatalf("routes = %v, want the issue created before its links", routes)
+	}
+	links := fake.Find("POST /rest/api/3/issueLink")
+	if len(links) != 2 {
+		t.Fatalf("link posts = %d", len(links))
+	}
+	for i, want := range []string{
+		`{"inwardIssue":{"key":"CSM-757"},"outwardIssue":{"key":"CSM-2"},"type":{"name":"Blocks"}}`,
+		`{"inwardIssue":{"key":"CSM-3"},"outwardIssue":{"key":"CSM-757"},"type":{"name":"2 Relates"}}`,
+	} {
+		if got := jsonOf(t, body(t, links[i])); got != want {
+			t.Errorf("link %d body = %s, want %s", i, got, want)
+		}
+	}
+}
+
+func TestCreateLinkFailureKeepsTheKey(t *testing.T) {
+	fake := createFake()
+	fake.Links(`{"issueLinkTypes":[{"id":"10000","name":"Blocks","inward":"is blocked by","outward":"blocks"}]}`)
+	fake.Handle("POST /rest/api/3/issueLink", func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		_ = jsonDecode(r, &req)
+		if strings.Contains(jsonOf(t, req), "CSM-404") {
+			jiratest.Write(w, http.StatusNotFound, `{"errorMessages":["Issue Does Not Exist"]}`)
+			return
+		}
+		jiratest.Write(w, http.StatusCreated, ``)
+	})
+	res, err := invoke(t, fake, Create, `{"project":"CSM","type":"Bug","summary":"s","links":[{"type":"Blocks","target":"CSM-404"},{"type":"Blocks","target":"CSM-2"}]}`)
+	wantKind(t, err, ops.Partial, "created CSM-757, but 1 of 2 links failed", "jira_link")
+	wantContains(t, res.Text, `"key":"CSM-757"`, `{"index":0,"status":"failed","error":`, "Issue Does Not Exist", `{"index":1,"status":"ok","reads":"CSM-757 blocks CSM-2"}`)
+}
+
+func TestCreateChecksLinksBeforeCreating(t *testing.T) {
+	links := make([]string, MaxCreateLinks+1)
+	for i := range links {
+		links[i] = `{"type":"Blocks","target":"CSM-2"}`
+	}
+	for _, tc := range []struct{ links, want string }{
+		{`[{"type":"Duplicates","target":"CSM-2"}]`, `links[0]: jira: no link type "Duplicates"; valid: Blocks`},
+		{`[{"type":"Blocks","target":"https://example.org/x"}]`, "links[0].target"},
+		{`[{"type":"","target":"CSM-2"}]`, "links[0]: type is required"},
+		{`[` + strings.Join(links, ",") + `]`, "the limit is 20"},
+	} {
+		fake := createFake()
+		fake.Links(`{"issueLinkTypes":[{"id":"10000","name":"Blocks","inward":"is blocked by","outward":"blocks"}]}`)
+		_, err := invoke(t, fake, Create, `{"project":"CSM","type":"Bug","summary":"s","links":`+tc.links+`}`)
+		wantKind(t, err, ops.Invalid, tc.want)
+		noWrites(t, fake)
 	}
 }

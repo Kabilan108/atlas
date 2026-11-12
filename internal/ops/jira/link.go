@@ -42,7 +42,7 @@ type Linked struct {
 var Link = &ops.Op[LinkInput, *Linked]{
 	Meta: ops.Meta{
 		Name: "jira_link",
-		Description: "Link two Jira issues by link type name. direction says which way the type's wording reads; " +
+		Description: "Link two Jira issues (not web URLs) by link type name. direction says which way the type's wording reads; " +
 			"the receipt shows the link as Jira stored it, e.g. \"CSM-1 blocks CSM-2\".",
 		Surfaces: ops.Both,
 	},
@@ -76,13 +76,8 @@ func link(ctx context.Context, env ops.Env, in LinkInput) (*Linked, error) {
 	if err != nil {
 		return nil, invalid(err)
 	}
-	// Jira's create body reads inwardIssue <outward> outwardIssue: "A blocks
-	// B" posts inwardIssue A, outwardIssue B.
-	subject, object, verb := key, target, linkType.Outward
-	if in.Direction == LinkInward {
-		subject, object, verb = target, key, linkType.Inward
-	}
-	if err := client.CreateIssueLink(ctx, jiraapi.LinkInput{TypeName: linkType.Name, InwardIssue: subject, OutwardIssue: object}); err != nil {
+	payload, verb := linkPayload(linkType, key, target, in.Direction)
+	if err := client.CreateIssueLink(ctx, payload); err != nil {
 		return nil, err
 	}
 	receipt := &Linked{Issue: key, Target: target, Type: linkType.Name}
@@ -106,6 +101,18 @@ func link(ctx context.Context, env ops.Env, in LinkInput) (*Linked, error) {
 			"jira accepted the link, but %s's links do not show %q; check the issue in Jira", key, fmt.Sprintf("%s %s %s", key, verb, target))
 	}
 	return receipt, nil
+}
+
+// linkPayload is the request that links key to target with linkType, and
+// the verb the link reads with from key. Jira's create body reads
+// inwardIssue <outward> outwardIssue: "A blocks B" posts inwardIssue A,
+// outwardIssue B.
+func linkPayload(linkType jiraapi.IssueLinkType, key, target string, direction LinkDirection) (jiraapi.LinkInput, string) {
+	subject, object, verb := key, target, linkType.Outward
+	if direction == LinkInward {
+		subject, object, verb = target, key, linkType.Inward
+	}
+	return jiraapi.LinkInput{TypeName: linkType.Name, InwardIssue: subject, OutwardIssue: object}, verb
 }
 
 // AssignInput is the input to jira_assign.

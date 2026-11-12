@@ -101,6 +101,26 @@ func TestJiraCreateFieldFlags(t *testing.T) {
 	}
 }
 
+func TestJiraCreateLinkFlags(t *testing.T) {
+	setupJiraCLIEnv(t)
+	fake := jiratest.New()
+	fake.JSON("GET /rest/api/3/issue/createmeta/CSM/issuetypes", http.StatusOK, `{"isLast":true,"issueTypes":[{"id":"1","name":"Bug"}]}`)
+	fake.JSON("GET /rest/api/3/issue/createmeta/CSM/issuetypes/1", http.StatusOK, `{"isLast":true,"fields":[]}`)
+	fake.JSON("POST /rest/api/3/issue", http.StatusCreated, `{"id":"9","key":"CSM-9"}`)
+	fake.Links(`{"issueLinkTypes":[{"id":"10000","name":"Blocks","inward":"is blocked by","outward":"blocks"}]}`)
+	got, err := runAtlas(t, fake.Transport(), "jira", "create", "-p", "CSM", "-t", "Bug", "-s", "Stuck",
+		"--link", "Blocks:CSM-2", "--inward-link", "blocks:CSM-3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "Created CSM-9: https://acme.atlassian.net/browse/CSM-9\nLinked: CSM-9 blocks CSM-2\nLinked: CSM-9 is blocked by CSM-3\n"; got != want {
+		t.Errorf("output = %q, want %q", got, want)
+	}
+	if _, err := runAtlas(t, fake.Transport(), "jira", "create", "-p", "CSM", "-t", "Bug", "-s", "Stuck", "--link", "CSM-2"); err == nil || !strings.Contains(err.Error(), "expected TYPE:KEY") {
+		t.Fatalf("err = %v, want a TYPE:KEY error", err)
+	}
+}
+
 func TestJiraFieldFlagParsing(t *testing.T) {
 	cmd := newJiraEditCmd()
 	if err := cmd.ParseFlags([]string{"--field", `Product=["A","B"]`, "--field", "Product=C", "--field", "Empty=null", "--field", "Version= 2 "}); err != nil {

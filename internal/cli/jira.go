@@ -95,8 +95,10 @@ func newJiraCreateCmd() *cobra.Command {
 	addJiraBodyFlags(cmd, "Description in markdown")
 	cmd.Flags().String("priority", "", "Priority name")
 	cmd.Flags().StringP("assignee", "a", "", "Assignee: me, email, name, or account ID")
-	cmd.Flags().String("parent", "", "Parent issue key")
+	cmd.Flags().String("parent", "", "Parent issue key: the epic for a story, the story for a subtask")
 	cmd.Flags().StringArrayP("label", "l", nil, "Label (repeatable)")
+	cmd.Flags().StringArray("link", nil, "Link the new issue as TYPE:KEY, e.g. Blocks:CSM-2 for \"blocks CSM-2\" (repeatable)")
+	cmd.Flags().StringArray("inward-link", nil, "Link the new issue the inward way as TYPE:KEY, e.g. Blocks:CSM-2 for \"is blocked by CSM-2\" (repeatable)")
 	addJiraFieldFlag(cmd)
 	for _, name := range []string{"project", "type", "summary"} {
 		_ = cmd.MarkFlagRequired(name)
@@ -120,13 +122,47 @@ func newJiraCreateCmd() *cobra.Command {
 			in.Assignee, _ = cmd.Flags().GetString("assignee")
 			in.Parent, _ = cmd.Flags().GetString("parent")
 			in.Labels, _ = cmd.Flags().GetStringArray("label")
+			for _, direction := range []jiraops.LinkDirection{jiraops.LinkOutward, jiraops.LinkInward} {
+				flag := "link"
+				if direction == jiraops.LinkInward {
+					flag = "inward-link"
+				}
+				values, _ := cmd.Flags().GetStringArray(flag)
+				for _, value := range values {
+					linkType, target, ok := cutLast(value, ":")
+					if !ok || strings.TrimSpace(linkType) == "" || strings.TrimSpace(target) == "" {
+						return jiraops.CreateInput{}, fmt.Errorf("--%s %q: expected TYPE:KEY, such as Blocks:CSM-2", flag, value)
+					}
+					in.Links = append(in.Links, jiraops.NewLink{Type: linkType, Target: target, Direction: direction})
+				}
+			}
 			return in, nil
 		},
 		human: func(w io.Writer, out *jiraops.Created) error {
-			_, err := fmt.Fprintf(w, "Created %s: %s\n", out.Key, out.URL)
-			return err
+			if _, err := fmt.Fprintf(w, "Created %s: %s\n", out.Key, out.URL); err != nil {
+				return err
+			}
+			for _, link := range out.Links {
+				line := "Linked: " + link.Reads
+				if link.Status != "ok" {
+					line = fmt.Sprintf("Link %d failed: %s", link.Index+1, link.Error)
+				}
+				if _, err := fmt.Fprintln(w, line); err != nil {
+					return err
+				}
+			}
+			return nil
 		},
 	})
+}
+
+// cutLast splits s around the last sep.
+func cutLast(s, sep string) (string, string, bool) {
+	i := strings.LastIndex(s, sep)
+	if i < 0 {
+		return s, "", false
+	}
+	return s[:i], s[i+len(sep):], true
 }
 
 func newJiraEditCmd() *cobra.Command {

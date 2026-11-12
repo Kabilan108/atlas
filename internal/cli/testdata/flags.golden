@@ -65,8 +65,10 @@ atlas jira create
   flag --body -b string default="" cobra_annotation_mutually_exclusive=body body-file
   flag --body-file -F string default="" cobra_annotation_mutually_exclusive=body body-file
   flag --field stringArray default="[]"
+  flag --inward-link stringArray default="[]"
   flag --json bool default="false"
   flag --label -l stringArray default="[]"
+  flag --link stringArray default="[]"
   flag --parent string default=""
   flag --priority string default=""
   flag --project -p string default="" cobra_annotation_bash_completion_one_required_flag=true
