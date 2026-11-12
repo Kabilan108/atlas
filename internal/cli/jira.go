@@ -214,7 +214,7 @@ func newJiraTransitionsCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 	}
 	return bind(cmd, binding[jiraops.IssueRef, *jiraops.TransitionsResult]{
-		op:    jiraops.Transitions,
+		op:    jiraops.TransitionList,
 		input: issueArg,
 	})
 }

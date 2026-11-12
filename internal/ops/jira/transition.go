@@ -2,8 +2,10 @@ package jira
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
+	"net/http"
 	"slices"
 	"strings"
 
@@ -17,9 +19,9 @@ type TransitionsResult struct {
 	Transitions []jiraapi.Transition `json:"transitions"`
 }
 
-var Transitions = &ops.Op[IssueRef, *TransitionsResult]{
+var TransitionList = &ops.Op[IssueRef, *TransitionsResult]{
 	Meta: ops.Meta{
-		Name:        "jira_transitions",
+		Name:        "jira_transition_list",
 		Description: "List the transitions a Jira issue allows now: name, target status, and the fields each one requires.",
 		Surfaces:    ops.Both,
 		ReadOnly:    true,
@@ -84,8 +86,8 @@ type Transitioned struct {
 var Transition = &ops.Op[TransitionInput, *Transitioned]{
 	Meta: ops.Meta{
 		Name: "jira_transition",
-		Description: "Move a Jira issue through its workflow by transition name or target status. A name that matches nothing " +
-			"lists the valid ones; jira_transitions shows them with their required fields.",
+		Description: "Move a Jira issue to a new status by transition name or target status, e.g. Resolved. Call it directly: " +
+			"if the name matches nothing or a required field is missing, the error lists the valid names and fields.",
 		Surfaces: ops.Both,
 	},
 	Run: transition,
@@ -135,7 +137,32 @@ func transition(ctx context.Context, env ops.Env, in TransitionInput) (*Transiti
 		return nil, err
 	}
 	if err := client.DoTransition(ctx, key, chosen.ID, jiraapi.TransitionInput{Fields: fields}); err != nil {
-		return nil, withFieldNames(err, metas)
+		return nil, requiredFieldsNote(withFieldNames(err, metas), chosen, metas, fields)
 	}
 	return &Transitioned{Key: key, Transition: chosen.Name, Status: chosen.To.Name, URL: jiraapi.BrowseURL(site, key)}, nil
+}
+
+// requiredFieldsNote adds the transition's required fields that the call
+// left out to a rejected transition, with their allowed values, so the
+// caller can retry with them in fields.
+func requiredFieldsNote(err error, chosen jiraapi.Transition, metas []jiraapi.FieldMeta, set map[string]any) error {
+	var apiErr *jiraapi.APIError
+	if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusBadRequest {
+		return err
+	}
+	var missing []string
+	for _, meta := range metas {
+		if _, ok := set[meta.ID()]; ok || !meta.Required || meta.HasDefaultValue {
+			continue
+		}
+		field := meta.Name
+		if values := allowedLabels(meta, 10); values != "" {
+			field += " (allowed: " + values + ")"
+		}
+		missing = append(missing, field)
+	}
+	if len(missing) == 0 {
+		return err
+	}
+	return fmt.Errorf("%w [%s requires %s; pass them in fields]", err, chosen.Name, strings.Join(missing, "; "))
 }
