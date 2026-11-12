@@ -220,7 +220,7 @@ func TestSearchPagesAndResolvesFieldNames(t *testing.T) {
 			jiratest.Write(w, 200, `{"issues":[]}`)
 		}
 	})
-	res := mustInvoke(t, fake, Search, `{"jql":"project = CSM AND text ~ \"a|b\" ORDER BY updated DESC","fields":["product"],"limit":2}`)
+	res := mustInvoke(t, fake, Search, `{"jql":"project = CSM AND text ~ \"a|b\" ORDER BY updated DESC","columns":["product"],"limit":2}`)
 	want := "| Key | Type | Status | Priority | Assignee | Updated | Summary | Product |\n" +
 		"| --- | --- | --- | --- | --- | --- | --- | --- |\n" +
 		"| CSM-1 | Bug | Open | — | — | 2026-11-01 | One \\| pipe | Connect |\n" +
@@ -237,8 +237,10 @@ func TestSearchPagesAndResolvesFieldNames(t *testing.T) {
 func TestSearchErrors(t *testing.T) {
 	fake := jiratest.New()
 	fake.JSON("GET /rest/api/3/field", http.StatusOK, `[{"id":"summary","name":"Summary"}]`)
-	_, err := invoke(t, fake, Search, `{"jql":"project = CSM","fields":["Nope"]}`)
+	_, err := invoke(t, fake, Search, `{"jql":"project = CSM","columns":["Nope"]}`)
 	wantKind(t, err, ops.Invalid, `no field "Nope"`)
+	_, err = invoke(t, fake, Search, `{"jql":"project = CSM","fields":["Summary"]}`)
+	wantKind(t, err, ops.Invalid, `unknown field "fields"`)
 	_, err = invoke(t, fake, Search, `{"jql":" "}`)
 	wantKind(t, err, ops.Invalid, "jql is required")
 	for _, limit := range []string{"-1", "1001"} {

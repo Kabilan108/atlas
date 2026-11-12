@@ -68,17 +68,17 @@ func newJiraSearchCmd() *cobra.Command {
 		Short: "Search issues with JQL",
 		Args:  cobra.ExactArgs(1),
 	}
-	cmd.Flags().StringSlice("fields", nil, "Extra columns by field name or ID (comma-separated)")
+	cmd.Flags().StringSlice("columns", nil, "Extra columns by field name or ID (comma-separated)")
 	cmd.Flags().IntP("limit", "L", 0, "Maximum issues (default 50, -1 for the maximum, 1000)")
 	cmd.Flags().String("page-token", "", "Continue from a previous search's page token")
 	return bind(cmd, binding[jiraops.SearchInput, *jiraops.SearchResult]{
 		op: jiraops.Search,
 		input: func(cmd *cobra.Command, args []string, _ *cliEnv) (jiraops.SearchInput, error) {
-			fields, _ := cmd.Flags().GetStringSlice("fields")
+			columns, _ := cmd.Flags().GetStringSlice("columns")
 			limit, _ := cmd.Flags().GetInt("limit")
 			limit = allMeansMax(limit, jiraops.MaxSearchResults)
 			token, _ := cmd.Flags().GetString("page-token")
-			return jiraops.SearchInput{JQL: args[0], Fields: fields, Limit: limit, PageToken: token}, nil
+			return jiraops.SearchInput{JQL: args[0], Columns: columns, Limit: limit, PageToken: token}, nil
 		},
 	})
 }

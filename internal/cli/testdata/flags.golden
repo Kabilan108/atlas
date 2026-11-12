@@ -106,7 +106,7 @@ atlas jira projects
   flag --query -q string default=""
 atlas jira search
   use: search <jql>
-  flag --fields stringSlice default="[]"
+  flag --columns stringSlice default="[]"
   flag --json bool default="false"
   flag --limit -L int default="0"
   flag --page-token string default=""
