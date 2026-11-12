@@ -43,11 +43,14 @@ atlas pr clear-change-request
 atlas pr close
   use: close <number|url|branch>
   flag --comment -c string default=""
+  flag --json bool default="false"
   flag --repo -R string default=""
 atlas pr comment
   use: comment [number|url|branch]
   flag --body -b string default=""
   flag --body-file -F string default=""
+  flag --delete int default="0" cobra_annotation_mutually_exclusive=edit delete
+  flag --edit int default="0" cobra_annotation_mutually_exclusive=edit delete
   flag --editor -e bool default="false"
   flag --json bool default="false"
   flag --line int default="0"
@@ -65,6 +68,7 @@ atlas pr create
   flag --editor -e bool default="false"
   flag --fill -f bool default="false"
   flag --head -H string default=""
+  flag --json bool default="false"
   flag --push bool default="false"
   flag --repo -R string default=""
   flag --reviewer -r string default=""
@@ -73,6 +77,7 @@ atlas pr create
 atlas pr diff
   use: diff [number|url|branch]
   flag --color string default="auto"
+  flag --json bool default="false"
   flag --name-only bool default="false"
   flag --patch bool default="false"
   flag --repo -R string default=""
@@ -80,9 +85,11 @@ atlas pr diff
 atlas pr edit
   use: edit [number|url|branch]
   flag --add-reviewer string default=""
+  flag --base -B string default=""
   flag --body -b string default=""
   flag --body-file -F string default=""
   flag --draft bool default="false" cobra_annotation_mutually_exclusive=draft ready
+  flag --json bool default="false"
   flag --ready bool default="false" cobra_annotation_mutually_exclusive=draft ready
   flag --remove-reviewer string default=""
   flag --repo -R string default=""

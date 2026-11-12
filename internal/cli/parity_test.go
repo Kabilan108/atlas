@@ -27,24 +27,12 @@ var localOnlyCommands = map[string]string{
 // slice that binds one of these to an op removes it here, and nothing new may
 // be added. Once it is empty, delete it.
 var legacyCommands = map[string]bool{
-	"atlas pr approve":              true,
-	"atlas pr clear-change-request": true,
-	"atlas pr close":                true,
-	"atlas pr comment":              true,
-	"atlas pr create":               true,
-	"atlas pr diff":                 true,
-	"atlas pr edit":                 true,
-	"atlas pr list":                 true,
-	"atlas pr request-changes":      true,
-	"atlas pr review":               true,
-	"atlas pr status":               true,
-	"atlas pr unapprove":            true,
-	"atlas snippet create":          true,
-	"atlas snippet delete":          true,
-	"atlas snippet edit":            true,
-	"atlas snippet list":            true,
-	"atlas snippet rename":          true,
-	"atlas snippet view":            true,
+	"atlas snippet create": true,
+	"atlas snippet delete": true,
+	"atlas snippet edit":   true,
+	"atlas snippet list":   true,
+	"atlas snippet rename": true,
+	"atlas snippet view":   true,
 }
 
 func leafCommands(cmd *cobra.Command) []*cobra.Command {

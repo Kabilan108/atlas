@@ -1,5 +1,211 @@
 $ atlas pr review 42 -R acme/widgets --request-changes --comment-spec $SPEC --json
 --- stdout
+{
+  "pull_request": 42,
+  "action": "request-changes",
+  "comments": [
+    {
+      "id": 201,
+      "content": {
+        "raw": "inline",
+        "markup": "markdown",
+        "html": ""
+      },
+      "user": {
+        "uuid": "{grace-uuid}",
+        "username": "",
+        "nickname": "grace",
+        "display_name": "Grace Hopper",
+        "account_id": "557058:grace",
+        "links": {
+          "self": {
+            "href": ""
+          },
+          "html": {
+            "href": ""
+          },
+          "avatar": {
+            "href": ""
+          }
+        }
+      },
+      "created_on": "2025-03-06T12:00:00Z",
+      "updated_on": "2025-03-06T12:00:00Z",
+      "inline": {
+        "path": "src/login.go",
+        "to": 12
+      },
+      "deleted": false,
+      "pending": false,
+      "links": {
+        "self": {
+          "href": ""
+        },
+        "html": {
+          "href": "https://bitbucket.org/acme/widgets/pull-requests/42#comment-201"
+        },
+        "avatar": {
+          "href": ""
+        }
+      }
+    },
+    {
+      "id": 202,
+      "content": {
+        "raw": "old side",
+        "markup": "markdown",
+        "html": ""
+      },
+      "user": {
+        "uuid": "{grace-uuid}",
+        "username": "",
+        "nickname": "grace",
+        "display_name": "Grace Hopper",
+        "account_id": "557058:grace",
+        "links": {
+          "self": {
+            "href": ""
+          },
+          "html": {
+            "href": ""
+          },
+          "avatar": {
+            "href": ""
+          }
+        }
+      },
+      "created_on": "2025-03-06T12:00:00Z",
+      "updated_on": "2025-03-06T12:00:00Z",
+      "inline": {
+        "path": "src/login.go",
+        "from": 8
+      },
+      "deleted": false,
+      "pending": false,
+      "links": {
+        "self": {
+          "href": ""
+        },
+        "html": {
+          "href": "https://bitbucket.org/acme/widgets/pull-requests/42#comment-202"
+        },
+        "avatar": {
+          "href": ""
+        }
+      }
+    },
+    {
+      "id": 203,
+      "content": {
+        "raw": "file note",
+        "markup": "markdown",
+        "html": ""
+      },
+      "user": {
+        "uuid": "{grace-uuid}",
+        "username": "",
+        "nickname": "grace",
+        "display_name": "Grace Hopper",
+        "account_id": "557058:grace",
+        "links": {
+          "self": {
+            "href": ""
+          },
+          "html": {
+            "href": ""
+          },
+          "avatar": {
+            "href": ""
+          }
+        }
+      },
+      "created_on": "2025-03-06T12:00:00Z",
+      "updated_on": "2025-03-06T12:00:00Z",
+      "inline": {
+        "path": "README.md"
+      },
+      "deleted": false,
+      "pending": false,
+      "links": {
+        "self": {
+          "href": ""
+        },
+        "html": {
+          "href": "https://bitbucket.org/acme/widgets/pull-requests/42#comment-203"
+        },
+        "avatar": {
+          "href": ""
+        }
+      }
+    },
+    {
+      "id": 204,
+      "content": {
+        "raw": "reply",
+        "markup": "markdown",
+        "html": ""
+      },
+      "user": {
+        "uuid": "{grace-uuid}",
+        "username": "",
+        "nickname": "grace",
+        "display_name": "Grace Hopper",
+        "account_id": "557058:grace",
+        "links": {
+          "self": {
+            "href": ""
+          },
+          "html": {
+            "href": ""
+          },
+          "avatar": {
+            "href": ""
+          }
+        }
+      },
+      "created_on": "2025-03-06T12:00:00Z",
+      "updated_on": "2025-03-06T12:00:00Z",
+      "parent": {
+        "id": 101
+      },
+      "deleted": false,
+      "pending": false,
+      "links": {
+        "self": {
+          "href": ""
+        },
+        "html": {
+          "href": "https://bitbucket.org/acme/widgets/pull-requests/42#comment-204"
+        },
+        "avatar": {
+          "href": ""
+        }
+      }
+    }
+  ],
+  "results": [
+    {
+      "index": 0,
+      "status": "ok",
+      "id": 201
+    },
+    {
+      "index": 1,
+      "status": "ok",
+      "id": 202
+    },
+    {
+      "index": 2,
+      "status": "ok",
+      "id": 203
+    },
+    {
+      "index": 3,
+      "status": "ok",
+      "id": 204
+    }
+  ]
+}
 --- requests
 GET /2.0/repositories/acme/widgets/pullrequests/42
 POST /2.0/repositories/acme/widgets/pullrequests/42/comments

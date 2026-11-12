@@ -1,0 +1,5 @@
+$ atlas pr comment 42 -R acme/widgets --edit 1 --delete 2
+--- stdout
+--- requests
+--- error
+if any flags in the group [edit delete] are set none of the others can be; [delete edit] were all set

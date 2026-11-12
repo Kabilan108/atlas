@@ -2,4 +2,4 @@ $ atlas pr comment 42 -R acme/widgets --line 3 -b x
 --- stdout
 --- requests
 --- error
---line requires --path
+line requires path

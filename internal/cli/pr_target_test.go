@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/kabilan108/atlas/internal/ops"
 )
 
 const otherPRURL = "https://bitbucket.org/ws/other/pull-requests/5"
@@ -188,7 +190,7 @@ func TestPRCheckoutRefusesURLFromAnotherRepository(t *testing.T) {
 }
 
 func TestLocalCheckoutMatches(t *testing.T) {
-	target := &prContext{workspace: "WS", repo: "Other"}
+	target := ops.Repository{Workspace: "WS", Repo: "Other"}
 	initGitRepoWithOrigin(t, "git@bitbucket.org:ws/other.git")
 	if !localCheckoutMatches(target) {
 		t.Error("checkout of ws/other should match WS/Other")

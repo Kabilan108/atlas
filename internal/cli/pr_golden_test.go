@@ -107,6 +107,15 @@ var prGoldenCases = []prGoldenCase{
 	{name: "clear_change_request", args: []string{"clear-change-request", "42", "-R", "acme/widgets"}},
 	{name: "clear_change_request_json", args: []string{"clear-change-request", "42", "-R", "acme/widgets", "--json"}},
 
+	{name: "comment_edit", args: []string{"comment", "42", "-R", "acme/widgets", "--edit", "101", "-b", "Handle the error."}},
+	{name: "comment_edit_json", args: []string{"comment", prtest.URL, "--edit", "101", "-F", "$BODY", "--json"}},
+	{name: "comment_delete", args: []string{"comment", "42", "-R", "acme/widgets", "--delete", "101"}},
+	{name: "comment_delete_json", args: []string{"comment", prtest.URL, "--delete", "101", "--json"}},
+	{name: "comment_delete_with_body", args: []string{"comment", "42", "-R", "acme/widgets", "--delete", "101", "-b", "x"}},
+	{name: "comment_edit_and_delete", args: []string{"comment", "42", "-R", "acme/widgets", "--edit", "1", "--delete", "2"}},
+	{name: "edit_base", args: []string{"edit", "42", "-R", "acme/widgets", "--base", "release"}},
+	{name: "create_json", args: []string{"create", "-R", "acme/widgets", "-t", "Add login", "--json"}, git: true},
+
 	{name: "review_approve", args: []string{"review", "42", "-R", "acme/widgets", "--approve", "-b", "summary", "--comment-spec", "$SPEC"}},
 	{name: "review_comment_json", args: []string{"review", "42", "-R", "acme/widgets", "--comment", "--comment-spec", "$SPEC", "--json"}},
 	{name: "review_request_changes_json", args: []string{"review", "42", "-R", "acme/widgets", "--request-changes", "-b", "needs work", "--json"}},

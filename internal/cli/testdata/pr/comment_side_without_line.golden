@@ -2,4 +2,4 @@ $ atlas pr comment 42 -R acme/widgets --path a.go --side old -b x
 --- stdout
 --- requests
 --- error
---side requires --line
+side requires line

@@ -2,4 +2,4 @@ $ atlas pr comment 42 -R acme/widgets --path a.go --line 3 --side left -b x
 --- stdout
 --- requests
 --- error
-invalid --side "left": expected new or old
+invalid side "left": expected one of new, old

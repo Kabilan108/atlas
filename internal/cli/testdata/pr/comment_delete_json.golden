@@ -1,0 +1,10 @@
+$ atlas pr comment https://bitbucket.org/acme/widgets/pull-requests/42 --delete 101 --json
+--- stdout
+{
+  "pull_request": 42,
+  "comment": 101,
+  "deleted": true
+}
+--- requests
+GET /2.0/repositories/acme/widgets/pullrequests/42
+DELETE /2.0/repositories/acme/widgets/pullrequests/42/comments/101
