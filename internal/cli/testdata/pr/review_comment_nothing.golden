@@ -1,0 +1,5 @@
+$ atlas pr review 42 -R acme/widgets --comment
+--- stdout
+--- requests
+--- error
+comment-only review requires --body, --body-file, --editor, or --comment-spec

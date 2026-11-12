@@ -1,0 +1,47 @@
+$ atlas pr comment 42 -R acme/widgets -b hello --json
+--- stdout
+{
+  "id": 201,
+  "content": {
+    "raw": "hello",
+    "markup": "markdown",
+    "html": ""
+  },
+  "user": {
+    "uuid": "{grace-uuid}",
+    "username": "",
+    "nickname": "grace",
+    "display_name": "Grace Hopper",
+    "account_id": "557058:grace",
+    "links": {
+      "self": {
+        "href": ""
+      },
+      "html": {
+        "href": ""
+      },
+      "avatar": {
+        "href": ""
+      }
+    }
+  },
+  "created_on": "2025-03-06T12:00:00Z",
+  "updated_on": "2025-03-06T12:00:00Z",
+  "deleted": false,
+  "pending": false,
+  "links": {
+    "self": {
+      "href": ""
+    },
+    "html": {
+      "href": "https://bitbucket.org/acme/widgets/pull-requests/42#comment-201"
+    },
+    "avatar": {
+      "href": ""
+    }
+  }
+}
+--- requests
+GET /2.0/repositories/acme/widgets/pullrequests/42
+POST /2.0/repositories/acme/widgets/pullrequests/42/comments
+  {"content":{"raw":"hello"}}

@@ -1,0 +1,5 @@
+$ atlas pr create -b x -F $BODY
+--- stdout
+--- requests
+--- error
+--body and --body-file cannot be used together

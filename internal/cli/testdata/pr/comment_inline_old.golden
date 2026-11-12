@@ -1,0 +1,7 @@
+$ atlas pr comment 42 -R acme/widgets --path src/login.go --line 8 --side old -b why?
+--- stdout
+Created comment #201 on pull request #42
+--- requests
+GET /2.0/repositories/acme/widgets/pullrequests/42
+POST /2.0/repositories/acme/widgets/pullrequests/42/comments
+  {"content":{"raw":"why?"},"inline":{"path":"src/login.go","from":8}}

@@ -1,0 +1,5 @@
+$ atlas pr comment 42 -R acme/widgets --reply-to -1 -b x
+--- stdout
+--- requests
+--- error
+--reply-to must be greater than zero

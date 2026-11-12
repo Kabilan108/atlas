@@ -1,0 +1,8 @@
+$ atlas pr edit https://bitbucket.org/acme/widgets/pull-requests/42 -t Renamed
+--- stdout
+Updated pull request #42: Renamed
+https://bitbucket.org/acme/widgets/pull-requests/42
+--- requests
+GET /2.0/repositories/acme/widgets/pullrequests/42
+PUT /2.0/repositories/acme/widgets/pullrequests/42
+  {"title":"Renamed"}

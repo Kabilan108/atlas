@@ -1,0 +1,6 @@
+$ atlas pr create -R acme/widgets -H local-only -t x
+--- stdout
+--- requests
+GET /2.0/repositories/acme/widgets
+--- error
+head branch "local-only" is not pushed to origin; rerun with --push

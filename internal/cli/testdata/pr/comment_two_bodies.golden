@@ -1,0 +1,5 @@
+$ atlas pr comment 42 -R acme/widgets -b x -e
+--- stdout
+--- requests
+--- error
+--body, --body-file, and --editor are mutually exclusive

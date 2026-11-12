@@ -1,0 +1,32 @@
+$ atlas pr approve 42 -R acme/widgets -b lgtm --json
+--- stdout
+{
+  "type": "participant",
+  "user": {
+    "uuid": "{grace-uuid}",
+    "username": "",
+    "nickname": "grace",
+    "display_name": "Grace Hopper",
+    "account_id": "557058:grace",
+    "links": {
+      "self": {
+        "href": ""
+      },
+      "html": {
+        "href": ""
+      },
+      "avatar": {
+        "href": ""
+      }
+    }
+  },
+  "role": "REVIEWER",
+  "approved": true,
+  "state": "approved",
+  "participated_on": "2025-03-06T12:00:00Z"
+}
+--- requests
+GET /2.0/repositories/acme/widgets/pullrequests/42
+POST /2.0/repositories/acme/widgets/pullrequests/42/comments
+  {"content":{"raw":"lgtm"}}
+POST /2.0/repositories/acme/widgets/pullrequests/42/approve

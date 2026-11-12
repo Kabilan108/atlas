@@ -1,0 +1,16 @@
+$ atlas pr review 42 -R acme/widgets --request-changes --comment-spec $SPEC --json
+--- stdout
+--- requests
+GET /2.0/repositories/acme/widgets/pullrequests/42
+POST /2.0/repositories/acme/widgets/pullrequests/42/comments
+  {"content":{"raw":"inline"},"inline":{"path":"src/login.go","to":12}}
+POST /2.0/repositories/acme/widgets/pullrequests/42/comments
+  {"content":{"raw":"old side"},"inline":{"path":"src/login.go","from":8}}
+POST /2.0/repositories/acme/widgets/pullrequests/42/comments
+  {"content":{"raw":"file note"},"inline":{"path":"README.md"}}
+POST /2.0/repositories/acme/widgets/pullrequests/42/comments
+  {"content":{"raw":"reply"},"parent":{"id":101}}
+POST /2.0/repositories/acme/widgets/pullrequests/42/request-changes
+--- error
+posted 4 comments but failed to request changes on pull request: server: {"type":"error","error":{"message":"injected failure"}}
+Hint: This is a Bitbucket server error. Try again later

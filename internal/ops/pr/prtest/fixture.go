@@ -47,12 +47,14 @@ type Request struct {
 	Path     string
 	Username string
 	Password string
+	Body     string
 }
 
 // Fixture is a fake Bitbucket API holding pull request #42 of acme/widgets.
 type Fixture struct {
 	mu       sync.Mutex
 	requests []Request
+	writes   writeState
 }
 
 func New() *Fixture {
@@ -81,15 +83,19 @@ func (f *Fixture) RoundTrip(r *http.Request) (*http.Response, error) {
 
 func (f *Fixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	user, password := basicAuth(r)
+	body := readBody(r)
 	f.mu.Lock()
-	f.requests = append(f.requests, Request{Method: r.Method, Path: r.URL.RequestURI(), Username: user, Password: password})
+	f.requests = append(f.requests, Request{Method: r.Method, Path: r.URL.RequestURI(), Username: user, Password: password, Body: body})
 	f.mu.Unlock()
 
+	path := strings.TrimPrefix(r.URL.Path, "/2.0")
+	if f.serveMore(w, r, path, body) {
+		return
+	}
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "read-only fixture")
 		return
 	}
-	path := strings.TrimPrefix(r.URL.Path, "/2.0")
 	prPath := fmt.Sprintf("/repositories/%s/%s/pullrequests", Workspace, Repo)
 	switch {
 	case path == fmt.Sprintf("%s/%d", prPath, PRID):

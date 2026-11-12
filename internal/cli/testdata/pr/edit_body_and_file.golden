@@ -1,0 +1,5 @@
+$ atlas pr edit 42 -R acme/widgets -b x -F $BODY
+--- stdout
+--- requests
+--- error
+--body and --body-file cannot be used together

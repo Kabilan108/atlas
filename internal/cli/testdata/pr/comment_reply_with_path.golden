@@ -1,0 +1,5 @@
+$ atlas pr comment 42 -R acme/widgets --reply-to 101 --path a.go -b x
+--- stdout
+--- requests
+--- error
+--reply-to cannot be combined with --path, --line, or --side

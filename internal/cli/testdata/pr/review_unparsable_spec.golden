@@ -1,0 +1,5 @@
+$ atlas pr review 42 -R acme/widgets --approve --comment-spec $BODY
+--- stdout
+--- requests
+--- error
+failed to parse comment spec: invalid character 'B' looking for beginning of value

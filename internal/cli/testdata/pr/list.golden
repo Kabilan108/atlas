@@ -1,0 +1,7 @@
+$ atlas pr list -R acme/widgets
+--- stdout
+ID   Title                            Author        State         Updated      Feedback
+#42  Fix login: handle 'empty' users  Ada Lovelace  OPEN          Mar 5, 2025  5 comments, 2 tasks
+#43  Tidy the docs                    Grace Hopper  OPEN (DRAFT)  Mar 4, 2025  
+--- requests
+GET /2.0/repositories/acme/widgets/pullrequests?state=OPEN

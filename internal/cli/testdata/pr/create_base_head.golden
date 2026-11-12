@@ -1,0 +1,7 @@
+$ atlas pr create -R acme/widgets -B release -H feature/login -t Backport
+--- stdout
+https://bitbucket.org/acme/widgets/pull-requests/44
+--- requests
+GET /2.0/repositories/acme/widgets
+POST /2.0/repositories/acme/widgets/pullrequests
+  {"title":"Backport","source":{"branch":{"name":"feature/login"}},"destination":{"branch":{"name":"release"}}}

@@ -1,0 +1,5 @@
+$ atlas pr create --draft --web
+--- stdout
+--- requests
+--- error
+--draft cannot be used with --web; create the draft through the API without --web
