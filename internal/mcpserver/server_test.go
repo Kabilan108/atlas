@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -212,6 +213,20 @@ func TestToolCallUsesHeaderCredentials(t *testing.T) {
 		if req.Username != testEmail || req.Password != testToken {
 			t.Fatalf("%s sent credentials %q/%q", req.Path, req.Username, req.Password)
 		}
+	}
+	// The same call again must reach Bitbucket again: no response cache.
+	if _, isError := callText(t, session, "pr_view", map[string]any{"repo": prtest.Repo, "pr": "42", "comments": true}); isError {
+		t.Fatal("second call failed")
+	}
+	if again := len(srv.fixture.Requests()); again != 2*len(requests) {
+		t.Fatalf("second call made %d requests, want %d (nothing cached)", again-len(requests), len(requests))
+	}
+	entries, err := os.ReadDir(os.Getenv("XDG_CACHE_HOME"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("the server wrote %d entries to the cache directory", len(entries))
 	}
 }
 
