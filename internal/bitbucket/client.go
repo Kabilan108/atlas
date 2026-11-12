@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/kabilan108/atlas/internal/redact"
 )
 
 const defaultBaseURL = "https://api.bitbucket.org/2.0"
@@ -27,6 +29,9 @@ type Client struct {
 	// touches the disk.
 	cache *Cache
 	retry bool
+	// redactor scrubs the credentials from anything a server sends back
+	// that ends up in an error.
+	redactor *redact.Credentials
 }
 
 type ClientOption func(*Client)
@@ -62,6 +67,7 @@ func NewClientWithCredentials(username, apiToken string, opts ...ClientOption) (
 	for _, opt := range opts {
 		opt(c)
 	}
+	c.redactor = redact.Basic(username, apiToken)
 
 	return c, nil
 }
@@ -72,6 +78,7 @@ func newClientForTest(baseURL string, httpClient *http.Client) *Client {
 		baseURL:    baseURL,
 		username:   "user",
 		password:   "password",
+		redactor:   redact.Basic("user", "password"),
 	}
 }
 
@@ -88,7 +95,7 @@ func (c *Client) doAuthenticated(req *http.Request) (*http.Response, error) {
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, c.redactError(err)
 	}
 
 	if resp.StatusCode == 429 && c.retry {
@@ -105,7 +112,8 @@ func (c *Client) doAuthenticated(req *http.Request) (*http.Response, error) {
 			}
 			req.Body = body
 		}
-		return httpClient.Do(req)
+		resp, err := httpClient.Do(req)
+		return resp, c.redactError(err)
 	}
 
 	return resp, nil
@@ -173,7 +181,7 @@ func (c *Client) get(ctx context.Context, path string) ([]byte, error) {
 		return nil, err
 	}
 
-	if err := checkResponse(resp, body); err != nil {
+	if err := c.checkResponse(resp, body); err != nil {
 		return nil, err
 	}
 
@@ -203,7 +211,7 @@ func (c *Client) getRaw(ctx context.Context, path string) ([]byte, error) {
 		return nil, err
 	}
 
-	if err := checkResponse(resp, body); err != nil {
+	if err := c.checkResponse(resp, body); err != nil {
 		return nil, err
 	}
 
@@ -250,37 +258,10 @@ func (c *Client) sendJSON(ctx context.Context, method, path string, body any) ([
 	if err != nil {
 		return nil, err
 	}
-	if err := checkResponse(resp, data); err != nil {
+	if err := c.checkResponse(resp, data); err != nil {
 		return nil, err
 	}
 	return data, nil
-}
-
-func checkResponse(resp *http.Response, body []byte) error {
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		return nil
-	}
-
-	switch resp.StatusCode {
-	case 401:
-		return NewAuthError(401, "invalid credentials")
-	case 403:
-		return NewAuthError(403, "access denied")
-	case 404:
-		return NewNotFoundError("resource", extractResource(resp.Request.URL.Path))
-	case 429:
-		resetTime := parseRateLimitReset(resp.Header)
-		return NewRateLimitError(resetTime)
-	default:
-		if resp.StatusCode >= 500 {
-			return NewServerError(resp.StatusCode, string(body))
-		}
-		return &APIError{
-			StatusCode: resp.StatusCode,
-			Message:    string(body),
-			Resource:   "api",
-		}
-	}
 }
 
 func parseRateLimitReset(header http.Header) time.Time {
@@ -843,7 +824,7 @@ func (c *Client) CreateSnippet(ctx context.Context, workspace, title string, fil
 		return nil, err
 	}
 
-	if err := checkResponse(resp, body); err != nil {
+	if err := c.checkResponse(resp, body); err != nil {
 		return nil, err
 	}
 
@@ -904,7 +885,7 @@ func (c *Client) UpdateSnippet(ctx context.Context, workspace, id, title string,
 		return err
 	}
 
-	return checkResponse(resp, body)
+	return c.checkResponse(resp, body)
 }
 
 func (c *Client) DeleteSnippet(ctx context.Context, workspace, id string) error {
@@ -926,7 +907,7 @@ func (c *Client) DeleteSnippet(ctx context.Context, workspace, id string) error 
 		return err
 	}
 
-	return checkResponse(resp, body)
+	return c.checkResponse(resp, body)
 }
 
 // PR reads include detail, filtered lists, and branch lookups. Clear all cached

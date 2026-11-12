@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -44,8 +43,8 @@ func (c *Client) send(ctx context.Context, method, path string, body any) (*http
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := checkResponseWithMessage(resp, data); err != nil {
-		return resp, data, err
+	if err := c.checkResponseWithMessage(resp, data); err != nil {
+		return resp, nil, err
 	}
 	return resp, data, nil
 }
@@ -213,47 +212,4 @@ func escapeSegments(kind, value string) (string, error) {
 		parts[i] = url.PathEscape(part)
 	}
 	return strings.Join(parts, "/"), nil
-}
-
-// checkResponseWithMessage keeps the auth, not-found, and rate-limit mapping of
-// checkResponse but replaces the raw JSON body with Bitbucket's error message.
-func checkResponseWithMessage(resp *http.Response, body []byte) error {
-	err := checkResponse(resp, body)
-	var apiErr *APIError
-	if !errors.As(err, &apiErr) {
-		return err
-	}
-	switch apiErr.StatusCode {
-	case http.StatusUnauthorized, http.StatusNotFound, http.StatusTooManyRequests:
-		return err
-	}
-	if message := bitbucketErrorMessage(body); message != "" {
-		apiErr.Message = message
-	}
-	return apiErr
-}
-
-func bitbucketErrorMessage(body []byte) string {
-	var payload struct {
-		Error struct {
-			Message string          `json:"message"`
-			Detail  json.RawMessage `json:"detail"`
-		} `json:"error"`
-	}
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return ""
-	}
-
-	message := strings.TrimSpace(payload.Error.Message)
-	var detail string
-	if len(payload.Error.Detail) > 0 && json.Unmarshal(payload.Error.Detail, &detail) == nil {
-		detail = strings.TrimSpace(detail)
-		if detail != "" && detail != message {
-			if message == "" {
-				return detail
-			}
-			return message + ": " + detail
-		}
-	}
-	return message
 }

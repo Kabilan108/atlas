@@ -36,7 +36,7 @@ func (c *Client) GetAPI(ctx context.Context, path string, maxBytes int64) (*Limi
 	}
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, c.redactor.Error(err)
 	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))

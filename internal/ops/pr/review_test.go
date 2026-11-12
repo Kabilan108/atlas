@@ -59,7 +59,7 @@ func TestReviewPartialWhenACommentFails(t *testing.T) {
 	if ops.KindOf(err) != ops.Partial || !strings.Contains(err.Error(), "1 of 3 comments failed") || !strings.Contains(err.Error(), "failed to post comment 2") {
 		t.Fatalf("err = %v, want partial", err)
 	}
-	want := `{"pull_request":42,"action":"approve","done":false,"results":[{"index":0,"status":"ok","id":201},{"index":1,"status":"failed","error":"server: {\"type\":\"error\",\"error\":{\"message\":\"injected failure\"}}\nHint: This is a Bitbucket server error. Try again later"},{"index":2,"status":"skipped"}]}`
+	want := `{"pull_request":42,"action":"approve","done":false,"results":[{"index":0,"status":"ok","id":201},{"index":1,"status":"failed","error":"server: injected failure\nHint: This is a Bitbucket server error. Try again later"},{"index":2,"status":"skipped"}]}`
 	if result.Text != want {
 		t.Fatalf("receipt = %s\nwant      %s", result.Text, want)
 	}

@@ -5,7 +5,6 @@ package jira
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +13,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/kabilan108/atlas/internal/redact"
 )
 
 const (
@@ -32,8 +33,8 @@ type Client struct {
 	email      string
 	token      string
 	userAgent  string
-	// secrets are the credential encodings scrubbed from error content.
-	secrets []string
+	// redactor scrubs the credentials from error content.
+	redactor *redact.Credentials
 }
 
 type Option func(*Client)
@@ -89,7 +90,7 @@ func NewClientWithCredentials(email, token, cloudID string, opts ...Option) (*Cl
 		return nil, fmt.Errorf("jira: invalid base URL %q", c.baseURL)
 	}
 	c.httpClient = sameOriginRedirects(c.httpClient, origin(base))
-	c.secrets = credentialSecrets(email, token)
+	c.redactor = redact.Basic(email, token)
 	return c, nil
 }
 
@@ -128,15 +129,6 @@ func origin(u *url.URL) string {
 	return scheme + "://" + strings.ToLower(u.Hostname()) + ":" + port
 }
 
-func credentialSecrets(email, token string) []string {
-	basic := base64.StdEncoding.EncodeToString([]byte(email + ":" + token))
-	secrets := []string{basic, strings.TrimRight(basic, "="), token}
-	if escaped := url.QueryEscape(token); escaped != token {
-		secrets = append(secrets, escaped)
-	}
-	return secrets
-}
-
 func (c *Client) BaseURL() string {
 	return c.baseURL
 }
@@ -159,7 +151,7 @@ func (c *Client) newRequest(ctx context.Context, method, path string, query url.
 func (c *Client) do(req *http.Request) ([]byte, error) {
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, c.redactor.Error(err)
 	}
 	defer resp.Body.Close()
 

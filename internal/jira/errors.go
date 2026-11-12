@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -74,30 +73,10 @@ func (e *APIError) Unwrap() error {
 	return nil
 }
 
-const redacted = "[REDACTED]"
-
-// authorizationValue matches an Authorization label's value, including
-// folded continuation lines that begin with a space or tab.
-var authorizationValue = regexp.MustCompile(`(?i)(authorization"?\s*[:=]\s*"?)[^\r\n"]*(?:\r?\n[ \t][^\r\n"]*)*`)
-
 // redact removes the client's credentials, in any encoding it sends them,
-// and the value of anything labelled Authorization. If a credential can still
-// be spelled once whitespace is removed (a wrapped base64 value, say), the
-// whole string is withheld.
+// and the value of anything labelled Authorization; see redact.Credentials.
 func (c *Client) redact(s string) string {
-	for _, secret := range c.secrets {
-		if secret != "" {
-			s = strings.ReplaceAll(s, secret, redacted)
-		}
-	}
-	s = authorizationValue.ReplaceAllString(s, "${1}"+redacted)
-	compact := strings.Join(strings.Fields(s), "")
-	for _, secret := range c.secrets {
-		if secret != "" && strings.Contains(compact, secret) {
-			return redacted
-		}
-	}
-	return s
+	return c.redactor.String(s)
 }
 
 // newAPIError builds the error from a redacted copy of the body and redacts

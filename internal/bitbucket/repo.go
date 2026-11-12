@@ -193,7 +193,7 @@ func (c *Client) GetFileContent(ctx context.Context, workspace, repo, ref, path 
 	if resp.StatusCode == http.StatusNotFound {
 		return nil, NewNotFoundError("file", ref+":"+path)
 	}
-	if err := checkResponseWithMessage(resp, body); err != nil {
+	if err := c.checkResponseWithMessage(resp, body); err != nil {
 		return nil, err
 	}
 	return body, nil

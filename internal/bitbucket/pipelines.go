@@ -345,7 +345,7 @@ func (c *Client) GetPipelineStepLog(ctx context.Context, workspace, repo, pipeli
 
 	resp, err := c.withoutRedirects().Do(req)
 	if err != nil {
-		return nil, err
+		return nil, c.redactError(err)
 	}
 	defer resp.Body.Close()
 
@@ -366,16 +366,12 @@ func (c *Client) GetPipelineStepLog(ctx context.Context, workspace, repo, pipeli
 		if err != nil {
 			return nil, err
 		}
-		if err := checkResponseWithMessage(resp, body); err != nil {
+		if err := c.checkResponseWithMessage(resp, body); err != nil {
 			return nil, err
 		}
 	}
 	return readStepLog(resp, tailBytes)
 }
-
-// maxErrorBody bounds how much of a failed log response is read for its
-// error message.
-const maxErrorBody = 64 << 10
 
 // readStepLog keeps the last tailBytes bytes of a log response. A server
 // that honours the range sends no more than that; one that ignores it is
@@ -451,7 +447,7 @@ func (c *Client) fetchStepLogFromStorage(ctx context.Context, location *url.URL,
 
 	resp, err := newStorageClient().Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch pipeline log from storage: %w", err)
+		return nil, fmt.Errorf("failed to fetch pipeline log from storage: %w", c.redactError(withoutQuery(err)))
 	}
 	defer resp.Body.Close()
 
@@ -463,7 +459,7 @@ func (c *Client) fetchStepLogFromStorage(ctx context.Context, location *url.URL,
 		return nil, err
 	}
 
-	message := strings.TrimSpace(string(body))
+	message := strings.TrimSpace(c.redactor.String(string(body)))
 	if len(message) > 512 {
 		message = message[:512] + "..."
 	}

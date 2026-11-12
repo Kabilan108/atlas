@@ -90,16 +90,21 @@ func (c *Client) getLimited(ctx context.Context, path string, maxBytes int64, ac
 	}
 	defer resp.Body.Close()
 
+	body := &LimitedBody{ContentType: resp.Header.Get("Content-Type"), StatusCode: resp.StatusCode}
+	if !success(resp.StatusCode) {
+		data, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
+		if err != nil {
+			return nil, err
+		}
+		return body, c.checkResponseWithMessage(resp, data)
+	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
 	if err != nil {
 		return nil, err
 	}
-	body := &LimitedBody{Data: data, ContentType: resp.Header.Get("Content-Type"), StatusCode: resp.StatusCode}
+	body.Data = data
 	if int64(len(data)) > maxBytes {
 		body.Data, body.Truncated = data[:maxBytes], true
-	}
-	if err := checkResponseWithMessage(resp, data); err != nil {
-		return body, err
 	}
 	return body, nil
 }
