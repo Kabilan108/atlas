@@ -78,9 +78,9 @@ var prGoldenCases = []prGoldenCase{
 	{name: "edit_url", args: []string{"edit", prtest.URL, "-t", "Renamed"}},
 
 	{name: "close", args: []string{"close", "42", "-R", "acme/widgets"}},
-	{name: "close_comment", args: []string{"close", "42", "-R", "acme/widgets", "-c", "Superseded by #44"}},
-	{name: "close_comment_decline_fails", args: []string{"close", "42", "-R", "acme/widgets", "-c", "bye"}, fail: [][]string{{"POST", "/repositories/acme/widgets/pullrequests/42/decline"}}},
-	{name: "close_comment_decline_fails_json", args: []string{"close", "42", "-R", "acme/widgets", "-c", "bye", "--json"}, fail: [][]string{{"POST", "/repositories/acme/widgets/pullrequests/42/decline"}}},
+	{name: "close_comment", args: []string{"close", "42", "-R", "acme/widgets", "-b", "Superseded by #44"}},
+	{name: "close_comment_decline_fails", args: []string{"close", "42", "-R", "acme/widgets", "-b", "bye"}, fail: [][]string{{"POST", "/repositories/acme/widgets/pullrequests/42/decline"}}},
+	{name: "close_comment_decline_fails_json", args: []string{"close", "42", "-R", "acme/widgets", "-b", "bye", "--json"}, fail: [][]string{{"POST", "/repositories/acme/widgets/pullrequests/42/decline"}}},
 	{name: "close_decline_fails", args: []string{"close", "42", "-R", "acme/widgets"}, fail: [][]string{{"POST", "/repositories/acme/widgets/pullrequests/42/decline"}}},
 	{name: "close_no_arg", args: []string{"close", "-R", "acme/widgets"}},
 
@@ -140,7 +140,7 @@ var prGoldenCases = []prGoldenCase{
 	// Legacy close and checkout required a selector; every other command
 	// fell back to the current branch for an empty or blank one.
 	{name: "close_empty_selector", args: []string{"close", "", "-R", "acme/widgets"}, git: true},
-	{name: "close_blank_selector", args: []string{"close", "  ", "-R", "acme/widgets", "-c", "bye"}, git: true},
+	{name: "close_blank_selector", args: []string{"close", "  ", "-R", "acme/widgets", "-b", "bye"}, git: true},
 	{name: "checkout_empty_selector", args: []string{"checkout", "", "-R", "acme/widgets"}, git: true},
 	{name: "approve_empty_selector", args: []string{"approve", "", "-R", "acme/widgets"}, git: true},
 	{name: "approve_blank_selector", args: []string{"approve", "  ", "-R", "acme/widgets"}, git: true},

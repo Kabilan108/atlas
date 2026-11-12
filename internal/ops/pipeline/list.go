@@ -17,10 +17,10 @@ const (
 // ListInput is the input to pipeline_list.
 type ListInput struct {
 	ops.RepoRef
-	Branch  string `json:"branch,omitempty"`
-	Commit  string `json:"commit,omitempty" jsonschema:"full commit SHA"`
-	Pattern string `json:"pattern,omitempty" jsonschema:"selector pattern, e.g. a custom pipeline name such as db-backup"`
-	Limit   int    `json:"limit,omitempty" jsonschema:"default 20, max 100"`
+	Branch   string `json:"branch,omitempty" jsonschema:"only runs on this branch"`
+	Commit   string `json:"commit,omitempty" jsonschema:"full commit SHA"`
+	Pipeline string `json:"pipeline,omitempty" jsonschema:"only runs of this custom pipeline or selector pattern, e.g. db-backup"`
+	Limit    int    `json:"limit,omitempty" jsonschema:"default 20, max 100"`
 }
 
 // ListResult is the newest pipeline runs matching the filters.
@@ -63,7 +63,7 @@ func list(ctx context.Context, env ops.Env, in ListInput) (*ListResult, error) {
 	opts := &bitbucket.PipelineListOptions{
 		Branch:          strings.TrimSpace(in.Branch),
 		Commit:          strings.TrimSpace(in.Commit),
-		SelectorPattern: strings.TrimSpace(in.Pattern),
+		SelectorPattern: strings.TrimSpace(in.Pipeline),
 		Limit:           limit,
 	}
 	pipelines, err := client.ListPipelines(ctx, repo.Workspace, repo.Repo, opts)

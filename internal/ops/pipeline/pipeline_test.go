@@ -41,7 +41,7 @@ func mustContain(t *testing.T, text string, wants ...string) {
 func TestListFiltersAndShowsRunDetails(t *testing.T) {
 	env, fixture := newEnv(t)
 	result, err := pipeline.List.Call(context.Background(), env, pipeline.ListInput{
-		RepoRef: ops.RepoRef{Repo: "widgets"}, Branch: "testing", Pattern: "db-backup", Commit: "333ec33226f2aa11bb22cc33dd44ee55ff667788",
+		RepoRef: ops.RepoRef{Repo: "widgets"}, Branch: "testing", Pipeline: "db-backup", Commit: "333ec33226f2aa11bb22cc33dd44ee55ff667788",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -60,7 +60,7 @@ func TestListFiltersAndShowsRunDetails(t *testing.T) {
 		"| 2090 | FAILED | testing | 333ec33226f2 | custom:db-backup | MANUAL | Merge Console | 2026-11-02T18:45:37Z | 1m24s |",
 		"| 2095 | SUCCESSFUL |")
 
-	empty, err := pipeline.List.Call(context.Background(), env, pipeline.ListInput{RepoRef: ops.RepoRef{Repo: repo}, Pattern: "nightly"})
+	empty, err := pipeline.List.Call(context.Background(), env, pipeline.ListInput{RepoRef: ops.RepoRef{Repo: repo}, Pipeline: "nightly"})
 	if err != nil {
 		t.Fatal(err)
 	}

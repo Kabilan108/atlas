@@ -1,4 +1,4 @@
-$ atlas pr close 42 -R acme/widgets -c bye --json
+$ atlas pr close 42 -R acme/widgets -b bye --json
 --- stdout
 {
   "id": 42,

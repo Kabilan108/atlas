@@ -16,7 +16,7 @@ type CreateInput struct {
 	Base      string   `json:"base,omitempty" jsonschema:"destination branch; default the repo's main branch"`
 	Body      string   `json:"body,omitempty" jsonschema:"markdown description"`
 	Reviewers []string `json:"reviewers,omitempty" jsonschema:"account IDs, UUIDs, or exact display names; an ambiguous name fails with the candidates"`
-	Draft     bool     `json:"draft,omitempty"`
+	Draft     bool     `json:"draft,omitempty" jsonschema:"open as a draft, not yet ready for review"`
 }
 
 var Create = &ops.Op[CreateInput, *bitbucket.PullRequest]{

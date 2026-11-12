@@ -30,6 +30,10 @@ var toolBudgetExceptions = map[string]int{
 	"pr_edit": 1152,
 	// pr_merge's strategy enum and the head guard.
 	"pr_merge": 1248,
+	// file_read's batch form and the pointer to directory listings.
+	"file_read": 1088,
+	// pipeline_run's variables list.
+	"pipeline_run": 1088,
 }
 
 func TestToolsListBudget(t *testing.T) {

@@ -77,7 +77,7 @@ type FileReadResult struct {
 var FileRead = &ops.Op[FileReadInput, *FileReadResult]{
 	Meta: ops.Meta{
 		Name:        "file_read",
-		Description: "Read a file at a ref from a Bitbucket repo, or the same path across many repos in one call (e.g. version.json audits). Repos without the file get status not_found, which is not an error.",
+		Description: "Read a file at a ref from a Bitbucket repo, or the same path across many repos in one call (e.g. version.json audits). Repos without the file get status not_found, which is not an error. To list a directory use api /2.0/repositories/ws/repo/src/{ref}/{dir}/.",
 		Surfaces:    ops.Both,
 		ReadOnly:    true,
 	},

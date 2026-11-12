@@ -10,7 +10,7 @@ import (
 func TestPipelineListPassesFilters(t *testing.T) {
 	setupCLIEnv(t)
 	fixture := pipelinetest.New()
-	out, err := runAtlas(t, fixture, "--no-cache", "pipeline", "list", "-R", "acme/widgets", "-b", "testing", "--pattern", "db-backup", "-L", "5")
+	out, err := runAtlas(t, fixture, "--no-cache", "pipeline", "list", "-R", "acme/widgets", "-b", "testing", "-p", "db-backup", "-L", "5")
 	if err != nil {
 		t.Fatal(err)
 	}

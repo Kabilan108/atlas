@@ -31,7 +31,7 @@ type RunInput struct {
 	Branch      string     `json:"branch,omitempty" jsonschema:"this or commit is required"`
 	Commit      string     `json:"commit,omitempty" jsonschema:"full SHA; with branch, pins the run"`
 	Pipeline    string     `json:"pipeline,omitempty" jsonschema:"custom pipeline name; default: the branch's pipeline"`
-	Variables   []Variable `json:"variables,omitempty"`
+	Variables   []Variable `json:"variables,omitempty" jsonschema:"pipeline variables; secured ones are hidden in Bitbucket and in errors"`
 	WaitSeconds int        `json:"wait_seconds,omitempty" jsonschema:"seconds to wait for the result, max 600; default 0"`
 }
 

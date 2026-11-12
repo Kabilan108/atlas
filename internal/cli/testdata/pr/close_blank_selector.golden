@@ -1,4 +1,4 @@
-$ atlas pr close "  " -R acme/widgets -c bye
+$ atlas pr close "  " -R acme/widgets -b bye
 --- stdout
 --- requests
 --- error

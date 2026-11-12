@@ -114,7 +114,7 @@ func prURLTargetCommands(t *testing.T) [][]string {
 		{"comment", otherPRURL, "-b", "hello"},
 		{"review", otherPRURL, "--approve", "-b", "summary", "--comment-spec", specFile},
 		{"edit", otherPRURL, "--title", "Renamed"},
-		{"close", otherPRURL, "-c", "closing"},
+		{"close", otherPRURL, "-b", "closing"},
 		{"view", otherPRURL, "--raw", "--comments"},
 		{"view", otherPRURL, "--json"},
 		{"diff", otherPRURL, "--patch"},

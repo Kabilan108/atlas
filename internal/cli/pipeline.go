@@ -58,7 +58,7 @@ func newPipelineListCmd() *cobra.Command {
 	addPRRepoFlag(cmd)
 	cmd.Flags().StringP("branch", "b", "", "Only runs on this branch")
 	cmd.Flags().String("commit", "", "Only runs on this commit (full SHA)")
-	cmd.Flags().String("pattern", "", "Only runs of this selector pattern, e.g. a custom pipeline name")
+	cmd.Flags().StringP("pipeline", "p", "", "Only runs of this custom pipeline or selector pattern, e.g. db-backup")
 	cmd.Flags().IntP("limit", "L", 20, "Maximum number of runs (max 100)")
 	return bind(cmd, binding[pipeline.ListInput, *pipeline.ListResult]{
 		op: pipeline.List,
@@ -69,9 +69,9 @@ func newPipelineListCmd() *cobra.Command {
 			}
 			branch, _ := cmd.Flags().GetString("branch")
 			commit, _ := cmd.Flags().GetString("commit")
-			pattern, _ := cmd.Flags().GetString("pattern")
+			custom, _ := cmd.Flags().GetString("pipeline")
 			limit, _ := cmd.Flags().GetInt("limit")
-			return pipeline.ListInput{RepoRef: repo, Branch: branch, Commit: commit, Pattern: pattern, Limit: limit}, nil
+			return pipeline.ListInput{RepoRef: repo, Branch: branch, Commit: commit, Pipeline: custom, Limit: limit}, nil
 		},
 	})
 }

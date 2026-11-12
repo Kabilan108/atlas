@@ -11,9 +11,9 @@ atlas branch
 atlas branch list
   use: list
   aliases: ls
-  flag --filter string default=""
   flag --json bool default="false"
   flag --limit -L int default="30"
+  flag --query -q string default=""
   flag --repo -R string default=""
 atlas branch view
   use: view <branch>
@@ -157,7 +157,7 @@ atlas pipeline list
   flag --commit string default=""
   flag --json bool default="false"
   flag --limit -L int default="20"
-  flag --pattern string default=""
+  flag --pipeline -p string default=""
   flag --repo -R string default=""
 atlas pipeline log
   use: log <build>...
@@ -213,7 +213,7 @@ atlas pr clear-change-request
   flag --repo -R string default=""
 atlas pr close
   use: close <number|url|branch>
-  flag --comment -c string default=""
+  flag --body -b string default=""
   flag --json bool default="false"
   flag --repo -R string default=""
 atlas pr comment
@@ -328,7 +328,7 @@ atlas repo list
   aliases: ls
   flag --json bool default="false"
   flag --limit -L int default="100"
-  flag --name string default=""
+  flag --query -q string default=""
   flag --workspace string default=""
 atlas snippet
   use: snippet

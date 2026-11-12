@@ -1,4 +1,4 @@
-$ atlas pr close 42 -R acme/widgets -c "Superseded by #44"
+$ atlas pr close 42 -R acme/widgets -b "Superseded by #44"
 --- stdout
 Closed pull request #42: Fix login: handle 'empty' users
 --- requests

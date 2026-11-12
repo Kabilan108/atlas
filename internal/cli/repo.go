@@ -27,15 +27,15 @@ func newRepoListCmd() *cobra.Command {
 		Args:    cobra.NoArgs,
 	}
 	cmd.Flags().String("workspace", "", "Target workspace")
-	cmd.Flags().String("name", "", "Only repositories whose name contains this")
+	cmd.Flags().StringP("query", "q", "", "Only repositories whose name contains this")
 	cmd.Flags().IntP("limit", "L", 100, "Maximum number of repositories to list")
 	return bind(cmd, binding[repo.ListInput, *repo.ListResult]{
 		op: repo.List,
 		input: func(cmd *cobra.Command, _ []string, _ *cliEnv) (repo.ListInput, error) {
 			workspace, _ := cmd.Flags().GetString("workspace")
-			name, _ := cmd.Flags().GetString("name")
+			query, _ := cmd.Flags().GetString("query")
 			limit, err := positiveLimit(cmd)
-			return repo.ListInput{Workspace: workspace, Name: name, Limit: limit}, err
+			return repo.ListInput{Workspace: workspace, Query: query, Limit: limit}, err
 		},
 	})
 }
@@ -58,7 +58,7 @@ func newBranchListCmd() *cobra.Command {
 		Args:    cobra.NoArgs,
 	}
 	addPRRepoFlag(cmd)
-	cmd.Flags().String("filter", "", "Only branches whose name contains this")
+	cmd.Flags().StringP("query", "q", "", "Only branches whose name contains this")
 	cmd.Flags().IntP("limit", "L", 30, "Maximum number of branches to list")
 	return bind(cmd, binding[repo.BranchListInput, *repo.BranchListResult]{
 		op: repo.BranchList,
@@ -67,9 +67,9 @@ func newBranchListCmd() *cobra.Command {
 			if err != nil {
 				return repo.BranchListInput{}, err
 			}
-			filter, _ := cmd.Flags().GetString("filter")
+			query, _ := cmd.Flags().GetString("query")
 			limit, err := positiveLimit(cmd)
-			return repo.BranchListInput{RepoRef: ref, Filter: filter, Limit: limit}, err
+			return repo.BranchListInput{RepoRef: ref, Query: query, Limit: limit}, err
 		},
 	})
 }

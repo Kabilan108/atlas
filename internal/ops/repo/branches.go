@@ -16,8 +16,8 @@ const defaultBranchLimit = 30
 // BranchListInput is the input to branch_list.
 type BranchListInput struct {
 	ops.RepoRef
-	Filter string `json:"filter,omitempty" jsonschema:"case-insensitive substring of the branch name"`
-	Limit  int    `json:"limit,omitempty" jsonschema:"default 30"`
+	Query string `json:"query,omitempty" jsonschema:"case-insensitive substring of the branch name"`
+	Limit int    `json:"limit,omitempty" jsonschema:"default 30"`
 }
 
 // BranchListResult is the branches found, most recent commit first.
@@ -54,7 +54,7 @@ func listBranches(ctx context.Context, env ops.Env, in BranchListInput) (*Branch
 		return nil, err
 	}
 	branches, err := client.ListBranches(ctx, repo.Workspace, repo.Repo, &bitbucket.BranchListOptions{
-		Name:  strings.TrimSpace(in.Filter),
+		Name:  strings.TrimSpace(in.Query),
 		Sort:  "-target.date",
 		Limit: limit + 1,
 	})

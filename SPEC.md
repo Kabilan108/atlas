@@ -55,7 +55,7 @@ atlas pr create [-R <workspace/repo|repo>] [--base <branch>] [--head <branch>] -
 atlas pr view [<id|url|branch>] [-R <workspace/repo|repo>] [--comments] [--all] [--json] [--raw] [--web]
 atlas pr diff [<id|url|branch>] [-R <workspace/repo|repo>] [--name-only] [--patch] [-s|--structured]
 atlas pr edit [<id|url|branch>] [-R <workspace/repo|repo>] [--title <title>] [--body <body>|--body-file <file>] [--add-reviewer <id>] [--remove-reviewer <id>] [--draft|--ready]
-atlas pr close <id|url|branch> [-R <workspace/repo|repo>] [--comment <text>]
+atlas pr close <id|url|branch> [-R <workspace/repo|repo>] [--body <text>]
 atlas pr comment [<id|url|branch>] [-R <workspace/repo|repo>] (--body <text>|--body-file <file>|--editor) [--reply-to <id>] [--path <path>] [--line <line>] [--side new|old] [--json]
 atlas pr approve [<id|url|branch>] [-R <workspace/repo|repo>] [--body <text>|--body-file <file>|--editor] [--json]
 atlas pr unapprove [<id|url|branch>] [-R <workspace/repo|repo>] [--json]
@@ -318,7 +318,7 @@ Status only (no attribution for who completed).
 
 `atlas pr close <id|url|branch>` declines a Bitbucket pull request.
 
-- `--comment` posts a closing comment before declining
+- `--body` (`-b`) posts a closing comment before declining
 - Branch deletion is not supported
 
 ---
