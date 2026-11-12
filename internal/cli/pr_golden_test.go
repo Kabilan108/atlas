@@ -77,6 +77,8 @@ var prGoldenCases = []prGoldenCase{
 	{name: "close", args: []string{"close", "42", "-R", "acme/widgets"}},
 	{name: "close_comment", args: []string{"close", "42", "-R", "acme/widgets", "-c", "Superseded by #44"}},
 	{name: "close_comment_decline_fails", args: []string{"close", "42", "-R", "acme/widgets", "-c", "bye"}, fail: [][]string{{"POST", "/repositories/acme/widgets/pullrequests/42/decline"}}},
+	{name: "close_comment_decline_fails_json", args: []string{"close", "42", "-R", "acme/widgets", "-c", "bye", "--json"}, fail: [][]string{{"POST", "/repositories/acme/widgets/pullrequests/42/decline"}}},
+	{name: "close_decline_fails", args: []string{"close", "42", "-R", "acme/widgets"}, fail: [][]string{{"POST", "/repositories/acme/widgets/pullrequests/42/decline"}}},
 	{name: "close_no_arg", args: []string{"close", "-R", "acme/widgets"}},
 
 	{name: "comment", args: []string{"comment", "42", "-R", "acme/widgets", "-b", "hello"}},
@@ -99,6 +101,8 @@ var prGoldenCases = []prGoldenCase{
 	{name: "approve", args: []string{"approve", "42", "-R", "acme/widgets"}},
 	{name: "approve_comment_json", args: []string{"approve", "42", "-R", "acme/widgets", "-b", "lgtm", "--json"}},
 	{name: "approve_fails_after_comment", args: []string{"approve", "42", "-R", "acme/widgets", "-b", "lgtm"}, fail: [][]string{{"POST", "/repositories/acme/widgets/pullrequests/42/approve"}}},
+	{name: "approve_fails_after_comment_json", args: []string{"approve", "42", "-R", "acme/widgets", "-b", "lgtm", "--json"}, fail: [][]string{{"POST", "/repositories/acme/widgets/pullrequests/42/approve"}}},
+	{name: "request_changes_fails_after_comment", args: []string{"request-changes", "42", "-R", "acme/widgets", "-b", "fix it"}, fail: [][]string{{"POST", "/repositories/acme/widgets/pullrequests/42/request-changes"}}},
 	{name: "approve_empty_body", args: []string{"approve", "42", "-R", "acme/widgets", "-b", ""}},
 	{name: "request_changes", args: []string{"request-changes", "42", "-R", "acme/widgets", "-b", "please fix"}},
 	{name: "request_changes_json", args: []string{"request-changes", "42", "-R", "acme/widgets", "--json"}},

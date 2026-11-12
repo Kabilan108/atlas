@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/kabilan108/atlas/internal/bitbucket"
 	"github.com/kabilan108/atlas/internal/ops/pr"
 	"github.com/spf13/cobra"
 )
@@ -17,14 +16,17 @@ func newPRCloseCmd() *cobra.Command {
 	}
 	addPRRepoFlag(cmd)
 	cmd.Flags().StringP("comment", "c", "", "Leave a closing comment")
-	return bind(cmd, binding[pr.CloseInput, *bitbucket.PullRequest]{
+	return bind(cmd, binding[pr.CloseInput, *pr.CloseResult]{
 		op: pr.Close,
 		input: func(cmd *cobra.Command, args []string, env *cliEnv) (pr.CloseInput, error) {
 			comment, _ := cmd.Flags().GetString("comment")
 			ref, err := env.requiredPRRef(cmd, args[0])
 			return pr.CloseInput{Ref: ref, Comment: comment}, err
 		},
-		human: func(w io.Writer, closed *bitbucket.PullRequest) error {
+		human: func(w io.Writer, closed *pr.CloseResult) error {
+			if closed.Failed != nil {
+				return printFailedStep(w, closed.Failed)
+			}
 			_, err := fmt.Fprintf(w, "Closed pull request #%d: %s\n", closed.ID, closed.Title)
 			return err
 		},

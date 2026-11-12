@@ -1,5 +1,6 @@
 $ atlas pr close 42 -R acme/widgets -c bye
 --- stdout
+Posted comment #201 on pull request #42 (https://bitbucket.org/acme/widgets/pull-requests/42#comment-201), but decline failed; retry without the comment to avoid posting it twice
 --- requests
 GET /2.0/repositories/acme/widgets/pullrequests/42
 POST /2.0/repositories/acme/widgets/pullrequests/42/comments

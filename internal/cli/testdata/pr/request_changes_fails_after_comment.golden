@@ -1,0 +1,11 @@
+$ atlas pr request-changes 42 -R acme/widgets -b "fix it"
+--- stdout
+Posted comment #201 on pull request #42 (https://bitbucket.org/acme/widgets/pull-requests/42#comment-201), but request-changes failed; retry without the comment to avoid posting it twice
+--- requests
+GET /2.0/repositories/acme/widgets/pullrequests/42
+POST /2.0/repositories/acme/widgets/pullrequests/42/comments
+  {"content":{"raw":"fix it"}}
+POST /2.0/repositories/acme/widgets/pullrequests/42/request-changes
+--- error
+posted comment but failed to request changes on pull request: server: {"type":"error","error":{"message":"injected failure"}}
+Hint: This is a Bitbucket server error. Try again later

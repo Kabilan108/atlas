@@ -32,6 +32,9 @@ func newPRReviewActionCmd(op *ops.Op[pr.ApproveInput, *pr.ApprovalResult], use, 
 			return pr.ApproveInput{Ref: ref, Body: body}, err
 		},
 		human: func(w io.Writer, result *pr.ApprovalResult) error {
+			if result.Failed != nil {
+				return printFailedStep(w, result.Failed)
+			}
 			_, err := fmt.Fprintf(w, done, result.PullRequest())
 			return err
 		},
@@ -70,6 +73,13 @@ func newPRClearChangeRequestCmd() *cobra.Command {
 			return err
 		},
 	})
+}
+
+// printFailedStep says what a comment-then-action write posted before its
+// action failed; the command then fails with the error.
+func printFailedStep(w io.Writer, failed *pr.FailedStep) error {
+	_, err := fmt.Fprintln(w, failed)
+	return err
 }
 
 func prRefInput(cmd *cobra.Command, args []string, env *cliEnv) (pr.Ref, error) {
