@@ -23,13 +23,11 @@ func TestPRDraftAndEditReadback(t *testing.T) {
 	t.Setenv("ATLAS_USERNAME", "test")
 	t.Setenv("ATLAS_API_TOKEN", "test")
 	t.Setenv("EDITOR", "/atlas-test-editor-must-not-run")
-	originalTransport := http.DefaultTransport
-	t.Cleanup(func() { http.DefaultTransport = originalTransport })
 	pr := map[string]any{"id": 7, "title": "Original", "description": "Old body", "state": "OPEN", "draft": false, "source": map[string]any{"branch": map[string]string{"name": "feature"}}}
 	var writes []map[string]any
 	reads := 0
 	failWrite := false
-	http.DefaultTransport = prTestTransport(func(r *http.Request) (*http.Response, error) {
+	transport := prTestTransport(func(r *http.Request) (*http.Response, error) {
 		if r.URL.Host != "api.bitbucket.org" {
 			return nil, fmt.Errorf("unexpected host %s", r.URL.Host)
 		}
@@ -76,10 +74,11 @@ func TestPRDraftAndEditReadback(t *testing.T) {
 		original := os.Stdout
 		os.Stdout = file
 		defer func() { os.Stdout = original; file.Close() }()
-		root := NewRootCmd("test")
+		root := NewRootCmd("test", WithHTTPClient(&http.Client{Transport: transport}))
 		root.PersistentPreRun = nil
 		root.SilenceUsage = true
 		root.SilenceErrors = true
+		root.SetOut(file)
 		root.SetArgs(append([]string{"pr"}, args...))
 		err = root.Execute()
 		if _, seekErr := file.Seek(0, 0); seekErr != nil {

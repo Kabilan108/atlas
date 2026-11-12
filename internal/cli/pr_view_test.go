@@ -1,8 +1,8 @@
 package cli
 
 import (
+	"bytes"
 	"flag"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -28,53 +28,39 @@ var prViewGoldenCases = []struct {
 	{"url with repo flag", "view_comments.md", []string{"view", prtest.URL, "-R", "acme/widgets", "--raw", "-c"}},
 }
 
-// setupCLIFixture points every Bitbucket client at fixture and isolates
-// config, credentials, and cache from the developer's machine.
-func setupCLIFixture(t *testing.T, fixture *prtest.Fixture) {
+// setupCLIEnv isolates config, credentials, and cache from the developer's
+// machine and sets fake credentials.
+func setupCLIEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	t.Setenv("ATLAS_WORKSPACE", "")
 	t.Setenv("ATLAS_USERNAME", "cli-user")
 	t.Setenv("ATLAS_API_TOKEN", "cli-token")
-	original := http.DefaultTransport
-	t.Cleanup(func() { http.DefaultTransport = original })
-	http.DefaultTransport = fixture
+	t.Setenv("ATLAS_JIRA_TOKEN", "")
 }
 
-// runAtlas runs the root command in-process and returns what it wrote to stdout.
-func runAtlas(t *testing.T, args ...string) (string, error) {
+// runAtlas runs the root command in-process against fixture and returns what
+// it wrote to stdout.
+func runAtlas(t *testing.T, fixture http.RoundTripper, args ...string) (string, error) {
 	t.Helper()
-	file, err := os.CreateTemp(t.TempDir(), "stdout")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer file.Close()
-	original := os.Stdout
-	os.Stdout = file
-	root := NewRootCmd("test")
+	var stdout bytes.Buffer
+	root := NewRootCmd("test", WithHTTPClient(&http.Client{Transport: fixture}))
 	root.PersistentPreRun = nil
 	root.SilenceUsage = true
 	root.SilenceErrors = true
+	root.SetOut(&stdout)
 	root.SetArgs(args)
-	runErr := root.Execute()
-	os.Stdout = original
-	if _, err := file.Seek(0, io.SeekStart); err != nil {
-		t.Fatal(err)
-	}
-	data, err := io.ReadAll(file)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(data), runErr
+	err := root.Execute()
+	return stdout.String(), err
 }
 
 func TestPRViewMatchesGolden(t *testing.T) {
 	updated := map[string]string{}
 	for _, tc := range prViewGoldenCases {
 		t.Run(tc.name, func(t *testing.T) {
-			setupCLIFixture(t, prtest.New())
-			got, err := runAtlas(t, append([]string{"--no-cache", "pr"}, tc.args...)...)
+			setupCLIEnv(t)
+			got, err := runAtlas(t, prtest.New(), append([]string{"--no-cache", "pr"}, tc.args...)...)
 			if err != nil {
 				t.Fatalf("atlas pr %v: %v", tc.args, err)
 			}
@@ -105,9 +91,9 @@ func TestPRViewURLNeedsNoGitAndKeepsItsRepository(t *testing.T) {
 		{"pr", "view", prtest.URL, "-R", "other/elsewhere", "--raw", "-c"},
 	} {
 		fixture := prtest.New()
-		setupCLIFixture(t, fixture)
+		setupCLIEnv(t)
 		t.Chdir(t.TempDir())
-		got, err := runAtlas(t, append([]string{"--no-cache"}, args...)...)
+		got, err := runAtlas(t, fixture, append([]string{"--no-cache"}, args...)...)
 		if err != nil {
 			t.Fatalf("atlas %v: %v", args, err)
 		}

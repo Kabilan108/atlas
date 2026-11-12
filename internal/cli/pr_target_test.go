@@ -15,9 +15,14 @@ import (
 const otherPRURL = "https://bitbucket.org/ws/other/pull-requests/5"
 const otherPRPath = "/2.0/repositories/ws/other/pullrequests/5"
 
-// installOtherRepoTransport serves only ws/other#5 and fails any request for
-// another repository, recording each request as "METHOD path".
-func installOtherRepoTransport(t *testing.T) *[]string {
+// otherRepoFixture serves only ws/other#5 and fails any request for another
+// repository, recording each request as "METHOD path".
+type otherRepoFixture struct {
+	transport http.RoundTripper
+	requests  []string
+}
+
+func newOtherRepoFixture(t *testing.T) *otherRepoFixture {
 	t.Helper()
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
@@ -25,17 +30,15 @@ func installOtherRepoTransport(t *testing.T) *[]string {
 	t.Setenv("ATLAS_API_TOKEN", "test")
 	t.Setenv("ATLAS_WORKSPACE", "")
 	t.Setenv("EDITOR", "/atlas-test-editor-must-not-run")
-	originalTransport := http.DefaultTransport
-	t.Cleanup(func() { http.DefaultTransport = originalTransport })
 
 	pr := map[string]any{
 		"id": 5, "title": "Other PR", "description": "body", "state": "OPEN",
 		"source":      map[string]any{"branch": map[string]string{"name": "feature"}},
 		"destination": map[string]any{"branch": map[string]string{"name": "main"}},
 	}
-	var requests []string
-	http.DefaultTransport = prTestTransport(func(r *http.Request) (*http.Response, error) {
-		requests = append(requests, r.Method+" "+r.URL.Path)
+	fixture := &otherRepoFixture{}
+	fixture.transport = prTestTransport(func(r *http.Request) (*http.Response, error) {
+		fixture.requests = append(fixture.requests, r.Method+" "+r.URL.Path)
 		if r.URL.Host != "api.bitbucket.org" {
 			return nil, fmt.Errorf("unexpected host %s", r.URL.Host)
 		}
@@ -65,10 +68,10 @@ func installOtherRepoTransport(t *testing.T) *[]string {
 		}
 		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(string(body)))}, err
 	})
-	return &requests
+	return fixture
 }
 
-func runPRCommand(t *testing.T, args ...string) error {
+func (f *otherRepoFixture) run(t *testing.T, args ...string) error {
 	t.Helper()
 	file, err := os.CreateTemp(t.TempDir(), "stdout")
 	if err != nil {
@@ -77,10 +80,11 @@ func runPRCommand(t *testing.T, args ...string) error {
 	original := os.Stdout
 	os.Stdout = file
 	defer func() { os.Stdout = original; file.Close() }()
-	root := NewRootCmd("test")
+	root := NewRootCmd("test", WithHTTPClient(&http.Client{Transport: f.transport}))
 	root.PersistentPreRun = nil
 	root.SilenceUsage = true
 	root.SilenceErrors = true
+	root.SetOut(io.Discard)
 	root.SetArgs(append([]string{"pr"}, args...))
 	return root.Execute()
 }
@@ -137,14 +141,14 @@ func TestPRURLSelectorTargetsURLRepository(t *testing.T) {
 		{name: "explicit -R repo", extra: []string{"-R", "ws/repo"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			requests := installOtherRepoTransport(t)
+			fixture := newOtherRepoFixture(t)
 			initGitRepoWithOrigin(t, "git@bitbucket.org:ws/repo.git")
 			for _, args := range prURLTargetCommands(t) {
-				if err := runPRCommand(t, append(args, tc.extra...)...); err != nil {
+				if err := fixture.run(t, append(args, tc.extra...)...); err != nil {
 					t.Fatalf("%v: %v", args, err)
 				}
 			}
-			assertRequests(t, *requests,
+			assertRequests(t, fixture.requests,
 				"POST "+otherPRPath+"/approve",
 				"POST "+otherPRPath+"/request-changes",
 				"DELETE "+otherPRPath+"/approve",
@@ -160,27 +164,27 @@ func TestPRURLSelectorTargetsURLRepository(t *testing.T) {
 }
 
 func TestPRURLSelectorWorksOutsideGitRepository(t *testing.T) {
-	requests := installOtherRepoTransport(t)
+	fixture := newOtherRepoFixture(t)
 	t.Chdir(t.TempDir())
 	for _, args := range prURLTargetCommands(t) {
-		if err := runPRCommand(t, args...); err != nil {
+		if err := fixture.run(t, args...); err != nil {
 			t.Fatalf("%v: %v", args, err)
 		}
 	}
-	assertRequests(t, *requests, "POST "+otherPRPath+"/approve", "POST "+otherPRPath+"/comments")
-	if err := runPRCommand(t, "approve", "5"); err == nil || !strings.Contains(err.Error(), "could not infer repository") {
+	assertRequests(t, fixture.requests, "POST "+otherPRPath+"/approve", "POST "+otherPRPath+"/comments")
+	if err := fixture.run(t, "approve", "5"); err == nil || !strings.Contains(err.Error(), "could not infer repository") {
 		t.Fatalf("number selector outside a git repo: err = %v", err)
 	}
 }
 
 func TestPRCheckoutRefusesURLFromAnotherRepository(t *testing.T) {
-	requests := installOtherRepoTransport(t)
+	fixture := newOtherRepoFixture(t)
 	initGitRepoWithOrigin(t, "git@bitbucket.org:ws/repo.git")
-	err := runPRCommand(t, "checkout", otherPRURL)
+	err := fixture.run(t, "checkout", otherPRURL)
 	if err == nil || !strings.Contains(err.Error(), "not a checkout of it") {
 		t.Fatalf("checkout of a foreign PR URL: err = %v", err)
 	}
-	assertRequests(t, *requests, "GET "+otherPRPath)
+	assertRequests(t, fixture.requests, "GET "+otherPRPath)
 }
 
 func TestLocalCheckoutMatches(t *testing.T) {

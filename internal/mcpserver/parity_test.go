@@ -35,18 +35,16 @@ func TestPRViewParityWithCLI(t *testing.T) {
 
 			cliFixture := prtest.New()
 			t.Setenv("HOME", t.TempDir())
+			t.Setenv("XDG_CACHE_HOME", t.TempDir())
 			t.Setenv("ATLAS_WORKSPACE", "")
 			t.Setenv("ATLAS_USERNAME", "cli-user")
 			t.Setenv("ATLAS_API_TOKEN", "cli-token")
-			original := http.DefaultTransport
-			http.DefaultTransport = cliFixture
-			t.Cleanup(func() { http.DefaultTransport = original })
 			args := append([]string{"--no-cache", "pr", "view"}, tc.cli...)
 			if tc.name != "url" {
 				args = append(args, "-R", "acme/widgets")
 			}
 			var stdout bytes.Buffer
-			root := cli.NewRootCmd("test")
+			root := cli.NewRootCmd("test", cli.WithHTTPClient(&http.Client{Transport: cliFixture}))
 			root.PersistentPreRun = nil
 			root.SetOut(&stdout)
 			root.SetArgs(append(args, "--raw"))
