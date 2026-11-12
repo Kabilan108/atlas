@@ -132,7 +132,7 @@ func newPipelineRunCmd() *cobra.Command {
 			}
 			switch {
 			case !receipt.Finished:
-				return fmt.Errorf("pipeline #%d is still %s; it keeps running", receipt.BuildNumber, receipt.Status)
+				return pending(fmt.Errorf("pipeline #%d is still %s; it keeps running", receipt.BuildNumber, receipt.Status))
 			case receipt.Status != "SUCCESSFUL":
 				return fmt.Errorf("pipeline #%d finished with %s", receipt.BuildNumber, receipt.Status)
 			}

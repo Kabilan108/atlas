@@ -45,7 +45,9 @@ func optionsFrom(cmd *cobra.Command) *rootOptions {
 }
 
 // wrapRunE gives every command's RunE the root options through its context,
-// whichever Execute variant runs the tree, and adds CLI hints to its errors.
+// whichever Execute variant runs the tree, adds CLI hints to its errors, and
+// marks them as raised by the command, which ExitCode tells from cobra's
+// command-line errors.
 func wrapRunE(cmd *cobra.Command, options *rootOptions) {
 	if run := cmd.RunE; run != nil {
 		cmd.RunE = func(cmd *cobra.Command, args []string) error {
@@ -54,11 +56,28 @@ func wrapRunE(cmd *cobra.Command, options *rootOptions) {
 				ctx = context.Background()
 			}
 			cmd.SetContext(context.WithValue(ctx, rootOptionsKey{}, options))
-			return withCLIHint(run(cmd, args))
+			if err := withCLIHint(run(cmd, args)); err != nil {
+				return &ranError{err: err}
+			}
+			return nil
 		}
 	}
 	for _, child := range cmd.Commands() {
 		wrapRunE(child, options)
+	}
+}
+
+// rejectUnknownSubcommands makes `atlas pr bogus` a usage error. Cobra
+// answers an unknown subcommand of a group that cannot run itself with
+// help and success; a group that prints its help as its own run rejects
+// arguments instead. The root already rejects unknown commands.
+func rejectUnknownSubcommands(cmd *cobra.Command) {
+	if cmd.HasParent() && cmd.HasSubCommands() && cmd.Run == nil && cmd.RunE == nil {
+		cmd.Args = cobra.NoArgs
+		cmd.RunE = func(cmd *cobra.Command, _ []string) error { return cmd.Help() }
+	}
+	for _, child := range cmd.Commands() {
+		rejectUnknownSubcommands(child)
 	}
 }
 
@@ -70,7 +89,7 @@ func NewRootCmd(version string, opts ...Option) *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:     "atlas",
 		Short:   "CLI tool for interacting with Bitbucket Cloud",
-		Long:    "Atlas enables fetching PR comments and review feedback from Bitbucket Cloud\nin a format optimized for Claude Code agents to address reviewer comments directly.",
+		Long:    "Atlas enables fetching PR comments and review feedback from Bitbucket Cloud\nin a format optimized for Claude Code agents to address reviewer comments directly.\n\n" + exitCodesHelp,
 		Version: version,
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 			maybePrintUpdateNudge(cmd, version)
@@ -95,13 +114,16 @@ func NewRootCmd(version string, opts ...Option) *cobra.Command {
 	rootCmd.AddCommand(newUserCmd())
 	rootCmd.AddCommand(newWhoamiCmd())
 	rootCmd.AddCommand(newJiraCmd())
+	rejectUnknownSubcommands(rootCmd)
 	wrapRunE(rootCmd, options)
 
 	return rootCmd
 }
 
-func Execute(version string) error {
-	return NewRootCmd(version).Execute()
+// Execute runs the command line and returns the process exit code. Any
+// output a partial result produced is already written.
+func Execute(version string) int {
+	return ExitCode(NewRootCmd(version).Execute())
 }
 
 func maybePrintUpdateNudge(cmd *cobra.Command, version string) {

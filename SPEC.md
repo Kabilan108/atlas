@@ -118,10 +118,21 @@ PR commands accept branch names in addition to numeric IDs:
 
 ### Exit Codes
 
-POSIX-style exit codes:
-- 0: Success
-- 1: General error
-- Standard errno-like codes for specific failures (ENOENT for not found, EACCES for auth, etc.)
+One code per error kind, mapped once at the CLI boundary (`internal/cli/exit.go`) and listed in `atlas --help`:
+
+| Code | Meaning |
+|---|---|
+| 0 | Success |
+| 1 | Other error, including Bitbucket or Jira server errors (5xx) and failed checks |
+| 2 | Usage: unknown command or flag, wrong arguments, invalid input, or a 4xx the API rejected the request with |
+| 3 | Authentication: missing or rejected credentials (401), or a missing scope or access (403) |
+| 4 | Not found (404, or a branch that does not exist) |
+| 5 | Conflict (409), such as a merge conflict |
+| 6 | Rate limited (429) |
+| 7 | Partial: output was printed, but some entries of a batch failed |
+| 8 | Timeout, or still pending: a merge, pipeline run, or checks still running when atlas stopped waiting |
+
+A partial result prints its output before exiting 7.
 
 ### Non-Interactive Mode
 

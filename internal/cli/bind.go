@@ -58,7 +58,7 @@ func bind[In, Out any](cmd *cobra.Command, b binding[In, Out]) *cobra.Command {
 		}
 		in, err := b.input(cmd, args, env)
 		if err != nil {
-			return err
+			return &usageError{err: err}
 		}
 		if b.intercept != nil {
 			if handled, err := b.intercept(cmd, env, in); handled || err != nil {

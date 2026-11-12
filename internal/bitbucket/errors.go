@@ -14,14 +14,6 @@ var (
 	ErrServerError  = errors.New("server error")
 )
 
-const (
-	ExitSuccess       = 0
-	ExitGeneralError  = 1
-	ExitAuthError     = 4
-	ExitNotFoundError = 5
-	ExitRateLimited   = 6
-)
-
 // APIError is a failed Bitbucket API call. Hint is neutral advice that holds
 // for any front end; the CLI and the MCP server add their own.
 type APIError struct {
@@ -59,19 +51,6 @@ func (e *APIError) Unwrap() error {
 			return ErrServerError
 		}
 		return nil
-	}
-}
-
-func (e *APIError) ExitCode() int {
-	switch e.StatusCode {
-	case 401, 403:
-		return ExitAuthError
-	case 404:
-		return ExitNotFoundError
-	case 429:
-		return ExitRateLimited
-	default:
-		return ExitGeneralError
 	}
 }
 
@@ -121,15 +100,4 @@ func NewServerError(statusCode int, message string) *APIError {
 		Resource:   "server",
 		Hint:       "This is a Bitbucket server error. Try again later",
 	}
-}
-
-func ExitCodeFromError(err error) int {
-	var apiErr *APIError
-	if errors.As(err, &apiErr) {
-		return apiErr.ExitCode()
-	}
-	if err != nil {
-		return ExitGeneralError
-	}
-	return ExitSuccess
 }

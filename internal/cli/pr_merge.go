@@ -27,7 +27,7 @@ func newPRMergeCmd() *cobra.Command {
 		input: prMergeInput,
 		after: func(_ *cobra.Command, receipt *pr.MergeReceipt) error {
 			if receipt.State == pr.MergePending {
-				return fmt.Errorf("merge of PR #%d is still running; check 'atlas pr view %d' before retrying", receipt.PR, receipt.PR)
+				return pending(fmt.Errorf("merge of PR #%d is still running; check 'atlas pr view %d' before retrying", receipt.PR, receipt.PR))
 			}
 			return nil
 		},

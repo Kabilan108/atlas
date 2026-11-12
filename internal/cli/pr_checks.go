@@ -50,7 +50,7 @@ func failOnChecks(_ *cobra.Command, result *pr.ChecksResult) error {
 		}
 		return fmt.Errorf("checks failed: %s", strings.Join(names, ", "))
 	case pr.ChecksPending:
-		return fmt.Errorf("checks are still running")
+		return pending(fmt.Errorf("checks are still running"))
 	}
 	return nil
 }
