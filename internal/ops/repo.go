@@ -12,7 +12,7 @@ const AllRepos = "*"
 // RepoRef is the input that names a Bitbucket repository. Every Bitbucket op
 // embeds it.
 type RepoRef struct {
-	Repo string `json:"repo,omitempty" jsonschema:"workspace/repo, or a repo in the default workspace"`
+	Repo string `json:"repo,omitempty" jsonschema:"workspace/repo or bare repo name (default workspace)"`
 }
 
 // Repository is a validated workspace and repository slug. An empty Repo

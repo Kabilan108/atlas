@@ -170,3 +170,36 @@ func TestEnumsWithStringMethodsValidateByValue(t *testing.T) {
 }
 
 func ptr[T any](v T) *T { return &v }
+
+type describedRef struct {
+	Repo string `json:"repo,omitempty" jsonschema:"plain"`
+	Name string `json:"name,omitempty" jsonschema:"name"`
+}
+
+func (describedRef) PropertyDescriptions() map[string]string {
+	return map[string]string{"repo": "from the embedded type", "name": "embedded name"}
+}
+
+type describedInput struct {
+	describedRef
+	Other string `json:"other,omitempty"`
+}
+
+func (describedInput) PropertyDescriptions() map[string]string {
+	return map[string]string{"name": "from the outer type", "missing": "ignored"}
+}
+
+func TestInputSchemaPropertyDescriptions(t *testing.T) {
+	schema, err := ops.InputSchema(reflect.TypeFor[describedInput]())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for name, property := range schema.Properties {
+		got[name] = property.Description
+	}
+	want := map[string]string{"repo": "from the embedded type", "name": "from the outer type", "other": ""}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("descriptions = %v, want %v", got, want)
+	}
+}

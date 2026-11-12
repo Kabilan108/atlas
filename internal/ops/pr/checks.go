@@ -17,12 +17,16 @@ import (
 // spells out Ref's fields rather than embedding Ref, whose pr is required.
 type ChecksInput struct {
 	ops.RepoRef
-	PR     string `json:"pr,omitempty" jsonschema:"PR number, source branch name, or Bitbucket PR URL (which needs no repo); this or commit is required"`
+	PR     string `json:"pr,omitempty" jsonschema:"PR number, source branch name, or Bitbucket PR URL; this or commit is required"`
 	Commit string `json:"commit,omitempty" jsonschema:"commit SHA to read instead of the PR head; with pr, flags a head mismatch"`
 
 	// CurrentBranch is used when PR and Commit are empty. Only the CLI sets
 	// it, from git.
 	CurrentBranch string `json:"-"`
+}
+
+func (ChecksInput) PropertyDescriptions() map[string]string {
+	return map[string]string{"repo": prRepoDescription}
 }
 
 func (in ChecksInput) ref() Ref {

@@ -19,6 +19,16 @@ type Enum interface {
 
 var enumType = reflect.TypeFor[Enum]()
 
+// PropertyDescriber is implemented by input types, usually embedded ones,
+// that word a promoted property differently from the type that declares
+// it: pr.Ref says when the repo it embeds is required. The shallowest type
+// that describes a property wins.
+type PropertyDescriber interface {
+	PropertyDescriptions() map[string]string
+}
+
+var describerType = reflect.TypeFor[PropertyDescriber]()
+
 // InputSchema is the JSON schema MCP clients see for an op input type. It is
 // jsonschema-go's schema with three changes that keep tools/list lean and
 // accurate: Enum types list their values; a nullable ["null", T] becomes T,
@@ -35,7 +45,40 @@ func InputSchema(t reflect.Type) (*jsonschema.Schema, error) {
 		return nil, err
 	}
 	normalize(schema, true)
+	describeProperties(t, schema)
 	return schema, nil
+}
+
+// describeProperties applies the PropertyDescriber overrides of t and the
+// structs it embeds to the top level of schema, deepest first.
+func describeProperties(t reflect.Type, schema *jsonschema.Schema) {
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	if t.Kind() != reflect.Struct {
+		return
+	}
+	type override struct {
+		depth int
+		names map[string]string
+	}
+	var overrides []override
+	if t.Implements(describerType) {
+		overrides = append(overrides, override{0, reflect.Zero(t).Interface().(PropertyDescriber).PropertyDescriptions()})
+	}
+	for _, field := range reflect.VisibleFields(t) {
+		if field.Anonymous && field.Type.Kind() == reflect.Struct && field.Type.Implements(describerType) {
+			overrides = append(overrides, override{len(field.Index), reflect.Zero(field.Type).Interface().(PropertyDescriber).PropertyDescriptions()})
+		}
+	}
+	slices.SortStableFunc(overrides, func(a, b override) int { return b.depth - a.depth })
+	for _, o := range overrides {
+		for name, description := range o.names {
+			if property := schema.Properties[name]; property != nil {
+				property.Description = description
+			}
+		}
+	}
 }
 
 func collectEnums(t reflect.Type, enums map[reflect.Type]*jsonschema.Schema, seen map[reflect.Type]bool) error {
