@@ -59,10 +59,11 @@ func create(ctx context.Context, env ops.Env, in CreateInput) (*Created, error) 
 	if err != nil {
 		return nil, err
 	}
-	metas, err := client.CreateMetaFields(ctx, project, issueType.ID)
+	metas, truncated, err := client.CreateMetaFields(ctx, project, issueType.ID, MaxCreateMetaFields)
 	if err != nil {
 		return nil, fmt.Errorf("fetch create fields for %s %s: %w", project, issueType.Name, err)
 	}
+	createScreen := screen{metas: metas, truncated: truncated}
 	fields := map[string]any{
 		"project":   map[string]any{"key": project},
 		"issuetype": map[string]any{"id": issueType.ID},
@@ -74,8 +75,11 @@ func create(ctx context.Context, env ops.Env, in CreateInput) (*Created, error) 
 		}
 	}
 	if in.Priority != "" {
-		meta, err := jiraapi.ResolveField(metas, "priority")
-		if err != nil {
+		meta, err := createScreen.resolve("priority")
+		switch {
+		case err != nil && truncated:
+			return nil, err
+		case err != nil:
 			return nil, ops.Errorf(ops.Invalid, "priority is not on the %s %s create screen", project, issueType.Name)
 		}
 		if fields["priority"], err = jiraapi.ShapeFieldValue(meta, in.Priority); err != nil {
@@ -100,7 +104,7 @@ func create(ctx context.Context, env ops.Env, in CreateInput) (*Created, error) 
 	if len(in.Labels) > 0 {
 		fields["labels"] = in.Labels
 	}
-	if err := shapeFields(ctx, client, metas, in.Fields, fields, scope); err != nil {
+	if err := shapeFields(ctx, client, createScreen, in.Fields, fields, scope); err != nil {
 		return nil, err
 	}
 	site, err := siteURL(ctx, client)
@@ -115,14 +119,16 @@ func create(ctx context.Context, env ops.Env, in CreateInput) (*Created, error) 
 }
 
 func createIssueType(ctx context.Context, client *jiraapi.Client, project, name string) (jiraapi.CreateMetaIssueType, error) {
-	types, err := client.CreateMetaIssueTypes(ctx, project)
+	types, truncated, err := client.CreateMetaIssueTypes(ctx, project, MaxIssueTypes)
 	if err != nil {
 		return jiraapi.CreateMetaIssueType{}, fmt.Errorf("fetch issue types for %s: %w", project, err)
 	}
-	return resolveIssueType(types, name)
+	return resolveIssueType(types, truncated, name)
 }
 
-func resolveIssueType(types []jiraapi.CreateMetaIssueType, name string) (jiraapi.CreateMetaIssueType, error) {
+// resolveIssueType finds name among types; truncated says the project has
+// more types than were listed.
+func resolveIssueType(types []jiraapi.CreateMetaIssueType, truncated bool, name string) (jiraapi.CreateMetaIssueType, error) {
 	name = strings.TrimSpace(name)
 	valid := make([]string, len(types))
 	for i, t := range types {
@@ -138,6 +144,11 @@ func resolveIssueType(types []jiraapi.CreateMetaIssueType, name string) (jiraapi
 				return t, nil
 			}
 		}
+	}
+	if truncated {
+		return jiraapi.CreateMetaIssueType{}, ops.Errorf(ops.Invalid,
+			"issue type %q is not among the first %d issue types Jira listed, and Jira has more; atlas reads no further, so it can't use this type",
+			name, len(types))
 	}
 	slices.Sort(valid)
 	return jiraapi.CreateMetaIssueType{}, ops.Errorf(ops.Invalid, "%w", &jiraapi.ResolveError{Kind: "issue type", Name: name, Candidates: valid})

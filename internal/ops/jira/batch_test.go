@@ -19,17 +19,26 @@ import (
 func worklogFake() *jiratest.Fake {
 	fake := jiratest.New()
 	fake.JSON("GET /rest/api/3/myself", http.StatusOK, `{"accountId":"acc-me","active":true}`)
-	fake.JSON("GET /rest/api/3/issue/CSM-756/worklog", http.StatusOK, `{"startAt":0,"maxResults":1000,"total":2,"worklogs":[
-		{"id":"900","author":{"accountId":"acc-me"},"started":"2026-11-11T09:30:00.000-0500","timeSpentSeconds":5400},
-		{"id":"901","author":{"accountId":"acc-other"},"started":"2026-11-11T11:00:00.000-0500","timeSpentSeconds":1800}]}`)
-	next := 1000
-	fake.Handle("POST /rest/api/3/issue/CSM-756/worklog", func(w http.ResponseWriter, r *http.Request) {
-		next++
-		jiratest.Write(w, http.StatusCreated, fmt.Sprintf(`{"id":"%d"}`, next))
-	})
-	fake.JSON("GET /rest/api/3/issue/CSM-1/worklog", http.StatusOK, `{"startAt":0,"total":0,"worklogs":[]}`)
-	fake.JSON("POST /rest/api/3/issue/CSM-1/worklog", http.StatusForbidden, `{"errorMessages":["You do not have permission to log work."]}`)
+	logs := fake.IssueWorklogs("30756", "CSM-756", "acc-me")
+	logs.Add("acc-me", "2026-11-11T09:30:00.000-0500", 5400)
+	logs.Add("acc-other", "2026-11-11T11:00:00.000-0500", 1800)
+	fake.IssueWorklogs("30001", "CSM-1", "acc-me")
+	for _, ref := range []string{"CSM-1", "30001"} {
+		fake.JSON("POST /rest/api/3/issue/"+ref+"/worklog", http.StatusForbidden, `{"errorMessages":["You do not have permission to log work."]}`)
+	}
 	return fake
+}
+
+// worklogRequests returns the worklog requests with method, under an
+// issue's key or ID.
+func worklogRequests(fake *jiratest.Fake, method string) []jiratest.Request {
+	var out []jiratest.Request
+	for _, r := range fake.Requests() {
+		if r.Method == method && strings.HasSuffix(r.Path, "/worklog") {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 func TestWorklogAddSkipsWhatYouLogged(t *testing.T) {
@@ -44,13 +53,13 @@ func TestWorklogAddSkipsWhatYouLogged(t *testing.T) {
 	}
 	want := `{"results":[` +
 		`{"index":0,"status":"skipped","issue":"CSM-756","started":"2026-11-11T14:30:00.000+0000","duration":"1h 30m","worklog_id":"900"},` +
-		`{"index":1,"status":"ok","issue":"CSM-756","started":"2026-11-11T11:00:00.000-0500","duration":"30m","worklog_id":"1001"},` +
-		`{"index":2,"status":"skipped","issue":"CSM-756","started":"2026-11-11T11:00:00.000-0500","duration":"30m","worklog_id":"1001"},` +
-		`{"index":3,"status":"ok","issue":"CSM-756","started":"2026-11-11T13:00:00.000-0500","duration":"1h 30m","worklog_id":"1002"}]}`
+		`{"index":1,"status":"ok","issue":"CSM-756","started":"2026-11-11T11:00:00.000-0500","duration":"30m","worklog_id":"902"},` +
+		`{"index":2,"status":"skipped","issue":"CSM-756","started":"2026-11-11T11:00:00.000-0500","duration":"30m","worklog_id":"902"},` +
+		`{"index":3,"status":"ok","issue":"CSM-756","started":"2026-11-11T13:00:00.000-0500","duration":"1h 30m","worklog_id":"903"}]}`
 	if res.Text != want {
 		t.Errorf("results =\n%s\nwant\n%s", res.Text, want)
 	}
-	posts := fake.Find("POST /rest/api/3/issue/CSM-756/worklog")
+	posts := worklogRequests(fake, "POST")
 	if len(posts) != 2 {
 		t.Fatalf("posted %d worklogs", len(posts))
 	}
@@ -58,12 +67,11 @@ func TestWorklogAddSkipsWhatYouLogged(t *testing.T) {
 	if first["started"] != "2026-11-11T11:00:00.000-0500" || first["timeSpentSeconds"] != float64(1800) || !strings.Contains(jsonOf(t, first["comment"]), "pairing") {
 		t.Errorf("worklog body = %s", jsonOf(t, first))
 	}
-	if len(fake.Find("GET /rest/api/3/issue/CSM-756/worklog")) != 1 {
-		t.Error("listed existing worklogs more than once")
-	}
-	q, _ := url.ParseQuery(fake.Find("GET /rest/api/3/issue/CSM-756/worklog")[0].Query)
-	if q.Get("startedAfter") == "" || q.Get("startedBefore") == "" {
-		t.Errorf("existing worklogs not narrowed to the batch's range: %v", q)
+	for _, get := range worklogRequests(fake, "GET") {
+		q, _ := url.ParseQuery(get.Query)
+		if q.Get("startedAfter") == "" || q.Get("startedBefore") == "" {
+			t.Errorf("existing worklogs not narrowed to the entry's start: %v", q)
+		}
 	}
 }
 
@@ -83,11 +91,13 @@ func TestWorklogAddPartial(t *testing.T) {
 
 func TestWorklogAddFailsEntriesItCannotCheck(t *testing.T) {
 	fake := worklogFake()
-	fake.JSON("GET /rest/api/3/issue/CSM-756/worklog", http.StatusInternalServerError, `{"errorMessages":["boom"]}`)
+	for _, ref := range []string{"CSM-756", "30756"} {
+		fake.JSON("GET /rest/api/3/issue/"+ref+"/worklog", http.StatusInternalServerError, `{"errorMessages":["boom"]}`)
+	}
 	res, err := invoke(t, fake, WorklogAdd, `{"entries":[{"issue":"CSM-756","started":"2026-11-11T09:00:00-05:00","duration":"1h"}]}`)
 	wantKind(t, err, ops.Partial)
 	wantContains(t, res.Text, "could not check for an existing worklog")
-	if len(fake.Find("POST /rest/api/3/issue/CSM-756/worklog")) != 0 {
+	if len(worklogRequests(fake, "POST")) != 0 {
 		t.Error("logged work it could not check for duplicates")
 	}
 }

@@ -256,3 +256,92 @@ func TestSearchNoResults(t *testing.T) {
 		t.Errorf("text = %q", res.Text)
 	}
 }
+
+const simpleDescription = `{"type":"doc","version":1,"content":[{"type":"paragraph","content":[{"type":"text","text":"old"}]}]}`
+
+// richEditFake's issue has a lossy description and environment and a
+// plain-text Steps (textarea) field; editmeta offers all three.
+func richEditFake(description string) *jiratest.Fake {
+	fake := jiratest.New()
+	fake.JSON("GET /rest/api/3/issue/CSM-756", http.StatusOK, `{"id":"1","key":"CSM-756","fields":{"description":`+description+
+		`,"environment":`+richDescription+`,"customfield_10600":`+simpleDescription+`}}`)
+	fake.JSON("PUT /rest/api/3/issue/CSM-756", http.StatusNoContent, ``)
+	fake.JSON("GET /rest/api/3/issue/CSM-756/editmeta", http.StatusOK, `{"fields":{
+		"description":{"name":"Description","schema":{"type":"string","system":"description"}},
+		"environment":{"name":"Environment","schema":{"type":"string","system":"environment"}},
+		"customfield_10600":{"name":"Steps","schema":{"type":"string","custom":"com.atlassian.jira.plugin.system.customfieldtypes:textarea"}},
+		"customfield_10469":{"name":"Software Version","schema":{"type":"string"}}}}`)
+	return fake
+}
+
+// Rich-text fields given in fields get the same protection as body: no
+// replacing content markdown can't hold, no clearing, without force.
+func TestEditRichTextFieldsAreGuarded(t *testing.T) {
+	refused := []struct {
+		name, description, args string
+		want                    []string
+	}{
+		{"description by name", richDescription, `{"issue":"CSM-756","fields":{"Description":"new"}}`,
+			[]string{"Description has content markdown can't hold", "media x1", "body_mode append", "force"}},
+		{"description as ADF", richDescription, `{"issue":"CSM-756","fields":{"description":{"type":"doc","version":1,"content":[]}}}`,
+			[]string{"Description has content markdown can't hold"}},
+		{"environment", simpleDescription, `{"issue":"CSM-756","fields":{"Environment":"linux"}}`,
+			[]string{"Environment has content markdown can't hold", "force"}},
+		{"clear description", simpleDescription, `{"issue":"CSM-756","fields":{"Description":null}}`,
+			[]string{"clearing Description", "force"}},
+		{"empty description", simpleDescription, `{"issue":"CSM-756","fields":{"Description":""}}`,
+			[]string{"Description is empty"}},
+		{"huge textarea", simpleDescription, `{"issue":"CSM-756","force":true,"fields":{"Steps":"` + strings.Repeat("x", MaxBodyBytes+1) + `"}}`,
+			[]string{"Steps is 131073 bytes, over the 131072-byte limit"}},
+		{"huge ADF", simpleDescription, `{"issue":"CSM-756","force":true,"fields":{"Steps":{"type":"doc","version":1,"content":[{"type":"paragraph","content":[{"type":"text","text":"` +
+			strings.Repeat("x", MaxBodyBytes) + `"}]}]}}}`, []string{"Steps is", "over the 131072-byte limit"}},
+		{"force without rich text", simpleDescription, `{"issue":"CSM-756","force":true,"fields":{"Software Version":"2"}}`,
+			[]string{"force applies only with body or a rich-text field"}},
+	}
+	for _, tc := range refused {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := richEditFake(tc.description)
+			_, err := invoke(t, fake, Edit, tc.args)
+			wantKind(t, err, ops.Invalid, tc.want...)
+			noWrites(t, fake)
+		})
+	}
+
+	allowed := []struct {
+		name, description, args, field, want string
+	}{
+		{"replace simple description", simpleDescription, `{"issue":"CSM-756","fields":{"Description":"new **text**"}}`, "description", `"text":"new "`},
+		{"force replaces lossy", richDescription, `{"issue":"CSM-756","force":true,"fields":{"Description":"new"}}`, "description", `"text":"new"`},
+		{"force clears", richDescription, `{"issue":"CSM-756","force":true,"fields":{"Description":null}}`, "description", `null`},
+		{"replace simple textarea", richDescription, `{"issue":"CSM-756","fields":{"Steps":"1. go"}}`, "customfield_10600", `"type":"orderedList"`},
+	}
+	for _, tc := range allowed {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := richEditFake(tc.description)
+			mustInvoke(t, fake, Edit, tc.args)
+			fields := body(t, fake.Find("PUT /rest/api/3/issue/CSM-756")[0])["fields"].(map[string]any)
+			value, ok := fields[tc.field]
+			if !ok {
+				t.Fatalf("PUT did not set %s: %s", tc.field, jsonOf(t, fields))
+			}
+			wantContains(t, jsonOf(t, value), tc.want)
+		})
+	}
+}
+
+func TestCreateCapsRichTextFields(t *testing.T) {
+	huge := strings.Repeat("x", MaxBodyBytes+1)
+	for _, args := range []string{
+		`{"project":"CSM","type":"Bug","summary":"x","fields":{"Description":"` + huge + `"}}`,
+		`{"project":"CSM","type":"Bug","summary":"x","body":"` + huge + `"}`,
+	} {
+		fake := createFake()
+		_, err := invoke(t, fake, Create, args)
+		wantKind(t, err, ops.Invalid, "131073 bytes, over the 131072-byte limit")
+		noWrites(t, fake)
+	}
+	fake := createFake()
+	mustInvoke(t, fake, Create, `{"project":"CSM","type":"Bug","summary":"x","fields":{"Description":"## Steps"}}`)
+	fields := body(t, fake.Find("POST /rest/api/3/issue")[0])["fields"].(map[string]any)
+	wantContains(t, jsonOf(t, fields["description"]), `"type":"heading"`)
+}

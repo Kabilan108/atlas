@@ -240,7 +240,7 @@ func shapeScalar(field FieldMeta, kind string, value any) (any, error) {
 		if !ok {
 			return value, nil
 		}
-		if field.Schema.Type == "string" && isRichText(field.Schema) {
+		if field.Schema.Type == "string" && IsRichText(field.Schema) {
 			doc, err := adf.FromMarkdown(text)
 			if err != nil {
 				return nil, fieldErr(field, err)
@@ -252,7 +252,9 @@ func shapeScalar(field FieldMeta, kind string, value any) (any, error) {
 	return value, nil
 }
 
-func isRichText(s FieldSchema) bool {
+// IsRichText says a field holds an ADF document in API v3: description,
+// environment, and multi-line text (textarea) custom fields.
+func IsRichText(s FieldSchema) bool {
 	switch s.System {
 	case "description", "environment":
 		return true

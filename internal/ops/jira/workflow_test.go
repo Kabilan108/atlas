@@ -1,10 +1,13 @@
 package jira
 
 import (
+	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
 
+	jiraapi "github.com/kabilan108/atlas/internal/jira"
 	"github.com/kabilan108/atlas/internal/ops"
 	"github.com/kabilan108/atlas/internal/ops/jira/jiratest"
 )
@@ -140,42 +143,69 @@ func TestInternalCommentFailsUnlessJiraConfirmsInternal(t *testing.T) {
 	}
 }
 
-func linkFake(readback string) *jiratest.Fake {
+func linkFake() *jiratest.Fake {
 	fake := jiratest.New()
-	fake.JSON("GET /rest/api/3/issueLinkType", http.StatusOK, `{"issueLinkTypes":[
+	fake.Links(`{"issueLinkTypes":[
 		{"id":"10000","name":"Blocks","inward":"is blocked by","outward":"blocks"},
-		{"id":"10003","name":"2 Relates","inward":"relates to","outward":"relates to"}]}`)
-	fake.JSON("POST /rest/api/3/issueLink", http.StatusCreated, ``)
-	fake.JSON("GET /rest/api/3/issue/CSM-1", http.StatusOK, `{"key":"CSM-1","fields":{"issuelinks":[`+readback+`]}}`)
+		{"id":"10003","name":"2 Relates","inward":"relates to","outward":"relates to"}]}`, "CSM-1", "CSM-2")
 	return fake
 }
 
+// Jira's create body reads "inwardIssue <outward> outwardIssue": "CSM-1
+// blocks CSM-2" posts inwardIssue CSM-1 and outwardIssue CSM-2. The fake
+// derives each issue's links from what was posted.
 func TestLinkDirections(t *testing.T) {
-	fake := linkFake(`{"id":"9","type":{"id":"10000","name":"Blocks","inward":"is blocked by","outward":"blocks"},"outwardIssue":{"key":"CSM-2"}}`)
-	res := mustInvoke(t, fake, Link, `{"issue":"CSM-1","type":"blocks","target":"csm-2"}`)
-	if res.Text != `{"issue":"CSM-1","target":"CSM-2","type":"Blocks","link_id":"9","reads":"CSM-1 blocks CSM-2"}` {
-		t.Errorf("receipt = %s", res.Text)
+	tests := []struct {
+		name, args, body, reads, targetReads string
+	}{
+		{"blocks", `{"issue":"CSM-1","type":"blocks","target":"csm-2"}`,
+			`{"inwardIssue":{"key":"CSM-1"},"outwardIssue":{"key":"CSM-2"},"type":{"name":"Blocks"}}`,
+			"CSM-1 blocks CSM-2", "CSM-2 is blocked by CSM-1"},
+		{"is blocked by", `{"issue":"CSM-1","type":"Blocks","target":"CSM-2","direction":"inward"}`,
+			`{"inwardIssue":{"key":"CSM-2"},"outwardIssue":{"key":"CSM-1"},"type":{"name":"Blocks"}}`,
+			"CSM-1 is blocked by CSM-2", "CSM-2 blocks CSM-1"},
+		{"relates", `{"issue":"CSM-1","type":"relates","target":"CSM-2"}`,
+			`{"inwardIssue":{"key":"CSM-1"},"outwardIssue":{"key":"CSM-2"},"type":{"name":"2 Relates"}}`,
+			"CSM-1 relates to CSM-2", "CSM-2 relates to CSM-1"},
+		{"relates inward", `{"issue":"CSM-1","type":"Relates","target":"CSM-2","direction":"inward"}`,
+			`{"inwardIssue":{"key":"CSM-2"},"outwardIssue":{"key":"CSM-1"},"type":{"name":"2 Relates"}}`,
+			"CSM-1 relates to CSM-2", "CSM-2 relates to CSM-1"},
 	}
-	if got := jsonOf(t, body(t, fake.Find("POST /rest/api/3/issueLink")[0])); got != `{"inwardIssue":{"key":"CSM-2"},"outwardIssue":{"key":"CSM-1"},"type":{"name":"Blocks"}}` {
-		t.Errorf("outward body = %s", got)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := linkFake()
+			env := newEnv(t, fake)
+			res, err := Link.Invoke(context.Background(), env, json.RawMessage(tc.args))
+			if err != nil {
+				t.Fatalf("link: %v\nrequests: %v", err, fake.Routes())
+			}
+			wantContains(t, res.Text, `"link_id":"1"`, `"reads":"`+tc.reads+`"`)
+			if got := jsonOf(t, body(t, fake.Find("POST /rest/api/3/issueLink")[0])); got != tc.body {
+				t.Errorf("body = %s, want %s", got, tc.body)
+			}
+			client, _ := env.Jira(context.Background())
+			target, err := client.GetIssue(context.Background(), "CSM-2", jiraapi.GetIssueOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var reads []string
+			for _, l := range target.Fields.IssueLinks {
+				if l.OutwardIssue != nil {
+					reads = append(reads, "CSM-2 "+l.Type.Outward+" "+l.OutwardIssue.Key)
+				}
+				if l.InwardIssue != nil {
+					reads = append(reads, "CSM-2 "+l.Type.Inward+" "+l.InwardIssue.Key)
+				}
+			}
+			if strings.Join(reads, "; ") != tc.targetReads {
+				t.Errorf("CSM-2 shows %q, want %q", reads, tc.targetReads)
+			}
+		})
 	}
-
-	fake = linkFake(`{"id":"10","type":{"id":"10000","name":"Blocks","inward":"is blocked by","outward":"blocks"},"inwardIssue":{"key":"CSM-2"}}`)
-	res = mustInvoke(t, fake, Link, `{"issue":"CSM-1","type":"Blocks","target":"CSM-2","direction":"inward"}`)
-	wantContains(t, res.Text, `"reads":"CSM-1 is blocked by CSM-2"`)
-	if got := jsonOf(t, body(t, fake.Find("POST /rest/api/3/issueLink")[0])); got != `{"inwardIssue":{"key":"CSM-1"},"outwardIssue":{"key":"CSM-2"},"type":{"name":"Blocks"}}` {
-		t.Errorf("inward body = %s", got)
-	}
-}
-
-func TestLinkTypeIgnoresNumericPrefix(t *testing.T) {
-	fake := linkFake(`{"id":"11","type":{"id":"10003","name":"2 Relates","inward":"relates to","outward":"relates to"},"outwardIssue":{"key":"CSM-2"}}`)
-	res := mustInvoke(t, fake, Link, `{"issue":"CSM-1","type":"relates","target":"CSM-2"}`)
-	wantContains(t, res.Text, `"type":"2 Relates"`, `"reads":"CSM-1 relates to CSM-2"`)
 }
 
 func TestLinkErrors(t *testing.T) {
-	fake := linkFake(``)
+	fake := linkFake()
 	_, err := invoke(t, fake, Link, `{"issue":"CSM-1","type":"Duplicates","target":"CSM-2"}`)
 	wantKind(t, err, ops.Invalid, `no link type "Duplicates"`, "2 Relates, Blocks")
 	noWrites(t, fake)
@@ -184,7 +214,8 @@ func TestLinkErrors(t *testing.T) {
 	_, err = invoke(t, fake, Link, `{"issue":"CSM-1","type":"Blocks","target":"CSM-2","direction":"sideways"}`)
 	wantKind(t, err, ops.Invalid, "outward, inward")
 
-	fake = linkFake(`{"id":"9","type":{"id":"10000","name":"Blocks","inward":"is blocked by","outward":"blocks"},"inwardIssue":{"key":"CSM-2"}}`)
+	fake = linkFake()
+	fake.JSON("POST /rest/api/3/issueLink", http.StatusCreated, ``)
 	_, err = invoke(t, fake, Link, `{"issue":"CSM-1","type":"Blocks","target":"CSM-2"}`)
 	wantKind(t, err, ops.Upstream, `do not show "CSM-1 blocks CSM-2"`)
 }

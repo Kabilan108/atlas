@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -363,12 +364,12 @@ func newJiraWorklogCmd() *cobra.Command {
 
 func worklogAddInput(cmd *cobra.Command, args []string, _ *cliEnv) (jiraops.WorklogAddInput, error) {
 	if file, _ := cmd.Flags().GetString("entries-file"); file != "" {
-		data, err := readBodyFile(file)
+		data, err := readLimitedFile(cmd, file, maxEntriesFileBytes)
 		if err != nil {
 			return jiraops.WorklogAddInput{}, fmt.Errorf("read entries: %w", err)
 		}
 		var entries []jiraops.WorklogEntry
-		dec := json.NewDecoder(strings.NewReader(string(data)))
+		dec := json.NewDecoder(bytes.NewReader(data))
 		dec.DisallowUnknownFields()
 		if err := dec.Decode(&entries); err != nil {
 			return jiraops.WorklogAddInput{}, fmt.Errorf("read entries from %s: expected a JSON array of {issue, started, duration, comment}: %w", file, err)
@@ -473,6 +474,32 @@ func readAtMost(path string, limit int64) ([]byte, error) {
 	return data, nil
 }
 
+// maxEntriesFileBytes caps a worklog entries file: 200 entries with long
+// comments fit well under it.
+const maxEntriesFileBytes = 1 << 20
+
+// readLimitedFile reads path ("-" for the command's stdin), failing once it
+// passes limit bytes rather than reading the rest.
+func readLimitedFile(cmd *cobra.Command, path string, limit int) ([]byte, error) {
+	r, name := cmd.InOrStdin(), "stdin"
+	if path != "-" {
+		f, err := os.Open(path)
+		if err != nil {
+			return nil, err
+		}
+		defer f.Close()
+		r, name = f, path
+	}
+	data, err := io.ReadAll(io.LimitReader(r, int64(limit)+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > limit {
+		return nil, fmt.Errorf("%s is over the %d-byte limit", name, limit)
+	}
+	return data, nil
+}
+
 // allMeansMax maps the CLI's -1 ("all") to an op's hard maximum; ops have
 // no unlimited mode.
 func allMeansMax(n, maximum int) int {
@@ -496,7 +523,7 @@ func addJiraBodyFlags(cmd *cobra.Command, usage string) {
 func jiraBody(cmd *cobra.Command, required bool) (string, error) {
 	body, _ := cmd.Flags().GetString("body")
 	if file, _ := cmd.Flags().GetString("body-file"); file != "" {
-		data, err := readBodyFile(file)
+		data, err := readLimitedFile(cmd, file, jiraops.MaxBodyBytes)
 		if err != nil {
 			return "", fmt.Errorf("read body: %w", err)
 		}

@@ -1,12 +1,15 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -124,10 +127,9 @@ func TestJiraWorklogAddEntriesFileAndPartialExit(t *testing.T) {
 	setupJiraCLIEnv(t)
 	fake := jiratest.New()
 	fake.JSON("GET /rest/api/3/myself", http.StatusOK, `{"accountId":"acc-me"}`)
-	fake.JSON("GET /rest/api/3/issue/CSM-1/worklog", http.StatusOK, `{"total":0,"worklogs":[]}`)
-	fake.JSON("POST /rest/api/3/issue/CSM-1/worklog", http.StatusCreated, `{"id":"77"}`)
-	fake.JSON("GET /rest/api/3/issue/CSM-2/worklog", http.StatusOK, `{"total":0,"worklogs":[]}`)
-	fake.JSON("POST /rest/api/3/issue/CSM-2/worklog", http.StatusBadRequest, `{"errorMessages":["Worklog must not be null."]}`)
+	fake.IssueWorklogs("10001", "CSM-1", "acc-me")
+	fake.IssueWorklogs("10002", "CSM-2", "acc-me")
+	fake.JSON("POST /rest/api/3/issue/10002/worklog", http.StatusBadRequest, `{"errorMessages":["Worklog must not be null."]}`)
 	entries := filepath.Join(t.TempDir(), "entries.json")
 	if err := os.WriteFile(entries, []byte(`[{"issue":"CSM-1","started":"2026-11-11T09:00:00-05:00","duration":"1h"},
 		{"issue":"CSM-2","started":"2026-11-11T10:00:00-05:00","duration":"30m"}]`), 0o600); err != nil {
@@ -137,7 +139,7 @@ func TestJiraWorklogAddEntriesFileAndPartialExit(t *testing.T) {
 	if ops.KindOf(err) != ops.Partial {
 		t.Fatalf("err = %v, want Partial", err)
 	}
-	want := "0 ok CSM-1 2026-11-11T09:00:00.000-0500 1h worklog 77\n1 failed CSM-2 2026-11-11T10:00:00.000-0500 30m: "
+	want := "0 ok CSM-1 2026-11-11T09:00:00.000-0500 1h worklog 900\n1 failed CSM-2 2026-11-11T10:00:00.000-0500 30m: "
 	if !strings.HasPrefix(got, want) {
 		t.Errorf("output = %q", got)
 	}
@@ -196,5 +198,75 @@ func TestJiraCommentNeedsBody(t *testing.T) {
 	}
 	if len(fake.Requests()) != 0 {
 		t.Errorf("requests = %v", fake.Routes())
+	}
+}
+
+func runAtlasStdin(t *testing.T, fixture http.RoundTripper, stdin io.Reader, args ...string) (string, error) {
+	t.Helper()
+	var stdout bytes.Buffer
+	root := NewRootCmd("test", WithHTTPClient(&http.Client{Transport: fixture}))
+	root.PersistentPreRun = nil
+	root.SilenceUsage = true
+	root.SilenceErrors = true
+	root.SetOut(&stdout)
+	root.SetIn(stdin)
+	root.SetArgs(args)
+	err := root.Execute()
+	return stdout.String(), err
+}
+
+// -F - and -f - read the command's stdin, and every body or entries file is
+// read only up to its limit.
+func TestJiraFileInputsReadStdinWithLimits(t *testing.T) {
+	setupJiraCLIEnv(t)
+	fake := jiratest.New()
+	fake.JSON("POST /rest/api/3/issue/CSM-1/comment", http.StatusCreated, `{"id":"5"}`)
+	if _, err := runAtlasStdin(t, fake.Transport(), strings.NewReader("hello from stdin"), "jira", "comment", "CSM-1", "-F", "-"); err != nil {
+		t.Fatal(err)
+	}
+	if posts := fake.Find("POST /rest/api/3/issue/CSM-1/comment"); len(posts) != 1 || !strings.Contains(posts[0].Body, "hello from stdin") {
+		t.Errorf("comment posts = %v", posts)
+	}
+
+	fake = jiratest.New()
+	fake.JSON("GET /rest/api/3/myself", http.StatusOK, `{"accountId":"acc-me"}`)
+	fake.IssueWorklogs("10001", "CSM-1", "acc-me")
+	entries := `[{"issue":"CSM-1","started":"2026-11-11T09:00:00-05:00","duration":"1h"}]`
+	if got, err := runAtlasStdin(t, fake.Transport(), strings.NewReader(entries), "jira", "worklog", "add", "-f", "-"); err != nil || !strings.HasPrefix(got, "0 ok CSM-1") {
+		t.Errorf("worklog add from stdin = %q, %v", got, err)
+	}
+
+	big := filepath.Join(t.TempDir(), "big")
+	if err := os.WriteFile(big, bytes.Repeat([]byte("x"), 32<<20), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name  string
+		stdin io.Reader
+		args  []string
+		want  string
+	}{
+		{"body stdin", strings.NewReader(strings.Repeat("x", jiraops.MaxBodyBytes+1)), []string{"jira", "comment", "CSM-1", "-F", "-"}, "read body: stdin is over the 131072-byte limit"},
+		{"body file", strings.NewReader(""), []string{"jira", "comment", "CSM-1", "-F", big}, "is over the 131072-byte limit"},
+		{"entries stdin", strings.NewReader("[" + strings.Repeat(" ", maxEntriesFileBytes) + "]"), []string{"jira", "worklog", "add", "-f", "-"}, "read entries: stdin is over the 1048576-byte limit"},
+		{"entries file", strings.NewReader(""), []string{"jira", "worklog", "add", "-f", big}, "is over the 1048576-byte limit"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := jiratest.New()
+			var before, after runtime.MemStats
+			runtime.GC()
+			runtime.ReadMemStats(&before)
+			_, err := runAtlasStdin(t, fake.Transport(), tc.stdin, tc.args...)
+			runtime.ReadMemStats(&after)
+			if err == nil || !strings.Contains(err.Error(), tc.want) || !strings.HasPrefix(err.Error(), "read ") {
+				t.Errorf("err = %v, want %q", err, tc.want)
+			}
+			if grew := after.TotalAlloc - before.TotalAlloc; grew > 8<<20 {
+				t.Errorf("allocated %d bytes reading an over-limit input", grew)
+			}
+			if len(fake.Requests()) != 0 {
+				t.Errorf("requests = %v", fake.Routes())
+			}
+		})
 	}
 }

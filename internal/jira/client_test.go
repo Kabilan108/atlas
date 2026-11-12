@@ -480,19 +480,29 @@ func TestCreateMetaPaginates(t *testing.T) {
 			t.Errorf("unexpected %s", r.URL.Path)
 		}
 	})
-	types, err := c.CreateMetaIssueTypes(ctx, "ED")
+	types, truncated, err := c.CreateMetaIssueTypes(ctx, "ED", 500)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(types) != 2 || types[1].Name != "Task" {
-		t.Errorf("types = %+v", types)
+	if len(types) != 2 || types[1].Name != "Task" || truncated {
+		t.Errorf("types = %+v, truncated %v", types, truncated)
 	}
-	fields, err := c.CreateMetaFields(ctx, "ED", "10000")
+	fields, truncated, err := c.CreateMetaFields(ctx, "ED", "10000", 2000)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(fields) != 3 || fields[1].Schema.Items != "option" || fields[1].AllowedValues[1].Value != "Beacon" || fields[2].ID() != "customfield_10469" {
-		t.Errorf("fields = %+v", fields)
+	if len(fields) != 3 || fields[1].Schema.Items != "option" || fields[1].AllowedValues[1].Value != "Beacon" || fields[2].ID() != "customfield_10469" || truncated {
+		t.Errorf("fields = %+v, truncated %v", fields, truncated)
+	}
+	fields, truncated, err = c.CreateMetaFields(ctx, "ED", "10000", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fields) != 2 || !truncated {
+		t.Errorf("limit 2: %d fields, truncated %v", len(fields), truncated)
+	}
+	if _, _, err := c.CreateMetaFields(ctx, "ED", "10000", 0); err == nil {
+		t.Error("limit 0 accepted")
 	}
 }
 

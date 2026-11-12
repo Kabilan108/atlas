@@ -110,7 +110,7 @@ func transition(ctx context.Context, env ops.Env, in TransitionInput) (*Transiti
 	}
 	metas := metaList(chosen.Fields)
 	fields := map[string]any{}
-	if err := shapeFields(ctx, client, metas, in.Fields, fields, jiraapi.AssignableSearch{IssueKey: key}); err != nil {
+	if err := shapeFields(ctx, client, screen{metas: metas}, in.Fields, fields, jiraapi.AssignableSearch{IssueKey: key}); err != nil {
 		return nil, err
 	}
 	site, err := siteURL(ctx, client)
