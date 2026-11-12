@@ -77,6 +77,8 @@ var prGoldenCases = []prGoldenCase{
 	{name: "close", args: []string{"close", "42", "-R", "acme/widgets"}},
 	{name: "close_comment", args: []string{"close", "42", "-R", "acme/widgets", "-c", "Superseded by #44"}},
 	{name: "close_comment_decline_fails", args: []string{"close", "42", "-R", "acme/widgets", "-c", "bye"}, fail: [][]string{{"POST", "/repositories/acme/widgets/pullrequests/42/decline"}}},
+	{name: "close_comment_decline_fails_json", args: []string{"close", "42", "-R", "acme/widgets", "-c", "bye", "--json"}, fail: [][]string{{"POST", "/repositories/acme/widgets/pullrequests/42/decline"}}},
+	{name: "close_decline_fails", args: []string{"close", "42", "-R", "acme/widgets"}, fail: [][]string{{"POST", "/repositories/acme/widgets/pullrequests/42/decline"}}},
 	{name: "close_no_arg", args: []string{"close", "-R", "acme/widgets"}},
 
 	{name: "comment", args: []string{"comment", "42", "-R", "acme/widgets", "-b", "hello"}},
@@ -99,6 +101,8 @@ var prGoldenCases = []prGoldenCase{
 	{name: "approve", args: []string{"approve", "42", "-R", "acme/widgets"}},
 	{name: "approve_comment_json", args: []string{"approve", "42", "-R", "acme/widgets", "-b", "lgtm", "--json"}},
 	{name: "approve_fails_after_comment", args: []string{"approve", "42", "-R", "acme/widgets", "-b", "lgtm"}, fail: [][]string{{"POST", "/repositories/acme/widgets/pullrequests/42/approve"}}},
+	{name: "approve_fails_after_comment_json", args: []string{"approve", "42", "-R", "acme/widgets", "-b", "lgtm", "--json"}, fail: [][]string{{"POST", "/repositories/acme/widgets/pullrequests/42/approve"}}},
+	{name: "request_changes_fails_after_comment", args: []string{"request-changes", "42", "-R", "acme/widgets", "-b", "fix it"}, fail: [][]string{{"POST", "/repositories/acme/widgets/pullrequests/42/request-changes"}}},
 	{name: "approve_empty_body", args: []string{"approve", "42", "-R", "acme/widgets", "-b", ""}},
 	{name: "request_changes", args: []string{"request-changes", "42", "-R", "acme/widgets", "-b", "please fix"}},
 	{name: "request_changes_json", args: []string{"request-changes", "42", "-R", "acme/widgets", "--json"}},
@@ -129,6 +133,22 @@ var prGoldenCases = []prGoldenCase{
 	{name: "review_unparsable_spec", args: []string{"review", "42", "-R", "acme/widgets", "--approve", "--comment-spec", "$BODY"}},
 	{name: "review_comment_fails", args: []string{"review", "42", "-R", "acme/widgets", "--approve", "-b", "summary", "--comment-spec", "$SPEC"}, fail: [][]string{{"POST", "/repositories/acme/widgets/pullrequests/42/comments", "1"}}},
 	{name: "review_action_fails_json", args: []string{"review", "42", "-R", "acme/widgets", "--request-changes", "--comment-spec", "$SPEC", "--json"}, fail: [][]string{{"POST", "/repositories/acme/widgets/pullrequests/42/request-changes"}}},
+
+	// Legacy close and checkout required a selector; every other command
+	// fell back to the current branch for an empty or blank one.
+	{name: "close_empty_selector", args: []string{"close", "", "-R", "acme/widgets"}, git: true},
+	{name: "close_blank_selector", args: []string{"close", "  ", "-R", "acme/widgets", "-c", "bye"}, git: true},
+	{name: "checkout_empty_selector", args: []string{"checkout", "", "-R", "acme/widgets"}, git: true},
+	{name: "approve_empty_selector", args: []string{"approve", "", "-R", "acme/widgets"}, git: true},
+	{name: "approve_blank_selector", args: []string{"approve", "  ", "-R", "acme/widgets"}, git: true},
+	{name: "unapprove_empty_selector", args: []string{"unapprove", "", "-R", "acme/widgets"}, git: true},
+	{name: "request_changes_empty_selector", args: []string{"request-changes", "", "-R", "acme/widgets"}, git: true},
+	{name: "clear_change_request_empty_selector", args: []string{"clear-change-request", "", "-R", "acme/widgets"}, git: true},
+	{name: "comment_empty_selector", args: []string{"comment", "", "-R", "acme/widgets", "-b", "hi"}, git: true},
+	{name: "review_empty_selector", args: []string{"review", "", "-R", "acme/widgets", "--approve"}, git: true},
+	{name: "edit_empty_selector", args: []string{"edit", "", "-R", "acme/widgets", "-t", "Renamed"}, git: true},
+	{name: "diff_empty_selector", args: []string{"diff", "", "-R", "acme/widgets", "--name-only"}, git: true},
+	{name: "view_empty_selector", args: []string{"view", "", "-R", "acme/widgets", "--raw"}, git: true},
 }
 
 func TestPRCommandsMatchGolden(t *testing.T) {

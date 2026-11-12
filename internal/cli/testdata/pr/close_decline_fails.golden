@@ -1,0 +1,8 @@
+$ atlas pr close 42 -R acme/widgets
+--- stdout
+--- requests
+GET /2.0/repositories/acme/widgets/pullrequests/42
+POST /2.0/repositories/acme/widgets/pullrequests/42/decline
+--- error
+server: {"type":"error","error":{"message":"injected failure"}}
+Hint: This is a Bitbucket server error. Try again later

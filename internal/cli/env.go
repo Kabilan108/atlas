@@ -177,3 +177,19 @@ func (e *cliEnv) prRef(cmd *cobra.Command, selector string) (pr.Ref, error) {
 	}
 	return ref, nil
 }
+
+// requiredPRRef is prRef for commands that must not fall back to the
+// current branch, such as close: an empty or blank selector is an error.
+func (e *cliEnv) requiredPRRef(cmd *cobra.Command, selector string) (pr.Ref, error) {
+	sel, err := pr.ParseSelector(selector)
+	if err != nil {
+		return pr.Ref{}, err
+	}
+	if sel.IsEmpty() {
+		if _, err := e.repository(cmd); err != nil {
+			return pr.Ref{}, err
+		}
+		return pr.Ref{}, fmt.Errorf("pull request selector is required")
+	}
+	return e.prRef(cmd, selector)
+}

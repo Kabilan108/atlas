@@ -92,7 +92,7 @@ func runPRCheckout(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	ref, err := env.prRef(cmd, args[0])
+	ref, err := env.requiredPRRef(cmd, args[0])
 	if err != nil {
 		return err
 	}

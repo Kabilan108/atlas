@@ -16,8 +16,11 @@ type ApproveInput struct {
 
 // ApprovalResult is your participant entry after the action. It marshals to
 // the JSON `atlas pr approve --json` prints.
+// When the action fails after the comment posted, ReviewActionResult is
+// nil and Failed says what was posted.
 type ApprovalResult struct {
 	*bitbucket.ReviewActionResult
+	Failed *FailedStep `json:"failed,omitempty"`
 
 	pullRequest int
 }
@@ -26,6 +29,11 @@ type ApprovalResult struct {
 func (r *ApprovalResult) PullRequest() int { return r.pullRequest }
 
 func (r *ApprovalResult) receipt() (string, error) {
+	if r.Failed != nil {
+		return compactJSON(struct {
+			Failed *FailedStep `json:"failed"`
+		}{r.Failed})
+	}
 	return compactJSON(struct {
 		PullRequest int    `json:"pull_request"`
 		State       string `json:"state"`
@@ -64,8 +72,9 @@ func reviewAction(action ReviewAction) func(context.Context, ops.Env, ApproveInp
 			return nil, err
 		}
 		ws, repo, id := target.Workspace, target.Repo, target.PR.ID
+		var comment *bitbucket.Comment
 		if in.Body != "" {
-			if _, err := client.CreatePullRequestCommentText(ctx, ws, repo, id, in.Body); err != nil {
+			if comment, err = client.CreatePullRequestCommentText(ctx, ws, repo, id, in.Body); err != nil {
 				return nil, err
 			}
 		}
@@ -76,10 +85,11 @@ func reviewAction(action ReviewAction) func(context.Context, ops.Env, ApproveInp
 			result, err = client.RequestPullRequestChanges(ctx, ws, repo, id)
 		}
 		if err != nil {
-			if in.Body != "" {
-				return nil, fmt.Errorf("posted comment but failed to %s pull request: %w", actionPhrase(action), err)
+			if comment == nil {
+				return nil, err
 			}
-			return nil, err
+			failed, err := stepFailed(id, string(action), comment, err, fmt.Sprintf("posted comment but failed to %s pull request", actionPhrase(action)))
+			return &ApprovalResult{Failed: failed, pullRequest: id}, err
 		}
 		return &ApprovalResult{ReviewActionResult: result, pullRequest: id}, nil
 	}

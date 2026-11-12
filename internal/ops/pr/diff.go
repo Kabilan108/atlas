@@ -99,13 +99,17 @@ func fileList(files []string) string {
 	return b.String()
 }
 
-// DiffFiles lists the files a unified diff changes, in order, each once.
+// DiffFiles lists the files a unified diff changes, in order, each once:
+// the new name, or the old one for a deleted file.
 func DiffFiles(diff []byte) []string {
 	seen := make(map[string]bool)
 	var names []string
-	for _, line := range strings.Split(string(diff), "\n") {
-		name, ok := diffHeaderName(line)
-		if ok && !seen[name] {
+	for _, section := range diffSections(diff) {
+		name := section.newName
+		if name == "" {
+			name = section.oldName
+		}
+		if name != "" && !seen[name] {
 			seen[name] = true
 			names = append(names, name)
 		}
@@ -113,40 +117,19 @@ func DiffFiles(diff []byte) []string {
 	return names
 }
 
-func diffHeaderName(line string) (string, bool) {
-	if !strings.HasPrefix(line, "diff --git ") {
-		return "", false
-	}
-	parts := strings.Split(line, " ")
-	if len(parts) < 4 {
-		return "", false
-	}
-	name := strings.TrimPrefix(parts[3], "b/")
-	if name == "/dev/null" {
-		name = strings.TrimPrefix(parts[2], "a/")
-	}
-	return name, true
-}
-
-// filterDiff keeps the file sections of diff whose old or new name is path
-// or lies under it.
+// filterDiff keeps the file sections of diff whose old or new name is path,
+// or lies under path taken as a directory. Names compare whole path
+// components, so "doc" matches neither "docs/a.md" nor "b/doc".
 func filterDiff(diff []byte, path string) []byte {
 	var out bytes.Buffer
-	keep := false
-	for _, line := range bytes.SplitAfter(diff, []byte("\n")) {
-		if header := string(bytes.TrimRight(line, "\n")); strings.HasPrefix(header, "diff --git ") {
-			keep = false
-			parts := strings.Split(header, " ")
-			for _, part := range parts[2:] {
-				name := strings.TrimPrefix(strings.TrimPrefix(part, "a/"), "b/")
-				if name == path || strings.HasPrefix(name, path+"/") {
-					keep = true
-				}
-			}
-		}
-		if keep {
-			out.Write(line)
+	for _, section := range diffSections(diff) {
+		if pathMatches(section.oldName, path) || pathMatches(section.newName, path) {
+			out.Write(section.text)
 		}
 	}
 	return out.Bytes()
+}
+
+func pathMatches(name, path string) bool {
+	return name != "" && (name == path || strings.HasPrefix(name, path+"/"))
 }

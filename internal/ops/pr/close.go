@@ -2,7 +2,6 @@ package pr
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/kabilan108/atlas/internal/bitbucket"
 	"github.com/kabilan108/atlas/internal/ops"
@@ -14,7 +13,22 @@ type CloseInput struct {
 	Comment string `json:"comment,omitempty" jsonschema:"comment to post before declining"`
 }
 
-var Close = &ops.Op[CloseInput, *bitbucket.PullRequest]{
+// CloseResult is the declined pull request. It marshals to the JSON `atlas
+// pr close --json` prints. When the decline fails after the comment posted,
+// PullRequest is the still-open pull request and Failed says what was posted.
+type CloseResult struct {
+	*bitbucket.PullRequest
+	Failed *FailedStep `json:"failed,omitempty"`
+}
+
+func (r *CloseResult) receipt() (string, error) {
+	return compactJSON(struct {
+		prReceipt
+		Failed *FailedStep `json:"failed,omitempty"`
+	}{receiptFor(r.PullRequest), r.Failed})
+}
+
+var Close = &ops.Op[CloseInput, *CloseResult]{
 	Meta: ops.Meta{
 		Name:        "pr_close",
 		Description: "Decline (close without merging) a Bitbucket pull request, optionally posting a comment first.",
@@ -22,10 +36,10 @@ var Close = &ops.Op[CloseInput, *bitbucket.PullRequest]{
 		Destructive: true,
 	},
 	Run:      closePR,
-	Markdown: func(pr *bitbucket.PullRequest) (string, error) { return compactJSON(receiptFor(pr)) },
+	Markdown: (*CloseResult).receipt,
 }
 
-func closePR(ctx context.Context, env ops.Env, in CloseInput) (*bitbucket.PullRequest, error) {
+func closePR(ctx context.Context, env ops.Env, in CloseInput) (*CloseResult, error) {
 	target, err := in.Resolve(ctx, env)
 	if err != nil {
 		return nil, err
@@ -34,17 +48,19 @@ func closePR(ctx context.Context, env ops.Env, in CloseInput) (*bitbucket.PullRe
 	if err != nil {
 		return nil, err
 	}
+	var comment *bitbucket.Comment
 	if in.Comment != "" {
-		if _, err := client.CreatePullRequestCommentText(ctx, target.Workspace, target.Repo, target.PR.ID, in.Comment); err != nil {
+		if comment, err = client.CreatePullRequestCommentText(ctx, target.Workspace, target.Repo, target.PR.ID, in.Comment); err != nil {
 			return nil, err
 		}
 	}
 	closed, err := client.DeclinePullRequest(ctx, target.Workspace, target.Repo, target.PR.ID)
 	if err != nil {
-		if in.Comment != "" {
-			return nil, fmt.Errorf("posted closing comment but failed to close pull request: %w", err)
+		if comment == nil {
+			return nil, err
 		}
-		return nil, err
+		failed, err := stepFailed(target.PR.ID, "decline", comment, err, "posted closing comment but failed to close pull request")
+		return &CloseResult{PullRequest: target.PR, Failed: failed}, err
 	}
-	return closed, nil
+	return &CloseResult{PullRequest: closed}, nil
 }
