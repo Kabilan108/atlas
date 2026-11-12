@@ -1,0 +1,4 @@
+$ atlas snippet list --workspace acme --public --private
+--- error ---
+--public and --private cannot be used together
+--- requests ---

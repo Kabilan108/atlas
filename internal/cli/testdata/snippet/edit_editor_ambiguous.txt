@@ -1,0 +1,5 @@
+$ atlas snippet edit abc123 --workspace acme
+--- error ---
+snippet has 2 files; specify a filename
+--- requests ---
+GET /2.0/snippets/acme/abc123

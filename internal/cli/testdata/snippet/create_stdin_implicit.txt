@@ -1,0 +1,6 @@
+$ atlas snippet create --title Implicit --workspace acme
+Created snippet: new001
+URL: https://bitbucket.org/snippets/acme/new001
+--- error ---
+--- requests ---
+POST /2.0/snippets/acme is_private=["true"] title=["Implicit"] file[stdin.txt]="implicit\n"

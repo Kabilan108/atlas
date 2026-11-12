@@ -1,0 +1,5 @@
+$ atlas snippet delete abc123 --yes --workspace acme
+Deleted snippet: abc123
+--- error ---
+--- requests ---
+DELETE /2.0/snippets/acme/abc123

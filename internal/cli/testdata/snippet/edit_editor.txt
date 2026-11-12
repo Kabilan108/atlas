@@ -1,0 +1,7 @@
+$ atlas snippet edit abc123 notes.md --workspace acme
+Updated snippet: abc123
+--- error ---
+--- requests ---
+GET /2.0/snippets/acme/abc123
+GET /2.0/snippets/acme/abc123/files/notes.md
+PUT /2.0/snippets/acme/abc123 file[notes.md]="# Deploy\n\nRun the script.\nedited\n"

@@ -1,0 +1,55 @@
+$ atlas snippet create a.txt --title Public -p --workspace acme --json
+{
+  "id": "new001",
+  "title": "Public",
+  "is_private": false,
+  "owner": {
+    "uuid": "{ada}",
+    "username": "",
+    "nickname": "",
+    "display_name": "Ada Lovelace",
+    "account_id": "557058:ada",
+    "links": {
+      "self": {
+        "href": ""
+      },
+      "html": {
+        "href": ""
+      },
+      "avatar": {
+        "href": ""
+      }
+    }
+  },
+  "files": {
+    "a.txt": {
+      "links": {
+        "self": {
+          "href": "https://api.bitbucket.org/2.0/snippets/acme/new001/files/a.txt"
+        },
+        "html": {
+          "href": ""
+        },
+        "avatar": {
+          "href": ""
+        }
+      }
+    }
+  },
+  "created_on": "2024-01-01T00:00:00Z",
+  "updated_on": "2024-05-01T00:00:00Z",
+  "links": {
+    "self": {
+      "href": "https://api.bitbucket.org/2.0/snippets/acme/new001"
+    },
+    "html": {
+      "href": "https://bitbucket.org/snippets/acme/new001"
+    },
+    "avatar": {
+      "href": ""
+    }
+  }
+}
+--- error ---
+--- requests ---
+POST /2.0/snippets/acme is_private=["false"] title=["Public"] file[a.txt]="alpha\n"

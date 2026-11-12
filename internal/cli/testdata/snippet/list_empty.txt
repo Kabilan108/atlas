@@ -1,0 +1,5 @@
+$ atlas snippet list --workspace empty
+No snippets found.
+--- error ---
+--- requests ---
+GET /2.0/snippets/empty?pagelen=10

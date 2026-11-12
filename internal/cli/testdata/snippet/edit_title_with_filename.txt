@@ -1,0 +1,4 @@
+$ atlas snippet edit abc123 notes.md --title X --workspace acme
+--- error ---
+filename cannot be used with --title unless editing file contents or adding a file
+--- requests ---
