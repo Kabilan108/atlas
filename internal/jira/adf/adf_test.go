@@ -256,10 +256,8 @@ func TestFromMarkdownStructure(t *testing.T) {
 	if codeLang != "go" || href != "https://ci.example.com/42" || headingLevel != 2 || mentionID != "acc-Mia-Krystof" {
 		t.Errorf("lang=%q href=%q level=%v mention=%q", codeLang, href, headingLevel, mentionID)
 	}
-	// go-adf v0.2.0 has no markdown → taskList conversion: task items arrive
-	// as plain bullets whose text starts with "[ ]" / "[x]".
-	if types["taskList"] != 0 || !strings.Contains(string(raw), `"text":"[ ] todo"`) {
-		t.Errorf("task list handling changed; update the gap note: %s", raw)
+	if types["taskList"] != 1 || types["taskItem"] != 2 || strings.Contains(string(raw), "[ ]") {
+		t.Errorf("checkbox bullets are not one native task list: %s", raw)
 	}
 }
 
@@ -317,14 +315,13 @@ func TestADFRoundTripFixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Everything but task lists and placeholders reads back the same. Task
-	// lists come back as bullets with literal "[x]" text, and attachment and
-	// unsupported-node placeholders as literal text.
-	stable, _, _ := strings.Cut(md, "- [x]")
+	// Everything but placeholders reads back the same: attachment and
+	// unsupported-node placeholders come back as literal text.
+	stable, _, _ := strings.Cut(md, "[attachment:")
 	if !strings.HasPrefix(again, stable) {
 		t.Errorf("round trip changed the supported part:\n%s\n---\n%s", stable, again)
 	}
-	if !strings.Contains(again, `- \[x\] write the fix`) || !strings.Contains(again, `\[attachment: screenshot.png\]`) {
+	if !strings.Contains(again, `\[attachment: screenshot.png\]`) {
 		t.Errorf("known gaps changed; update the notes:\n%s", again)
 	}
 }

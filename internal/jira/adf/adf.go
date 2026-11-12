@@ -35,7 +35,8 @@ type Option func(*config)
 
 // WithMediaLink names a media node and gives its URL ("" for none). Media
 // IDs are Media Services IDs, not attachment IDs; Alt usually holds the
-// attachment's file name.
+// attachment's file name. A node f gives neither a name nor a URL renders
+// as a bare [attachment].
 func WithMediaLink(f func(Media) (name, url string)) Option {
 	return func(c *config) { c.mediaLink = f }
 }
@@ -92,23 +93,24 @@ func ToMarkdown(raw json.RawMessage, opts ...Option) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		if bytes.Count(prepared, []byte(nonce)) != len(p.mentions) {
+		if bytes.Count(prepared, []byte(nonce)) != len(p.tokens) {
 			continue
 		}
 		md, err := goadf.ToMarkdown(prepared)
 		if err != nil {
 			return "", err
 		}
-		return p.restoreMentions(md), nil
+		return p.restoreTokens(md), nil
 	}
 	return "", errors.New("adf: document text keeps colliding with mention placeholders")
 }
 
 // go-adf v0.2.0 checks that emphasis reads back by re-parsing the paragraph
 // without a mention resolver, so a paragraph holding a mention always fails
-// the check and loses its bold and italics. Mentions are therefore rendered
-// as inert tokens and put back afterwards. Each call picks a random nonce and
-// retries if the decoded document, as handed to go-adf, already contains it.
+// the check and loses its bold and italics. Mentions, and the checkboxes of
+// task lists rendered as nested bullets, are therefore written as inert
+// tokens and put back afterwards. Each call picks a random nonce and retries
+// if the decoded document, as handed to go-adf, already contains it.
 var newNonce = func() (string, error) {
 	var b [12]byte
 	if _, err := rand.Read(b[:]); err != nil {
@@ -117,8 +119,14 @@ var newNonce = func() (string, error) {
 	return "atlasmention" + hex.EncodeToString(b[:]), nil
 }
 
-func (p *preparer) mentionToken(i int) string {
+func (p *preparer) token(i int) string {
 	return fmt.Sprintf("%s%dx", p.nonce, i)
+}
+
+// placeholderFor returns a text node that restoreTokens replaces with s.
+func (p *preparer) placeholderFor(s string) goadf.Node {
+	p.tokens = append(p.tokens, s)
+	return text(p.token(len(p.tokens) - 1))
 }
 
 func (p *preparer) mention(n goadf.Node) goadf.Node {
@@ -129,28 +137,32 @@ func (p *preparer) mention(n goadf.Node) goadf.Node {
 	if label == "" {
 		label = attr(n, "id")
 	}
-	p.mentions = append(p.mentions, "@["+label+"]")
-	return text(p.mentionToken(len(p.mentions) - 1))
+	return p.placeholderFor("@[" + label + "]")
 }
 
-// restoreMentions replaces every token in one pass, so a label that looks
+// restoreTokens replaces every token in one pass, so a label that looks
 // like a token is never expanded again.
-func (p *preparer) restoreMentions(md string) string {
-	pairs := make([]string, 0, 2*len(p.mentions))
-	for i, m := range p.mentions {
-		pairs = append(pairs, p.mentionToken(i), m)
+func (p *preparer) restoreTokens(md string) string {
+	pairs := make([]string, 0, 2*len(p.tokens))
+	for i, m := range p.tokens {
+		pairs = append(pairs, p.token(i), m)
 	}
 	return strings.NewReplacer(pairs...).Replace(md)
 }
 
 // FromMarkdown converts markdown to an ADF document for Jira's v3 API.
+// Bullets that start with "[ ]" or "[x]" become native task items.
 func FromMarkdown(markdown string, opts ...Option) (json.RawMessage, error) {
 	cfg := newConfig(opts)
 	var gopts []goadf.Option
 	if cfg.mentionResolver != nil {
 		gopts = append(gopts, goadf.WithMentionResolver(cfg.mentionResolver))
 	}
-	return goadf.FromMarkdown(markdown, gopts...)
+	raw, err := goadf.FromMarkdown(markdown, gopts...)
+	if err != nil {
+		return nil, err
+	}
+	return nativeTasks(raw)
 }
 
 // known lists the node types go-adf renders with their meaning intact.
@@ -174,8 +186,8 @@ var inlineParents = map[string]bool{
 
 type preparer struct {
 	config
-	nonce    string
-	mentions []string
+	nonce  string
+	tokens []string
 }
 
 func (c *preparer) prepareRoot(n goadf.Node) goadf.Node {
@@ -201,6 +213,8 @@ func (c *preparer) prepare(n goadf.Node, inline bool) []goadf.Node {
 	switch n.Type {
 	case "mention":
 		return []goadf.Node{c.mention(n)}
+	case "taskList":
+		return []goadf.Node{c.taskBullets(n)}
 	case "media", "mediaInline":
 		node := c.mediaInline(n)
 		if inline {
@@ -255,8 +269,7 @@ func (c *preparer) mediaInline(n goadf.Node) goadf.Node {
 	name, url := m.Alt, m.URL
 	if c.mediaLink != nil {
 		name, url = c.mediaLink(m)
-	}
-	if name == "" && m.ID != "" {
+	} else if name == "" && m.ID != "" {
 		name = "media " + m.ID
 	}
 	if url != "" {
