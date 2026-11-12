@@ -22,7 +22,8 @@ var (
 
 // APIError is a non-2xx response from Jira. ErrorMessages and Errors hold
 // Jira's error collection; Service Management's errorMessage is folded into
-// ErrorMessages. Body keeps the raw response (truncated) when it held neither.
+// ErrorMessages. Body keeps a redacted, truncated copy of a non-JSON response
+// when it held neither; unrecognized JSON bodies are not kept.
 type APIError struct {
 	StatusCode    int
 	Method        string
@@ -75,17 +76,28 @@ func (e *APIError) Unwrap() error {
 
 const redacted = "[REDACTED]"
 
-var authorizationValue = regexp.MustCompile(`(?i)(authorization"?\s*[:=]\s*"?)[^\r\n"]*`)
+// authorizationValue matches an Authorization label's value, including
+// folded continuation lines that begin with a space or tab.
+var authorizationValue = regexp.MustCompile(`(?i)(authorization"?\s*[:=]\s*"?)[^\r\n"]*(?:\r?\n[ \t][^\r\n"]*)*`)
 
 // redact removes the client's credentials, in any encoding it sends them,
-// and the value of anything labelled Authorization.
+// and the value of anything labelled Authorization. If a credential can still
+// be spelled once whitespace is removed (a wrapped base64 value, say), the
+// whole string is withheld.
 func (c *Client) redact(s string) string {
 	for _, secret := range c.secrets {
 		if secret != "" {
 			s = strings.ReplaceAll(s, secret, redacted)
 		}
 	}
-	return authorizationValue.ReplaceAllString(s, "${1}"+redacted)
+	s = authorizationValue.ReplaceAllString(s, "${1}"+redacted)
+	compact := strings.Join(strings.Fields(s), "")
+	for _, secret := range c.secrets {
+		if secret != "" && strings.Contains(compact, secret) {
+			return redacted
+		}
+	}
+	return s
 }
 
 // newAPIError builds the error from a redacted copy of the body and redacts
@@ -105,7 +117,8 @@ func newAPIError(req *http.Request, resp *http.Response, body []byte, redact fun
 		Message       string            `json:"message"`
 	}
 	text := redact(string(body))
-	if json.Unmarshal([]byte(text), &wire) == nil {
+	isJSON := json.Valid([]byte(text))
+	if isJSON && json.Unmarshal([]byte(text), &wire) == nil {
 		for _, m := range wire.ErrorMessages {
 			e.ErrorMessages = append(e.ErrorMessages, redact(m))
 		}
@@ -122,7 +135,9 @@ func newAPIError(req *http.Request, resp *http.Response, body []byte, redact fun
 			}
 		}
 	}
-	if len(e.ErrorMessages) == 0 && len(e.Errors) == 0 {
+	// JSON outside Jira's error fields is dropped rather than kept raw: its
+	// escapes can spell a credential that byte-level redaction cannot see.
+	if len(e.ErrorMessages) == 0 && len(e.Errors) == 0 && !isJSON {
 		text = strings.TrimSpace(text)
 		if len(text) > maxErrorBody {
 			text = text[:maxErrorBody] + "..."
