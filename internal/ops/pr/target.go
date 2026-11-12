@@ -118,9 +118,9 @@ func (ref Ref) Resolve(ctx context.Context, env ops.Env) (*Target, error) {
 	}
 	var pr *bitbucket.PullRequest
 	if sel.ID > 0 {
-		pr, err = client.GetPullRequest(workspace, repo, sel.ID)
+		pr, err = client.GetPullRequest(ctx, workspace, repo, sel.ID)
 	} else {
-		pr, err = client.FindPullRequestByBranch(workspace, repo, sel.Branch)
+		pr, err = client.FindPullRequestByBranch(ctx, workspace, repo, sel.Branch)
 	}
 	if err != nil {
 		return nil, err

@@ -1,6 +1,7 @@
 package bitbucket
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -14,8 +15,8 @@ func pullRequestCommentPath(workspace, repo string, id, commentID int) string {
 	return fmt.Sprintf("%s/pullrequests/%d/comments/%d", repoPath(workspace, repo), id, commentID)
 }
 
-func (c *Client) UpdatePullRequestComment(workspace, repo string, id, commentID int, body string) (*Comment, error) {
-	_, data, err := c.send(http.MethodPut, pullRequestCommentPath(workspace, repo, id, commentID), commentUpdate{
+func (c *Client) UpdatePullRequestComment(ctx context.Context, workspace, repo string, id, commentID int, body string) (*Comment, error) {
+	_, data, err := c.send(ctx, http.MethodPut, pullRequestCommentPath(workspace, repo, id, commentID), commentUpdate{
 		Content: ContentInput{Raw: body},
 	})
 	if err != nil {
@@ -30,8 +31,8 @@ func (c *Client) UpdatePullRequestComment(workspace, repo string, id, commentID 
 	return &comment, nil
 }
 
-func (c *Client) DeletePullRequestComment(workspace, repo string, id, commentID int) error {
-	if _, _, err := c.send(http.MethodDelete, pullRequestCommentPath(workspace, repo, id, commentID), nil); err != nil {
+func (c *Client) DeletePullRequestComment(ctx context.Context, workspace, repo string, id, commentID int) error {
+	if _, _, err := c.send(ctx, http.MethodDelete, pullRequestCommentPath(workspace, repo, id, commentID), nil); err != nil {
 		return err
 	}
 	c.invalidatePRCache()

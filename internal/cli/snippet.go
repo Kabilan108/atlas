@@ -3,6 +3,7 @@ package cli
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -149,7 +150,7 @@ func runSnippetList(cmd *cobra.Command, args []string) error {
 	if publicOnly || privateOnly {
 		listLimit = 0
 	}
-	snippets, err := client.ListSnippets(workspace, &bitbucket.SnippetListOptions{
+	snippets, err := client.ListSnippets(cmd.Context(), workspace, &bitbucket.SnippetListOptions{
 		Limit: listLimit,
 		Role:  role,
 	})
@@ -216,7 +217,7 @@ func runSnippetView(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	ref, err := resolveSnippetArg(client, workspace, args)
+	ref, err := resolveSnippetArg(cmd.Context(), client, workspace, args)
 	if err != nil {
 		return err
 	}
@@ -227,7 +228,7 @@ func runSnippetView(cmd *cobra.Command, args []string) error {
 	webOutput, _ := cmd.Flags().GetBool("web")
 	jsonOutput, _ := cmd.Flags().GetBool("json")
 
-	snippet, err := client.GetSnippet(ref.Workspace, ref.ID)
+	snippet, err := client.GetSnippet(cmd.Context(), ref.Workspace, ref.ID)
 	if err != nil {
 		return err
 	}
@@ -239,7 +240,7 @@ func runSnippetView(cmd *cobra.Command, args []string) error {
 	if jsonOutput {
 		result := SnippetViewJSON{Snippet: snippet}
 		if !filesOnly {
-			contents, err := snippetFileContents(client, ref, snippet, filename)
+			contents, err := snippetFileContents(cmd.Context(), client, ref, snippet, filename)
 			if err != nil {
 				return err
 			}
@@ -252,7 +253,7 @@ func runSnippetView(cmd *cobra.Command, args []string) error {
 		return printSnippetFiles(snippet)
 	}
 
-	contents, err := snippetFileContents(client, ref, snippet, filename)
+	contents, err := snippetFileContents(cmd.Context(), client, ref, snippet, filename)
 	if err != nil {
 		return err
 	}
@@ -298,7 +299,7 @@ func runSnippetCreate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	snippet, err := client.CreateSnippet(workspace, title, files, !publicSnippet)
+	snippet, err := client.CreateSnippet(cmd.Context(), workspace, title, files, !publicSnippet)
 	if err != nil {
 		return err
 	}
@@ -376,7 +377,7 @@ func runSnippetEdit(cmd *cobra.Command, args []string) error {
 	}
 
 	if title == "" && addFile == "" && removeFile == "" {
-		editedName, editedContent, err := editSnippetFile(client, ref, filename)
+		editedName, editedContent, err := editSnippetFile(cmd.Context(), client, ref, filename)
 		if err != nil {
 			return err
 		}
@@ -387,7 +388,7 @@ func runSnippetEdit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("nothing to edit")
 	}
 
-	if err := client.UpdateSnippet(ref.Workspace, ref.ID, title, addFiles, removeFiles); err != nil {
+	if err := client.UpdateSnippet(cmd.Context(), ref.Workspace, ref.ID, title, addFiles, removeFiles); err != nil {
 		return err
 	}
 
@@ -422,12 +423,12 @@ func runSnippetRename(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	content, err := client.GetSnippetFileContent(ref.Workspace, ref.ID, oldFilename)
+	content, err := client.GetSnippetFileContent(cmd.Context(), ref.Workspace, ref.ID, oldFilename)
 	if err != nil {
 		return fmt.Errorf("failed to fetch file %s: %w", oldFilename, err)
 	}
 
-	if err := client.UpdateSnippet(ref.Workspace, ref.ID, "", map[string][]byte{newFilename: content}, []string{oldFilename}); err != nil {
+	if err := client.UpdateSnippet(cmd.Context(), ref.Workspace, ref.ID, "", map[string][]byte{newFilename: content}, []string{oldFilename}); err != nil {
 		return err
 	}
 
@@ -460,7 +461,7 @@ func runSnippetDelete(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	ref, err := resolveSnippetArg(client, workspace, args)
+	ref, err := resolveSnippetArg(cmd.Context(), client, workspace, args)
 	if err != nil {
 		return err
 	}
@@ -480,7 +481,7 @@ func runSnippetDelete(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if err := client.DeleteSnippet(ref.Workspace, ref.ID); err != nil {
+	if err := client.DeleteSnippet(cmd.Context(), ref.Workspace, ref.ID); err != nil {
 		return err
 	}
 
@@ -583,7 +584,7 @@ func isURLLike(raw string) bool {
 	return err == nil && parsed.Host != ""
 }
 
-func resolveSnippetArg(client *bitbucket.Client, workspace string, args []string) (snippetRef, error) {
+func resolveSnippetArg(ctx context.Context, client *bitbucket.Client, workspace string, args []string) (snippetRef, error) {
 	if len(args) > 0 {
 		return parseSnippetRef(args[0], workspace)
 	}
@@ -593,11 +594,11 @@ func resolveSnippetArg(client *bitbucket.Client, workspace string, args []string
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
 		return snippetRef{}, fmt.Errorf("snippet ID or URL is required")
 	}
-	return selectSnippet(client, workspace)
+	return selectSnippet(ctx, client, workspace)
 }
 
-func selectSnippet(client *bitbucket.Client, workspace string) (snippetRef, error) {
-	snippets, err := client.ListSnippets(workspace, &bitbucket.SnippetListOptions{Limit: 10, Role: "owner"})
+func selectSnippet(ctx context.Context, client *bitbucket.Client, workspace string) (snippetRef, error) {
+	snippets, err := client.ListSnippets(ctx, workspace, &bitbucket.SnippetListOptions{Limit: 10, Role: "owner"})
 	if err != nil {
 		return snippetRef{}, err
 	}
@@ -730,7 +731,7 @@ func printSnippetFiles(snippet *bitbucket.Snippet) error {
 	return nil
 }
 
-func snippetFileContents(client *bitbucket.Client, ref snippetRef, snippet *bitbucket.Snippet, filename string) (map[string]string, error) {
+func snippetFileContents(ctx context.Context, client *bitbucket.Client, ref snippetRef, snippet *bitbucket.Snippet, filename string) (map[string]string, error) {
 	filenames := []string{}
 	if filename != "" {
 		if _, ok := snippet.Files[filename]; !ok {
@@ -743,7 +744,7 @@ func snippetFileContents(client *bitbucket.Client, ref snippetRef, snippet *bitb
 
 	contents := make(map[string]string, len(filenames))
 	for _, name := range filenames {
-		content, err := client.GetSnippetFileContent(ref.Workspace, ref.ID, name)
+		content, err := client.GetSnippetFileContent(ctx, ref.Workspace, ref.ID, name)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch file %s: %w", name, err)
 		}
@@ -857,8 +858,8 @@ func sanitizeTerminalContent(content string) string {
 	return b.String()
 }
 
-func editSnippetFile(client *bitbucket.Client, ref snippetRef, filename string) (string, []byte, error) {
-	snippet, err := client.GetSnippet(ref.Workspace, ref.ID)
+func editSnippetFile(ctx context.Context, client *bitbucket.Client, ref snippetRef, filename string) (string, []byte, error) {
+	snippet, err := client.GetSnippet(ctx, ref.Workspace, ref.ID)
 	if err != nil {
 		return "", nil, err
 	}
@@ -884,7 +885,7 @@ func editSnippetFile(client *bitbucket.Client, ref snippetRef, filename string) 
 		return "", nil, err
 	}
 
-	existing, err = client.GetSnippetFileContent(ref.Workspace, ref.ID, filename)
+	existing, err = client.GetSnippetFileContent(ctx, ref.Workspace, ref.ID, filename)
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to fetch file %s: %w", filename, err)
 	}

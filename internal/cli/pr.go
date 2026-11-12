@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -136,7 +137,7 @@ func resolvePR(cmd *cobra.Command, selector string, allowCurrentBranch bool) (*p
 		return nil, nil, fmt.Errorf("repository is required. Use -R workspace/repo")
 	}
 	if ref.id > 0 {
-		pr, err := ctx.client.GetPullRequest(ctx.workspace, ctx.repo, ref.id)
+		pr, err := ctx.client.GetPullRequest(cmd.Context(), ctx.workspace, ctx.repo, ref.id)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -152,7 +153,7 @@ func resolvePR(cmd *cobra.Command, selector string, allowCurrentBranch bool) (*p
 			return nil, nil, err
 		}
 	}
-	pr, err := ctx.client.FindPullRequestByBranch(ctx.workspace, ctx.repo, branch)
+	pr, err := ctx.client.FindPullRequestByBranch(cmd.Context(), ctx.workspace, ctx.repo, branch)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -215,9 +216,9 @@ func runPRList(cmd *cobra.Command, args []string) error {
 	opts := &bitbucket.PRListOptions{State: apiState, Author: author, Reviewer: reviewer}
 	var prs []bitbucket.PullRequest
 	if allRepos {
-		prs, err = ctx.client.ListAllPullRequests(ctx.workspace, opts)
+		prs, err = ctx.client.ListAllPullRequests(cmd.Context(), ctx.workspace, opts)
 	} else {
-		prs, err = ctx.client.ListPullRequests(ctx.workspace, ctx.repo, opts)
+		prs, err = ctx.client.ListPullRequests(cmd.Context(), ctx.workspace, ctx.repo, opts)
 	}
 	if err != nil {
 		return err
@@ -305,7 +306,7 @@ func runPRDiff(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	diff, err := ctx.client.GetPullRequestDiff(ctx.workspace, ctx.repo, pr.ID)
+	diff, err := ctx.client.GetPullRequestDiff(cmd.Context(), ctx.workspace, ctx.repo, pr.ID)
 	if err != nil {
 		return err
 	}
@@ -508,7 +509,7 @@ func runPREdit(cmd *cobra.Command, args []string) error {
 		changed = true
 	}
 	if addReviewers != "" || removeReviewers != "" {
-		reviewers, err := editReviewers(ctx.client, pr.Reviewers, splitIdentifiers(addReviewers), splitIdentifiers(removeReviewers))
+		reviewers, err := editReviewers(cmd.Context(), ctx.client, pr.Reviewers, splitIdentifiers(addReviewers), splitIdentifiers(removeReviewers))
 		if err != nil {
 			return err
 		}
@@ -519,7 +520,7 @@ func runPREdit(cmd *cobra.Command, args []string) error {
 		fmt.Println("No changes.")
 		return nil
 	}
-	updated, err := ctx.client.UpdatePullRequest(ctx.workspace, ctx.repo, pr.ID, update)
+	updated, err := ctx.client.UpdatePullRequest(cmd.Context(), ctx.workspace, ctx.repo, pr.ID, update)
 	if err != nil {
 		return err
 	}
@@ -546,11 +547,11 @@ func runPRClose(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	if comment != "" {
-		if _, err := ctx.client.CreatePullRequestCommentText(ctx.workspace, ctx.repo, pr.ID, comment); err != nil {
+		if _, err := ctx.client.CreatePullRequestCommentText(cmd.Context(), ctx.workspace, ctx.repo, pr.ID, comment); err != nil {
 			return err
 		}
 	}
-	closed, err := ctx.client.DeclinePullRequest(ctx.workspace, ctx.repo, pr.ID)
+	closed, err := ctx.client.DeclinePullRequest(cmd.Context(), ctx.workspace, ctx.repo, pr.ID)
 	if err != nil {
 		if comment != "" {
 			return fmt.Errorf("posted closing comment but failed to close pull request: %w", err)
@@ -607,7 +608,7 @@ func runPRComment(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	comment, err := ctx.client.CreatePullRequestComment(ctx.workspace, ctx.repo, pr.ID, input)
+	comment, err := ctx.client.CreatePullRequestComment(cmd.Context(), ctx.workspace, ctx.repo, pr.ID, input)
 	if err != nil {
 		return err
 	}
@@ -653,7 +654,7 @@ func runPRUnapprove(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := ctx.client.UnapprovePullRequest(ctx.workspace, ctx.repo, pr.ID); err != nil {
+	if err := ctx.client.UnapprovePullRequest(cmd.Context(), ctx.workspace, ctx.repo, pr.ID); err != nil {
 		return err
 	}
 	if jsonOutput {
@@ -701,7 +702,7 @@ func runPRClearChangeRequest(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := ctx.client.ClearPullRequestChanges(ctx.workspace, ctx.repo, pr.ID); err != nil {
+	if err := ctx.client.ClearPullRequestChanges(cmd.Context(), ctx.workspace, ctx.repo, pr.ID); err != nil {
 		return err
 	}
 	if jsonOutput {
@@ -761,12 +762,12 @@ func runPRReview(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	comments, err := postCommentSpecs(ctx, pr, specs)
+	comments, err := postCommentSpecs(cmd.Context(), ctx, pr, specs)
 	if err != nil {
 		return err
 	}
 	if hasSummary {
-		comment, err := ctx.client.CreatePullRequestCommentText(ctx.workspace, ctx.repo, pr.ID, body)
+		comment, err := ctx.client.CreatePullRequestCommentText(cmd.Context(), ctx.workspace, ctx.repo, pr.ID, body)
 		if err != nil {
 			return fmt.Errorf("posted %d comments but failed to post review summary: %w", len(comments), err)
 		}
@@ -776,9 +777,9 @@ func runPRReview(cmd *cobra.Command, args []string) error {
 	var result *bitbucket.ReviewActionResult
 	switch action {
 	case "approve":
-		result, err = ctx.client.ApprovePullRequest(ctx.workspace, ctx.repo, pr.ID)
+		result, err = ctx.client.ApprovePullRequest(cmd.Context(), ctx.workspace, ctx.repo, pr.ID)
 	case "request-changes":
-		result, err = ctx.client.RequestPullRequestChanges(ctx.workspace, ctx.repo, pr.ID)
+		result, err = ctx.client.RequestPullRequestChanges(cmd.Context(), ctx.workspace, ctx.repo, pr.ID)
 	}
 	if err != nil {
 		return fmt.Errorf("posted %d comments but failed to %s pull request: %w", len(comments), reviewActionPhrase(action), err)
@@ -815,7 +816,7 @@ func runPRReviewAction(cmd *cobra.Command, args []string, action string) error {
 		return err
 	}
 	if hasComment {
-		if _, err := ctx.client.CreatePullRequestCommentText(ctx.workspace, ctx.repo, pr.ID, body); err != nil {
+		if _, err := ctx.client.CreatePullRequestCommentText(cmd.Context(), ctx.workspace, ctx.repo, pr.ID, body); err != nil {
 			return err
 		}
 	}
@@ -823,9 +824,9 @@ func runPRReviewAction(cmd *cobra.Command, args []string, action string) error {
 	var result *bitbucket.ReviewActionResult
 	switch action {
 	case "approve":
-		result, err = ctx.client.ApprovePullRequest(ctx.workspace, ctx.repo, pr.ID)
+		result, err = ctx.client.ApprovePullRequest(cmd.Context(), ctx.workspace, ctx.repo, pr.ID)
 	case "request-changes":
-		result, err = ctx.client.RequestPullRequestChanges(ctx.workspace, ctx.repo, pr.ID)
+		result, err = ctx.client.RequestPullRequestChanges(cmd.Context(), ctx.workspace, ctx.repo, pr.ID)
 	default:
 		return fmt.Errorf("unknown review action %q", action)
 	}
@@ -895,7 +896,7 @@ func runPRCreate(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	repo, err := ctx.client.GetRepository(ctx.workspace, ctx.repo)
+	repo, err := ctx.client.GetRepository(cmd.Context(), ctx.workspace, ctx.repo)
 	if err != nil {
 		return err
 	}
@@ -963,7 +964,7 @@ func runPRCreate(cmd *cobra.Command, args []string) error {
 			}
 		}
 	}
-	reviewers, err := resolveReviewers(ctx.client, splitIdentifiers(reviewerFlag))
+	reviewers, err := resolveReviewers(cmd.Context(), ctx.client, splitIdentifiers(reviewerFlag))
 	if err != nil {
 		return err
 	}
@@ -972,7 +973,7 @@ func runPRCreate(cmd *cobra.Command, args []string) error {
 	if dryRun {
 		return json.NewEncoder(os.Stdout).Encode(input)
 	}
-	pr, err := ctx.client.CreatePullRequest(ctx.workspace, ctx.repo, input)
+	pr, err := ctx.client.CreatePullRequest(cmd.Context(), ctx.workspace, ctx.repo, input)
 	if err != nil {
 		return err
 	}
@@ -1021,12 +1022,12 @@ func runPRStatus(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	currentUser, err := ctx.client.GetCurrentUser()
+	currentUser, err := ctx.client.GetCurrentUser(cmd.Context())
 	if err != nil {
 		return err
 	}
 	opts := &bitbucket.PRListOptions{State: "OPEN"}
-	prs, err := ctx.client.ListPullRequests(ctx.workspace, ctx.repo, opts)
+	prs, err := ctx.client.ListPullRequests(cmd.Context(), ctx.workspace, ctx.repo, opts)
 	if err != nil {
 		return err
 	}
@@ -1330,14 +1331,14 @@ func buildCommentCreates(specs []commentSpec) ([]bitbucket.CommentCreate, error)
 	return inputs, nil
 }
 
-func postCommentSpecs(ctx *prContext, pr *bitbucket.PullRequest, specs []commentSpec) ([]bitbucket.Comment, error) {
+func postCommentSpecs(ctx context.Context, pc *prContext, pr *bitbucket.PullRequest, specs []commentSpec) ([]bitbucket.Comment, error) {
 	inputs, err := buildCommentCreates(specs)
 	if err != nil {
 		return nil, err
 	}
 	comments := make([]bitbucket.Comment, 0, len(inputs))
 	for index, input := range inputs {
-		comment, err := ctx.client.CreatePullRequestComment(ctx.workspace, ctx.repo, pr.ID, input)
+		comment, err := pc.client.CreatePullRequestComment(ctx, pc.workspace, pc.repo, pr.ID, input)
 		if err != nil {
 			return nil, fmt.Errorf("posted %d comments but failed to post comment %d: %w", len(comments), index+1, err)
 		}
@@ -1682,10 +1683,10 @@ func splitIdentifiers(value string) []string {
 	return ids
 }
 
-func resolveReviewers(client *bitbucket.Client, ids []string) ([]bitbucket.User, error) {
+func resolveReviewers(ctx context.Context, client *bitbucket.Client, ids []string) ([]bitbucket.User, error) {
 	reviewers := make([]bitbucket.User, 0, len(ids))
 	for _, id := range ids {
-		user, err := client.GetUser(strings.TrimPrefix(id, "@"))
+		user, err := client.GetUser(ctx, strings.TrimPrefix(id, "@"))
 		if err != nil {
 			return nil, fmt.Errorf("failed to resolve reviewer %q: %w", id, err)
 		}
@@ -1694,7 +1695,7 @@ func resolveReviewers(client *bitbucket.Client, ids []string) ([]bitbucket.User,
 	return reviewers, nil
 }
 
-func editReviewers(client *bitbucket.Client, current []bitbucket.User, addIDs, removeIDs []string) ([]bitbucket.User, error) {
+func editReviewers(ctx context.Context, client *bitbucket.Client, current []bitbucket.User, addIDs, removeIDs []string) ([]bitbucket.User, error) {
 	reviewers := make([]bitbucket.User, 0, len(current)+len(addIDs))
 	for _, reviewer := range current {
 		remove := false
@@ -1708,7 +1709,7 @@ func editReviewers(client *bitbucket.Client, current []bitbucket.User, addIDs, r
 			reviewers = append(reviewers, reviewer)
 		}
 	}
-	added, err := resolveReviewers(client, addIDs)
+	added, err := resolveReviewers(ctx, client, addIDs)
 	if err != nil {
 		return nil, err
 	}

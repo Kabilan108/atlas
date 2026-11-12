@@ -1,6 +1,7 @@
 package bitbucket
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -14,7 +15,7 @@ func TestUpdatePullRequestComment(t *testing.T) {
 		writeJSON(w, http.StatusOK, `{"id":12,"content":{"raw":"edited"}}`)
 	})
 
-	comment, err := client.UpdatePullRequestComment("ws", "repo", 7, 12, "edited")
+	comment, err := client.UpdatePullRequestComment(context.Background(), "ws", "repo", 7, 12, "edited")
 	if err != nil {
 		t.Fatalf("UpdatePullRequestComment() error = %v", err)
 	}
@@ -40,7 +41,7 @@ func TestDeletePullRequestComment(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
-	if err := client.DeletePullRequestComment("ws", "repo", 7, 12); err != nil {
+	if err := client.DeletePullRequestComment(context.Background(), "ws", "repo", 7, 12); err != nil {
 		t.Fatalf("DeletePullRequestComment() error = %v", err)
 	}
 	req := recorder.all()[0]
@@ -49,7 +50,7 @@ func TestDeletePullRequestComment(t *testing.T) {
 		t.Fatalf("body = %s, want empty", req.Body)
 	}
 
-	err := client.DeletePullRequestComment("ws", "repo", 7, 13)
+	err := client.DeletePullRequestComment(context.Background(), "ws", "repo", 7, 13)
 	var apiErr *APIError
 	if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusForbidden || apiErr.Message != "You can only delete your own comments" {
 		t.Fatalf("error = %v, want Bitbucket message", err)
@@ -63,7 +64,7 @@ func TestUpdatePullRequestDestination(t *testing.T) {
 		writeJSON(w, http.StatusOK, `{"id":7,"destination":{"branch":{"name":"release"}}}`)
 	})
 
-	pr, err := client.UpdatePullRequest("ws", "repo", 7, PullRequestUpdate{
+	pr, err := client.UpdatePullRequest(context.Background(), "ws", "repo", 7, PullRequestUpdate{
 		Destination: &PullRequestRefInput{Branch: Branch{Name: "release"}},
 	})
 	if err != nil {
@@ -79,7 +80,7 @@ func TestUpdatePullRequestDestination(t *testing.T) {
 	}
 
 	title := "Only title"
-	if _, err := client.UpdatePullRequest("ws", "repo", 7, PullRequestUpdate{Title: &title}); err != nil {
+	if _, err := client.UpdatePullRequest(context.Background(), "ws", "repo", 7, PullRequestUpdate{Title: &title}); err != nil {
 		t.Fatalf("UpdatePullRequest(title) error = %v", err)
 	}
 	if body := string(recorder.all()[1].Body); body != `{"title":"Only title"}` {
@@ -109,7 +110,7 @@ func TestClientOptionsOverrideBaseURLAndHTTPClient(t *testing.T) {
 	if client.baseURL != server.URL || client.httpClient != server.Client() {
 		t.Fatalf("client baseURL = %s httpClient = %p", client.baseURL, client.httpClient)
 	}
-	user, err := client.GetCurrentUser()
+	user, err := client.GetCurrentUser(context.Background())
 	if err != nil {
 		t.Fatalf("GetCurrentUser() error = %v", err)
 	}

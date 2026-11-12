@@ -1,6 +1,7 @@
 package bitbucket
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"testing"
@@ -19,7 +20,7 @@ func TestListPullRequestStatusesFollowsPagination(t *testing.T) {
 	})
 	serverURL = server.URL
 
-	statuses, err := client.ListPullRequestStatuses("ws", "repo", 7)
+	statuses, err := client.ListPullRequestStatuses(context.Background(), "ws", "repo", 7)
 	if err != nil {
 		t.Fatalf("ListPullRequestStatuses() error = %v", err)
 	}
@@ -51,7 +52,7 @@ func TestListCommitStatusesUsesCommitPath(t *testing.T) {
 		writeJSON(w, http.StatusOK, `{"values":[]}`)
 	})
 
-	statuses, err := client.ListCommitStatuses("ws", "repo", "abc123")
+	statuses, err := client.ListCommitStatuses(context.Background(), "ws", "repo", "abc123")
 	if err != nil {
 		t.Fatalf("ListCommitStatuses() error = %v", err)
 	}
@@ -60,7 +61,7 @@ func TestListCommitStatusesUsesCommitPath(t *testing.T) {
 	}
 	expectRequest(t, recorder.all()[0], http.MethodGet, "/repositories/ws/repo/commit/abc123/statuses")
 
-	if _, err := client.ListCommitStatuses("ws", "repo", ""); err == nil {
+	if _, err := client.ListCommitStatuses(context.Background(), "ws", "repo", ""); err == nil {
 		t.Fatal("ListCommitStatuses(empty) error = nil, want error")
 	}
 }

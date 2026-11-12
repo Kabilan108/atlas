@@ -1,6 +1,7 @@
 package bitbucket
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -33,7 +34,7 @@ func TestListPipelinesSendsFilters(t *testing.T) {
 		writeJSON(w, http.StatusOK, `{"page":1,"pagelen":10,"size":500,"values":[`+testPipelineJSON+`]}`)
 	})
 
-	pipelines, err := client.ListPipelines("ws", "repo", &PipelineListOptions{
+	pipelines, err := client.ListPipelines(context.Background(), "ws", "repo", &PipelineListOptions{
 		Branch:          "main",
 		Commit:          "abc123",
 		SelectorPattern: "db-backup",
@@ -96,7 +97,7 @@ func TestListPipelinesWithLimitFollowsNextLinks(t *testing.T) {
 	})
 	serverURL = server.URL
 
-	pipelines, err := client.ListPipelines("ws", "repo", &PipelineListOptions{Limit: 3, PageLen: 2, Sort: "created_on"})
+	pipelines, err := client.ListPipelines(context.Background(), "ws", "repo", &PipelineListOptions{Limit: 3, PageLen: 2, Sort: "created_on"})
 	if err != nil {
 		t.Fatalf("ListPipelines() error = %v", err)
 	}
@@ -120,11 +121,11 @@ func TestGetPipelineByBuildNumberAndUUID(t *testing.T) {
 	})
 
 	for _, ref := range []string{"42", "#42"} {
-		if _, err := client.GetPipeline("ws", "repo", ref); err != nil {
+		if _, err := client.GetPipeline(context.Background(), "ws", "repo", ref); err != nil {
 			t.Fatalf("GetPipeline(%q) error = %v", ref, err)
 		}
 	}
-	if _, err := client.GetPipeline("ws", "repo", strings.Trim(testPipelineUUID, "{}")); err != nil {
+	if _, err := client.GetPipeline(context.Background(), "ws", "repo", strings.Trim(testPipelineUUID, "{}")); err != nil {
 		t.Fatalf("GetPipeline(uuid) error = %v", err)
 	}
 
@@ -147,7 +148,7 @@ func TestGetPipelineNotFound(t *testing.T) {
 		writeJSON(w, http.StatusNotFound, `{"type":"error","error":{"message":"Not found"}}`)
 	})
 
-	_, err := client.GetPipeline("ws", "repo", "99")
+	_, err := client.GetPipeline(context.Background(), "ws", "repo", "99")
 	if !errors.Is(err, ErrNotFound) || !strings.Contains(err.Error(), "pipeline '99'") {
 		t.Fatalf("error = %v, want pipeline not found", err)
 	}
@@ -171,7 +172,7 @@ func TestPipelineStepsResolveBuildNumberToUUID(t *testing.T) {
 		}
 	})
 
-	steps, err := client.ListPipelineSteps("ws", "repo", "42")
+	steps, err := client.ListPipelineSteps(context.Background(), "ws", "repo", "42")
 	if err != nil {
 		t.Fatalf("ListPipelineSteps() error = %v", err)
 	}
@@ -179,7 +180,7 @@ func TestPipelineStepsResolveBuildNumberToUUID(t *testing.T) {
 		t.Fatalf("steps = %#v", steps)
 	}
 
-	step, err := client.GetPipelineStep("ws", "repo", testPipelineUUID, "step-1")
+	step, err := client.GetPipelineStep(context.Background(), "ws", "repo", testPipelineUUID, "step-1")
 	if err != nil {
 		t.Fatalf("GetPipelineStep() error = %v", err)
 	}
@@ -253,7 +254,7 @@ func TestGetPipelineStepLogFollowsRedirectWithoutCredentials(t *testing.T) {
 	}
 	client := newClientForTest(api.URL, authenticated)
 
-	log, err := client.GetPipelineStepLog("ws", "repo", testPipelineUUID, "{step-1}", "bytes=-10")
+	log, err := client.GetPipelineStepLog(context.Background(), "ws", "repo", testPipelineUUID, "{step-1}", "bytes=-10")
 	if err != nil {
 		t.Fatalf("GetPipelineStepLog() error = %v", err)
 	}
@@ -299,7 +300,7 @@ func TestGetPipelineStepLogDirectAndEmpty(t *testing.T) {
 		}
 	})
 
-	full, err := client.GetPipelineStepLog("ws", "repo", testPipelineUUID, "full", "")
+	full, err := client.GetPipelineStepLog(context.Background(), "ws", "repo", testPipelineUUID, "full", "")
 	if err != nil {
 		t.Fatalf("full log error = %v", err)
 	}
@@ -307,7 +308,7 @@ func TestGetPipelineStepLogDirectAndEmpty(t *testing.T) {
 		t.Fatalf("full log = %#v", full)
 	}
 
-	empty, err := client.GetPipelineStepLog("ws", "repo", testPipelineUUID, "empty", "bytes=-10")
+	empty, err := client.GetPipelineStepLog(context.Background(), "ws", "repo", testPipelineUUID, "empty", "bytes=-10")
 	if err != nil {
 		t.Fatalf("empty log error = %v", err)
 	}
@@ -315,7 +316,7 @@ func TestGetPipelineStepLogDirectAndEmpty(t *testing.T) {
 		t.Fatalf("empty log = %#v", empty)
 	}
 
-	_, err = client.GetPipelineStepLog("ws", "repo", testPipelineUUID, "missing", "")
+	_, err = client.GetPipelineStepLog(context.Background(), "ws", "repo", testPipelineUUID, "missing", "")
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("missing log error = %v, want not found", err)
 	}
@@ -357,7 +358,7 @@ func TestRunPipelineBuildsTargets(t *testing.T) {
 				writeJSON(w, http.StatusCreated, `{"uuid":"{new}","build_number":43,"state":{"name":"PENDING"}}`)
 			})
 
-			pipeline, err := client.RunPipeline("ws", "repo", tt.input)
+			pipeline, err := client.RunPipeline(context.Background(), "ws", "repo", tt.input)
 			if err != nil {
 				t.Fatalf("RunPipeline() error = %v", err)
 			}
@@ -383,14 +384,14 @@ func TestRunPipelineValidationAndErrors(t *testing.T) {
 		writeJSON(w, http.StatusBadRequest, `{"type":"error","error":{"message":"Not found","detail":"Could not find a custom pipeline named 'nope'"}}`)
 	})
 
-	if _, err := client.RunPipeline("ws", "repo", PipelineRunInput{}); err == nil {
+	if _, err := client.RunPipeline(context.Background(), "ws", "repo", PipelineRunInput{}); err == nil {
 		t.Fatal("RunPipeline(empty) error = nil, want error")
 	}
 	if len(recorder.all()) != 0 {
 		t.Fatal("request sent without a target")
 	}
 
-	_, err := client.RunPipeline("ws", "repo", PipelineRunInput{Branch: "main", CustomPipeline: "nope"})
+	_, err := client.RunPipeline(context.Background(), "ws", "repo", PipelineRunInput{Branch: "main", CustomPipeline: "nope"})
 	var apiErr *APIError
 	if !errors.As(err, &apiErr) || apiErr.Message != "Not found: Could not find a custom pipeline named 'nope'" {
 		t.Fatalf("error = %v, want Bitbucket message and detail", err)
@@ -408,7 +409,7 @@ func TestStopPipelineByBuildNumber(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
-	if err := client.StopPipeline("ws", "repo", "42"); err != nil {
+	if err := client.StopPipeline(context.Background(), "ws", "repo", "42"); err != nil {
 		t.Fatalf("StopPipeline() error = %v", err)
 	}
 	requests := recorder.all()

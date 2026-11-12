@@ -1,6 +1,7 @@
 package bitbucket
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -196,16 +197,16 @@ func pipelineListPath(workspace, repo string, opts *PipelineListOptions) string 
 	return withQuery(repoPath(workspace, repo)+"/pipelines/", values)
 }
 
-func (c *Client) ListPipelines(workspace, repo string, opts *PipelineListOptions) ([]Pipeline, error) {
+func (c *Client) ListPipelines(ctx context.Context, workspace, repo string, opts *PipelineListOptions) ([]Pipeline, error) {
 	path := pipelineListPath(workspace, repo, opts)
 	if opts == nil || opts.Limit <= 0 {
 		var page PaginatedResponse[Pipeline]
-		if err := c.getJSON(path, &page, "pipelines"); err != nil {
+		if err := c.getJSON(ctx, path, &page, "pipelines"); err != nil {
 			return nil, err
 		}
 		return page.Values, nil
 	}
-	return collectPages[Pipeline](c, path, opts.Limit, "pipelines")
+	return collectPages[Pipeline](ctx, c, path, opts.Limit, "pipelines")
 }
 
 func isBuildNumber(ref string) bool {
@@ -237,14 +238,14 @@ func pipelineRefSegment(ref string) (string, error) {
 }
 
 // GetPipeline accepts a build number ("42" or "#42") or a pipeline UUID.
-func (c *Client) GetPipeline(workspace, repo, ref string) (*Pipeline, error) {
+func (c *Client) GetPipeline(ctx context.Context, workspace, repo, ref string) (*Pipeline, error) {
 	segment, err := pipelineRefSegment(ref)
 	if err != nil {
 		return nil, err
 	}
 
 	var pipeline Pipeline
-	if err := c.getJSON(repoPath(workspace, repo)+"/pipelines/"+segment, &pipeline, "pipeline"); err != nil {
+	if err := c.getJSON(ctx, repoPath(workspace, repo)+"/pipelines/"+segment, &pipeline, "pipeline"); err != nil {
 		if errors.Is(err, ErrNotFound) {
 			return nil, NewNotFoundError("pipeline", ref)
 		}
@@ -255,7 +256,7 @@ func (c *Client) GetPipeline(workspace, repo, ref string) (*Pipeline, error) {
 
 // resolvePipelineUUID returns the escaped UUID path segment. Step, log, and stop
 // endpoints need the UUID, so build numbers are looked up first.
-func (c *Client) resolvePipelineUUID(workspace, repo, ref string) (string, error) {
+func (c *Client) resolvePipelineUUID(ctx context.Context, workspace, repo, ref string) (string, error) {
 	segment, err := pipelineRefSegment(ref)
 	if err != nil {
 		return "", err
@@ -264,7 +265,7 @@ func (c *Client) resolvePipelineUUID(workspace, repo, ref string) (string, error
 		return segment, nil
 	}
 
-	pipeline, err := c.GetPipeline(workspace, repo, segment)
+	pipeline, err := c.GetPipeline(ctx, workspace, repo, segment)
 	if err != nil {
 		return "", err
 	}
@@ -281,17 +282,17 @@ func stepSegment(step string) (string, error) {
 	return url.PathEscape(bracedUUID(step)), nil
 }
 
-func (c *Client) ListPipelineSteps(workspace, repo, pipeline string) ([]PipelineStep, error) {
-	uuid, err := c.resolvePipelineUUID(workspace, repo, pipeline)
+func (c *Client) ListPipelineSteps(ctx context.Context, workspace, repo, pipeline string) ([]PipelineStep, error) {
+	uuid, err := c.resolvePipelineUUID(ctx, workspace, repo, pipeline)
 	if err != nil {
 		return nil, err
 	}
 	path := fmt.Sprintf("%s/pipelines/%s/steps?pagelen=%d", repoPath(workspace, repo), uuid, maxPageLen)
-	return collectPages[PipelineStep](c, path, 0, "pipeline steps")
+	return collectPages[PipelineStep](ctx, c, path, 0, "pipeline steps")
 }
 
-func (c *Client) GetPipelineStep(workspace, repo, pipeline, step string) (*PipelineStep, error) {
-	uuid, err := c.resolvePipelineUUID(workspace, repo, pipeline)
+func (c *Client) GetPipelineStep(ctx context.Context, workspace, repo, pipeline, step string) (*PipelineStep, error) {
+	uuid, err := c.resolvePipelineUUID(ctx, workspace, repo, pipeline)
 	if err != nil {
 		return nil, err
 	}
@@ -302,7 +303,7 @@ func (c *Client) GetPipelineStep(workspace, repo, pipeline, step string) (*Pipel
 
 	var result PipelineStep
 	path := fmt.Sprintf("%s/pipelines/%s/steps/%s", repoPath(workspace, repo), uuid, stepUUID)
-	if err := c.getJSON(path, &result, "pipeline step"); err != nil {
+	if err := c.getJSON(ctx, path, &result, "pipeline step"); err != nil {
 		if errors.Is(err, ErrNotFound) {
 			return nil, NewNotFoundError("pipeline step", step)
 		}
@@ -314,8 +315,8 @@ func (c *Client) GetPipelineStep(workspace, repo, pipeline, step string) (*Pipel
 // GetPipelineStepLog fetches a step log. byteRange is an optional HTTP Range
 // value such as "bytes=-65536" for the last 64 KiB. Bitbucket may redirect to
 // presigned storage; that hop is fetched without credentials or Atlas headers.
-func (c *Client) GetPipelineStepLog(workspace, repo, pipeline, step, byteRange string) (*StepLog, error) {
-	uuid, err := c.resolvePipelineUUID(workspace, repo, pipeline)
+func (c *Client) GetPipelineStepLog(ctx context.Context, workspace, repo, pipeline, step, byteRange string) (*StepLog, error) {
+	uuid, err := c.resolvePipelineUUID(ctx, workspace, repo, pipeline)
 	if err != nil {
 		return nil, err
 	}
@@ -325,7 +326,7 @@ func (c *Client) GetPipelineStepLog(workspace, repo, pipeline, step, byteRange s
 	}
 
 	path := fmt.Sprintf("%s/pipelines/%s/steps/%s/log", repoPath(workspace, repo), uuid, stepUUID)
-	req, err := http.NewRequest(http.MethodGet, c.baseURL+path, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -347,7 +348,7 @@ func (c *Client) GetPipelineStepLog(workspace, repo, pipeline, step, byteRange s
 			return nil, fmt.Errorf("pipeline log redirect has no usable Location: %w", err)
 		}
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
-		return c.fetchStepLogFromStorage(location, byteRange)
+		return c.fetchStepLogFromStorage(ctx, location, byteRange)
 	}
 
 	body, err := io.ReadAll(resp.Body)
@@ -391,12 +392,12 @@ func newStorageClient() *http.Client {
 	}
 }
 
-func (c *Client) fetchStepLogFromStorage(location *url.URL, byteRange string) (*StepLog, error) {
+func (c *Client) fetchStepLogFromStorage(ctx context.Context, location *url.URL, byteRange string) (*StepLog, error) {
 	if location.Scheme != "https" && location.Scheme != "http" {
 		return nil, fmt.Errorf("refusing pipeline log redirect to %s URL", location.Scheme)
 	}
 
-	req, err := http.NewRequest(http.MethodGet, location.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, location.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -478,13 +479,13 @@ func pipelineRunBody(input PipelineRunInput) (pipelineRunRequest, error) {
 	return pipelineRunRequest{Target: target, Variables: input.Variables}, nil
 }
 
-func (c *Client) RunPipeline(workspace, repo string, input PipelineRunInput) (*Pipeline, error) {
+func (c *Client) RunPipeline(ctx context.Context, workspace, repo string, input PipelineRunInput) (*Pipeline, error) {
 	body, err := pipelineRunBody(input)
 	if err != nil {
 		return nil, err
 	}
 
-	_, data, err := c.send(http.MethodPost, repoPath(workspace, repo)+"/pipelines/", body)
+	_, data, err := c.send(ctx, http.MethodPost, repoPath(workspace, repo)+"/pipelines/", body)
 	if err != nil {
 		return nil, err
 	}
@@ -496,11 +497,11 @@ func (c *Client) RunPipeline(workspace, repo string, input PipelineRunInput) (*P
 	return &pipeline, nil
 }
 
-func (c *Client) StopPipeline(workspace, repo, pipeline string) error {
-	uuid, err := c.resolvePipelineUUID(workspace, repo, pipeline)
+func (c *Client) StopPipeline(ctx context.Context, workspace, repo, pipeline string) error {
+	uuid, err := c.resolvePipelineUUID(ctx, workspace, repo, pipeline)
 	if err != nil {
 		return err
 	}
-	_, _, err = c.send(http.MethodPost, fmt.Sprintf("%s/pipelines/%s/stopPipeline", repoPath(workspace, repo), uuid), nil)
+	_, _, err = c.send(ctx, http.MethodPost, fmt.Sprintf("%s/pipelines/%s/stopPipeline", repoPath(workspace, repo), uuid), nil)
 	return err
 }

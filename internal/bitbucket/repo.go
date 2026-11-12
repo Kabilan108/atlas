@@ -1,6 +1,7 @@
 package bitbucket
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -60,7 +61,7 @@ type CommitAuthor struct {
 	User *User  `json:"user,omitempty"`
 }
 
-func (c *Client) SearchRepositories(workspace string, opts *RepositoryListOptions) ([]Repository, error) {
+func (c *Client) SearchRepositories(ctx context.Context, workspace string, opts *RepositoryListOptions) ([]Repository, error) {
 	values := url.Values{}
 	limit := 0
 	if opts != nil {
@@ -74,10 +75,10 @@ func (c *Client) SearchRepositories(workspace string, opts *RepositoryListOption
 	}
 	values.Set("pagelen", strconv.Itoa(fullPageLen(limit)))
 	path := withQuery("/repositories/"+url.PathEscape(workspace), values)
-	return collectPages[Repository](c, path, limit, "repositories")
+	return collectPages[Repository](ctx, c, path, limit, "repositories")
 }
 
-func (c *Client) ListBranches(workspace, repo string, opts *BranchListOptions) ([]RepositoryBranch, error) {
+func (c *Client) ListBranches(ctx context.Context, workspace, repo string, opts *BranchListOptions) ([]RepositoryBranch, error) {
 	values := url.Values{}
 	limit := 0
 	if opts != nil {
@@ -91,10 +92,10 @@ func (c *Client) ListBranches(workspace, repo string, opts *BranchListOptions) (
 	}
 	values.Set("pagelen", strconv.Itoa(fullPageLen(limit)))
 	path := withQuery(repoPath(workspace, repo)+"/refs/branches", values)
-	return collectPages[RepositoryBranch](c, path, limit, "branches")
+	return collectPages[RepositoryBranch](ctx, c, path, limit, "branches")
 }
 
-func (c *Client) GetBranch(workspace, repo, name string) (*RepositoryBranch, error) {
+func (c *Client) GetBranch(ctx context.Context, workspace, repo, name string) (*RepositoryBranch, error) {
 	escapedName, err := escapeSegments("branch name", strings.TrimSpace(name))
 	if err != nil {
 		return nil, err
@@ -102,7 +103,7 @@ func (c *Client) GetBranch(workspace, repo, name string) (*RepositoryBranch, err
 
 	var branch RepositoryBranch
 	path := repoPath(workspace, repo) + "/refs/branches/" + escapedName
-	if err := c.getJSON(path, &branch, "branch"); err != nil {
+	if err := c.getJSON(ctx, path, &branch, "branch"); err != nil {
 		if errors.Is(err, ErrNotFound) {
 			return nil, NewNotFoundError("branch", name)
 		}
@@ -115,7 +116,7 @@ func (c *Client) GetBranch(workspace, repo, name string) (*RepositoryBranch, err
 // and Include, minus those reachable from Exclude, as in "commits on feature
 // not on main". A revision containing a slash is sent as an include because
 // /commits/{revision} cannot carry one unambiguously.
-func (c *Client) ListCommits(workspace, repo, revision string, opts *CommitListOptions) ([]CommitInfo, error) {
+func (c *Client) ListCommits(ctx context.Context, workspace, repo, revision string, opts *CommitListOptions) ([]CommitInfo, error) {
 	path := repoPath(workspace, repo) + "/commits"
 	values := url.Values{}
 	if strings.Contains(revision, "/") {
@@ -144,18 +145,18 @@ func (c *Client) ListCommits(workspace, repo, revision string, opts *CommitListO
 
 	if limit <= 0 {
 		var page PaginatedResponse[CommitInfo]
-		if err := c.getJSON(path, &page, "commits"); err != nil {
+		if err := c.getJSON(ctx, path, &page, "commits"); err != nil {
 			return nil, err
 		}
 		return page.Values, nil
 	}
-	return collectPages[CommitInfo](c, path, limit, "commits")
+	return collectPages[CommitInfo](ctx, c, path, limit, "commits")
 }
 
 // GetFileContent returns the raw bytes of path at ref (a branch, tag, or hash).
 // A ref containing a slash is resolved to the commit of the branch or tag it
 // names first, since /src/{ref}/{path} cannot tell where such a ref ends.
-func (c *Client) GetFileContent(workspace, repo, ref, path string) ([]byte, error) {
+func (c *Client) GetFileContent(ctx context.Context, workspace, repo, ref, path string) ([]byte, error) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
 		return nil, fmt.Errorf("ref cannot be empty")
@@ -167,7 +168,7 @@ func (c *Client) GetFileContent(workspace, repo, ref, path string) ([]byte, erro
 
 	revision := ref
 	if strings.Contains(ref, "/") {
-		hash, err := c.resolveSlashRef(workspace, repo, ref)
+		hash, err := c.resolveSlashRef(ctx, workspace, repo, ref)
 		if err != nil {
 			return nil, err
 		}
@@ -175,7 +176,7 @@ func (c *Client) GetFileContent(workspace, repo, ref, path string) ([]byte, erro
 	}
 
 	requestURL := c.baseURL + repoPath(workspace, repo) + "/src/" + url.PathEscape(revision) + "/" + escapedPath
-	req, err := http.NewRequest(http.MethodGet, requestURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -205,8 +206,8 @@ type repositoryTag struct {
 
 // resolveSlashRef returns the commit of the branch, else the tag, named ref.
 // A ref containing a slash cannot be a commit hash.
-func (c *Client) resolveSlashRef(workspace, repo, ref string) (string, error) {
-	branch, err := c.GetBranch(workspace, repo, ref)
+func (c *Client) resolveSlashRef(ctx context.Context, workspace, repo, ref string) (string, error) {
+	branch, err := c.GetBranch(ctx, workspace, repo, ref)
 	if err == nil {
 		return refTargetHash("branch", ref, branch.Target.Hash)
 	}
@@ -219,7 +220,7 @@ func (c *Client) resolveSlashRef(workspace, repo, ref string) (string, error) {
 		return "", err
 	}
 	var tag repositoryTag
-	if err := c.getJSON(repoPath(workspace, repo)+"/refs/tags/"+escapedName, &tag, "tag"); err != nil {
+	if err := c.getJSON(ctx, repoPath(workspace, repo)+"/refs/tags/"+escapedName, &tag, "tag"); err != nil {
 		if errors.Is(err, ErrNotFound) {
 			return "", NewNotFoundError("branch or tag", ref)
 		}

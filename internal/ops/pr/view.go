@@ -65,7 +65,7 @@ func view(ctx context.Context, env ops.Env, in ViewInput) (*ViewResult, error) {
 	}
 	id := target.PR.ID
 	if in.Comments || in.JSON {
-		result.Comments, err = client.ListPullRequestComments(target.Workspace, target.Repo, id)
+		result.Comments, err = client.ListPullRequestComments(ctx, target.Workspace, target.Repo, id)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch comments: %w", err)
 		}
@@ -74,17 +74,17 @@ func view(ctx context.Context, env ops.Env, in ViewInput) (*ViewResult, error) {
 		return result, nil
 	}
 	if result.showComments {
-		result.tasks, err = client.ListPullRequestTasks(target.Workspace, target.Repo, id)
+		result.tasks, err = client.ListPullRequestTasks(ctx, target.Workspace, target.Repo, id)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch tasks: %w", err)
 		}
 		// The diff only adds code context to inline threads; without it the
 		// threads still render.
-		if diff, err := client.GetPullRequestDiff(target.Workspace, target.Repo, id); err == nil {
+		if diff, err := client.GetPullRequestDiff(ctx, target.Workspace, target.Repo, id); err == nil {
 			result.diff = diff
 		}
 	}
-	if err := result.resolveMentions(client); err != nil {
+	if err := result.resolveMentions(ctx, client); err != nil {
 		return nil, err
 	}
 	return result, nil
@@ -101,7 +101,7 @@ func (r *ViewResult) Markdown() (string, error) {
 // resolveMentions looks up the users that @{account-id} mentions refer to.
 // Rendering once with a live resolver asks for exactly the mentions the
 // markdown shows, skipping those inside code.
-func (r *ViewResult) resolveMentions(client *bitbucket.Client) error {
+func (r *ViewResult) resolveMentions(ctx context.Context, client *bitbucket.Client) error {
 	r.users = make(map[string]bitbucket.User)
 	for _, user := range r.knownUsers() {
 		if user.AccountID != "" {
@@ -116,7 +116,7 @@ func (r *ViewResult) resolveMentions(client *bitbucket.Client) error {
 		if unknown[accountID] {
 			return bitbucket.User{}, false
 		}
-		user, err := client.GetUser(accountID)
+		user, err := client.GetUser(ctx, accountID)
 		if err != nil {
 			unknown[accountID] = true
 			return bitbucket.User{}, false

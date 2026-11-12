@@ -1,6 +1,7 @@
 package bitbucket
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -99,10 +100,10 @@ func (a PullRequestActivity) Actor() User {
 
 // ListPullRequestActivity returns the activity feed newest first, as Bitbucket
 // orders it. A limit of zero or less returns every page.
-func (c *Client) ListPullRequestActivity(workspace, repo string, id, limit int) ([]PullRequestActivity, error) {
+func (c *Client) ListPullRequestActivity(ctx context.Context, workspace, repo string, id, limit int) ([]PullRequestActivity, error) {
 	path := fmt.Sprintf("%s/pullrequests/%d/activity", repoPath(workspace, repo), id)
 	if pageLen := pageLenFor(limit, 0); pageLen > 0 {
 		path += fmt.Sprintf("?pagelen=%d", pageLen)
 	}
-	return collectPages[PullRequestActivity](c, path, limit, "pull request activity")
+	return collectPages[PullRequestActivity](ctx, c, path, limit, "pull request activity")
 }

@@ -160,7 +160,7 @@ func sleepContext(ctx context.Context, d time.Duration) error {
 	}
 }
 
-func (c *Client) get(path string) ([]byte, error) {
+func (c *Client) get(ctx context.Context, path string) ([]byte, error) {
 	requestURL := c.baseURL + path
 
 	if !c.noCache {
@@ -169,7 +169,7 @@ func (c *Client) get(path string) ([]byte, error) {
 		}
 	}
 
-	req, err := http.NewRequest(http.MethodGet, requestURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -196,10 +196,10 @@ func (c *Client) get(path string) ([]byte, error) {
 	return body, nil
 }
 
-func (c *Client) getRaw(path string) ([]byte, error) {
+func (c *Client) getRaw(ctx context.Context, path string) ([]byte, error) {
 	requestURL := c.baseURL + path
 
-	req, err := http.NewRequest(http.MethodGet, requestURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -222,19 +222,19 @@ func (c *Client) getRaw(path string) ([]byte, error) {
 	return body, nil
 }
 
-func (c *Client) post(path string, body any) ([]byte, error) {
-	return c.sendJSON(http.MethodPost, path, body)
+func (c *Client) post(ctx context.Context, path string, body any) ([]byte, error) {
+	return c.sendJSON(ctx, http.MethodPost, path, body)
 }
 
-func (c *Client) put(path string, body any) ([]byte, error) {
-	return c.sendJSON(http.MethodPut, path, body)
+func (c *Client) put(ctx context.Context, path string, body any) ([]byte, error) {
+	return c.sendJSON(ctx, http.MethodPut, path, body)
 }
 
-func (c *Client) delete(path string) ([]byte, error) {
-	return c.sendJSON(http.MethodDelete, path, nil)
+func (c *Client) delete(ctx context.Context, path string) ([]byte, error) {
+	return c.sendJSON(ctx, http.MethodDelete, path, nil)
 }
 
-func (c *Client) sendJSON(method, path string, body any) ([]byte, error) {
+func (c *Client) sendJSON(ctx context.Context, method, path string, body any) ([]byte, error) {
 	var payload io.Reader
 	if body != nil {
 		data, err := json.Marshal(body)
@@ -244,7 +244,7 @@ func (c *Client) sendJSON(method, path string, body any) ([]byte, error) {
 		payload = bytes.NewReader(data)
 	}
 
-	req, err := http.NewRequest(method, c.baseURL+path, payload)
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, payload)
 	if err != nil {
 		return nil, err
 	}
@@ -316,8 +316,8 @@ func extractResource(path string) string {
 	return path
 }
 
-func (c *Client) GetCurrentUser() (*User, error) {
-	data, err := c.get("/user")
+func (c *Client) GetCurrentUser(ctx context.Context) (*User, error) {
+	data, err := c.get(ctx, "/user")
 	if err != nil {
 		return nil, err
 	}
@@ -330,9 +330,9 @@ func (c *Client) GetCurrentUser() (*User, error) {
 	return &user, nil
 }
 
-func (c *Client) GetUser(identifier string) (*User, error) {
+func (c *Client) GetUser(ctx context.Context, identifier string) (*User, error) {
 	path := "/users/" + url.PathEscape(identifier)
-	data, err := c.get(path)
+	data, err := c.get(ctx, path)
 	if err != nil {
 		return nil, err
 	}
@@ -345,12 +345,12 @@ func (c *Client) GetUser(identifier string) (*User, error) {
 	return &user, nil
 }
 
-func (c *Client) ListRepositories(workspace string) ([]Repository, error) {
+func (c *Client) ListRepositories(ctx context.Context, workspace string) ([]Repository, error) {
 	var repos []Repository
 	path := fmt.Sprintf("/repositories/%s", workspace)
 
 	for path != "" {
-		data, err := c.get(path)
+		data, err := c.get(ctx, path)
 		if err != nil {
 			return nil, err
 		}
@@ -367,9 +367,9 @@ func (c *Client) ListRepositories(workspace string) ([]Repository, error) {
 	return repos, nil
 }
 
-func (c *Client) GetRepository(workspace, repo string) (*Repository, error) {
+func (c *Client) GetRepository(ctx context.Context, workspace, repo string) (*Repository, error) {
 	path := fmt.Sprintf("/repositories/%s/%s", workspace, repo)
-	data, err := c.get(path)
+	data, err := c.get(ctx, path)
 	if err != nil {
 		return nil, err
 	}
@@ -382,7 +382,7 @@ func (c *Client) GetRepository(workspace, repo string) (*Repository, error) {
 	return &repository, nil
 }
 
-func (c *Client) ListPullRequests(workspace, repo string, opts *PRListOptions) ([]PullRequest, error) {
+func (c *Client) ListPullRequests(ctx context.Context, workspace, repo string, opts *PRListOptions) ([]PullRequest, error) {
 	var prs []PullRequest
 	path := fmt.Sprintf("/repositories/%s/%s/pullrequests", workspace, repo)
 
@@ -397,7 +397,7 @@ func (c *Client) ListPullRequests(workspace, repo string, opts *PRListOptions) (
 	}
 
 	for path != "" {
-		data, err := c.get(path)
+		data, err := c.get(ctx, path)
 		if err != nil {
 			return nil, err
 		}
@@ -436,15 +436,15 @@ func hasReviewer(pr PullRequest, reviewer string) bool {
 	return false
 }
 
-func (c *Client) ListAllPullRequests(workspace string, opts *PRListOptions) ([]PullRequest, error) {
-	repos, err := c.ListRepositories(workspace)
+func (c *Client) ListAllPullRequests(ctx context.Context, workspace string, opts *PRListOptions) ([]PullRequest, error) {
+	repos, err := c.ListRepositories(ctx, workspace)
 	if err != nil {
 		return nil, err
 	}
 
 	var allPRs []PullRequest
 	for _, repo := range repos {
-		prs, err := c.ListPullRequests(workspace, repo.Name, opts)
+		prs, err := c.ListPullRequests(ctx, workspace, repo.Name, opts)
 		if err != nil {
 			continue
 		}
@@ -454,9 +454,9 @@ func (c *Client) ListAllPullRequests(workspace string, opts *PRListOptions) ([]P
 	return allPRs, nil
 }
 
-func (c *Client) FindPullRequestByBranch(workspace, repo, branch string) (*PullRequest, error) {
+func (c *Client) FindPullRequestByBranch(ctx context.Context, workspace, repo, branch string) (*PullRequest, error) {
 	path := fmt.Sprintf("/repositories/%s/%s/pullrequests?q=source.branch.name=\"%s\"", workspace, repo, branch)
-	data, err := c.get(path)
+	data, err := c.get(ctx, path)
 	if err != nil {
 		return nil, err
 	}
@@ -484,9 +484,9 @@ func (c *Client) FindPullRequestByBranch(workspace, repo, branch string) (*PullR
 	return selected, nil
 }
 
-func (c *Client) GetPullRequest(workspace, repo string, id int) (*PullRequest, error) {
+func (c *Client) GetPullRequest(ctx context.Context, workspace, repo string, id int) (*PullRequest, error) {
 	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d", workspace, repo, id)
-	data, err := c.get(path)
+	data, err := c.get(ctx, path)
 	if err != nil {
 		return nil, err
 	}
@@ -499,9 +499,9 @@ func (c *Client) GetPullRequest(workspace, repo string, id int) (*PullRequest, e
 	return &pr, nil
 }
 
-func (c *Client) CreatePullRequest(workspace, repo string, input PullRequestCreate) (*PullRequest, error) {
+func (c *Client) CreatePullRequest(ctx context.Context, workspace, repo string, input PullRequestCreate) (*PullRequest, error) {
 	path := fmt.Sprintf("/repositories/%s/%s/pullrequests", workspace, repo)
-	data, err := c.post(path, input)
+	data, err := c.post(ctx, path, input)
 	if err != nil {
 		return nil, err
 	}
@@ -516,9 +516,9 @@ func (c *Client) CreatePullRequest(workspace, repo string, input PullRequestCrea
 	return &pr, nil
 }
 
-func (c *Client) UpdatePullRequest(workspace, repo string, id int, update PullRequestUpdate) (*PullRequest, error) {
+func (c *Client) UpdatePullRequest(ctx context.Context, workspace, repo string, id int, update PullRequestUpdate) (*PullRequest, error) {
 	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d", workspace, repo, id)
-	data, err := c.put(path, update)
+	data, err := c.put(ctx, path, update)
 	if err != nil {
 		return nil, err
 	}
@@ -533,9 +533,9 @@ func (c *Client) UpdatePullRequest(workspace, repo string, id int, update PullRe
 	return &pr, nil
 }
 
-func (c *Client) DeclinePullRequest(workspace, repo string, id int) (*PullRequest, error) {
+func (c *Client) DeclinePullRequest(ctx context.Context, workspace, repo string, id int) (*PullRequest, error) {
 	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d/decline", workspace, repo, id)
-	data, err := c.post(path, nil)
+	data, err := c.post(ctx, path, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -548,12 +548,12 @@ func (c *Client) DeclinePullRequest(workspace, repo string, id int) (*PullReques
 	return &pr, nil
 }
 
-func (c *Client) ListPullRequestComments(workspace, repo string, id int) ([]Comment, error) {
+func (c *Client) ListPullRequestComments(ctx context.Context, workspace, repo string, id int) ([]Comment, error) {
 	var comments []Comment
 	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d/comments", workspace, repo, id)
 
 	for path != "" {
-		data, err := c.get(path)
+		data, err := c.get(ctx, path)
 		if err != nil {
 			return nil, err
 		}
@@ -570,9 +570,9 @@ func (c *Client) ListPullRequestComments(workspace, repo string, id int) ([]Comm
 	return comments, nil
 }
 
-func (c *Client) CreatePullRequestComment(workspace, repo string, id int, input CommentCreate) (*Comment, error) {
+func (c *Client) CreatePullRequestComment(ctx context.Context, workspace, repo string, id int, input CommentCreate) (*Comment, error) {
 	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d/comments", workspace, repo, id)
-	data, err := c.post(path, input)
+	data, err := c.post(ctx, path, input)
 	if err != nil {
 		return nil, err
 	}
@@ -585,15 +585,15 @@ func (c *Client) CreatePullRequestComment(workspace, repo string, id int, input 
 	return &comment, nil
 }
 
-func (c *Client) CreatePullRequestCommentText(workspace, repo string, id int, body string) (*Comment, error) {
-	return c.CreatePullRequestComment(workspace, repo, id, CommentCreate{
+func (c *Client) CreatePullRequestCommentText(ctx context.Context, workspace, repo string, id int, body string) (*Comment, error) {
+	return c.CreatePullRequestComment(ctx, workspace, repo, id, CommentCreate{
 		Content: ContentInput{Raw: body},
 	})
 }
 
-func (c *Client) ApprovePullRequest(workspace, repo string, id int) (*ReviewActionResult, error) {
+func (c *Client) ApprovePullRequest(ctx context.Context, workspace, repo string, id int) (*ReviewActionResult, error) {
 	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d/approve", workspace, repo, id)
-	data, err := c.post(path, nil)
+	data, err := c.post(ctx, path, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -606,15 +606,15 @@ func (c *Client) ApprovePullRequest(workspace, repo string, id int) (*ReviewActi
 	return &result, nil
 }
 
-func (c *Client) UnapprovePullRequest(workspace, repo string, id int) error {
+func (c *Client) UnapprovePullRequest(ctx context.Context, workspace, repo string, id int) error {
 	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d/approve", workspace, repo, id)
-	_, err := c.delete(path)
+	_, err := c.delete(ctx, path)
 	return err
 }
 
-func (c *Client) RequestPullRequestChanges(workspace, repo string, id int) (*ReviewActionResult, error) {
+func (c *Client) RequestPullRequestChanges(ctx context.Context, workspace, repo string, id int) (*ReviewActionResult, error) {
 	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d/request-changes", workspace, repo, id)
-	data, err := c.post(path, nil)
+	data, err := c.post(ctx, path, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -627,23 +627,23 @@ func (c *Client) RequestPullRequestChanges(workspace, repo string, id int) (*Rev
 	return &result, nil
 }
 
-func (c *Client) ClearPullRequestChanges(workspace, repo string, id int) error {
+func (c *Client) ClearPullRequestChanges(ctx context.Context, workspace, repo string, id int) error {
 	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d/request-changes", workspace, repo, id)
-	_, err := c.delete(path)
+	_, err := c.delete(ctx, path)
 	return err
 }
 
-func (c *Client) GetPullRequestDiff(workspace, repo string, id int) ([]byte, error) {
+func (c *Client) GetPullRequestDiff(ctx context.Context, workspace, repo string, id int) ([]byte, error) {
 	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d/diff", workspace, repo, id)
-	return c.getRaw(path)
+	return c.getRaw(ctx, path)
 }
 
-func (c *Client) ListPullRequestTasks(workspace, repo string, id int) ([]Task, error) {
+func (c *Client) ListPullRequestTasks(ctx context.Context, workspace, repo string, id int) ([]Task, error) {
 	var tasks []Task
 	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d/tasks", workspace, repo, id)
 
 	for path != "" {
-		data, err := c.get(path)
+		data, err := c.get(ctx, path)
 		if err != nil {
 			if apiErr, ok := err.(*APIError); ok && apiErr.StatusCode == 404 {
 				return []Task{}, nil
@@ -724,12 +724,12 @@ func snippetListPath(workspace string, opts *SnippetListOptions) string {
 	return path
 }
 
-func (c *Client) ListSnippets(workspace string, opts *SnippetListOptions) ([]Snippet, error) {
+func (c *Client) ListSnippets(ctx context.Context, workspace string, opts *SnippetListOptions) ([]Snippet, error) {
 	var snippets []Snippet
 	path := snippetListPath(workspace, opts)
 
 	for path != "" {
-		data, err := c.get(path)
+		data, err := c.get(ctx, path)
 		if err != nil {
 			return nil, err
 		}
@@ -749,9 +749,9 @@ func (c *Client) ListSnippets(workspace string, opts *SnippetListOptions) ([]Sni
 	return snippets, nil
 }
 
-func (c *Client) GetSnippet(workspace, id string) (*Snippet, error) {
+func (c *Client) GetSnippet(ctx context.Context, workspace, id string) (*Snippet, error) {
 	path := fmt.Sprintf("/snippets/%s/%s", url.PathEscape(workspace), url.PathEscape(id))
-	data, err := c.get(path)
+	data, err := c.get(ctx, path)
 	if err != nil {
 		return nil, err
 	}
@@ -764,16 +764,16 @@ func (c *Client) GetSnippet(workspace, id string) (*Snippet, error) {
 	return &snippet, nil
 }
 
-func (c *Client) GetSnippetFileContent(workspace, id, filename string) ([]byte, error) {
+func (c *Client) GetSnippetFileContent(ctx context.Context, workspace, id, filename string) ([]byte, error) {
 	escapedFilename, err := escapePathPreservingSlashes(filename)
 	if err != nil {
 		return nil, err
 	}
 	path := fmt.Sprintf("/snippets/%s/%s/files/%s", url.PathEscape(workspace), url.PathEscape(id), escapedFilename)
-	return c.getRaw(path)
+	return c.getRaw(ctx, path)
 }
 
-func (c *Client) CreateSnippet(workspace, title string, files map[string][]byte, isPrivate bool) (*Snippet, error) {
+func (c *Client) CreateSnippet(ctx context.Context, workspace, title string, files map[string][]byte, isPrivate bool) (*Snippet, error) {
 	requestURL := c.baseURL + fmt.Sprintf("/snippets/%s", url.PathEscape(workspace))
 
 	var buf bytes.Buffer
@@ -801,7 +801,7 @@ func (c *Client) CreateSnippet(workspace, title string, files map[string][]byte,
 		return nil, fmt.Errorf("failed to close multipart writer: %w", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, requestURL, &buf)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, &buf)
 	if err != nil {
 		return nil, err
 	}
@@ -830,7 +830,7 @@ func (c *Client) CreateSnippet(workspace, title string, files map[string][]byte,
 	return &snippet, nil
 }
 
-func (c *Client) UpdateSnippet(workspace, id, title string, addFiles map[string][]byte, removeFiles []string) error {
+func (c *Client) UpdateSnippet(ctx context.Context, workspace, id, title string, addFiles map[string][]byte, removeFiles []string) error {
 	requestURL := c.baseURL + fmt.Sprintf("/snippets/%s/%s", url.PathEscape(workspace), url.PathEscape(id))
 
 	var buf bytes.Buffer
@@ -862,7 +862,7 @@ func (c *Client) UpdateSnippet(workspace, id, title string, addFiles map[string]
 		return fmt.Errorf("failed to close multipart writer: %w", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPut, requestURL, &buf)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, requestURL, &buf)
 	if err != nil {
 		return err
 	}
@@ -882,10 +882,10 @@ func (c *Client) UpdateSnippet(workspace, id, title string, addFiles map[string]
 	return checkResponse(resp, body)
 }
 
-func (c *Client) DeleteSnippet(workspace, id string) error {
+func (c *Client) DeleteSnippet(ctx context.Context, workspace, id string) error {
 	requestURL := c.baseURL + fmt.Sprintf("/snippets/%s/%s", url.PathEscape(workspace), url.PathEscape(id))
 
-	req, err := http.NewRequest(http.MethodDelete, requestURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, requestURL, nil)
 	if err != nil {
 		return err
 	}

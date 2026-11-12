@@ -93,7 +93,7 @@ func TestPaginationRefusesNextLinksOutsideBaseURL(t *testing.T) {
 		t.Run(tc.name+"/collectPages", func(t *testing.T) {
 			t.Parallel()
 			client, recorder := fakeAPIClient(tc.baseURL, tc.next)
-			_, err := client.SearchRepositories("ws", nil)
+			_, err := client.SearchRepositories(context.Background(), "ws", nil)
 			if err == nil || !strings.Contains(err.Error(), "refusing") {
 				t.Fatalf("error = %v, want refusal", err)
 			}
@@ -104,7 +104,7 @@ func TestPaginationRefusesNextLinksOutsideBaseURL(t *testing.T) {
 		t.Run(tc.name+"/legacy", func(t *testing.T) {
 			t.Parallel()
 			client, recorder := fakeAPIClient(tc.baseURL, tc.next)
-			repos, err := client.ListRepositories("ws")
+			repos, err := client.ListRepositories(context.Background(), "ws")
 			if err != nil {
 				t.Fatalf("ListRepositories() error = %v", err)
 			}
@@ -119,7 +119,7 @@ func TestPaginationFollowsNextLinksUnderBasePath(t *testing.T) {
 	t.Parallel()
 
 	client, recorder := fakeAPIClient("https://proxy.example/bitbucket", "https://proxy.example/bitbucket/repositories/ws?page=2")
-	repos, err := client.SearchRepositories("ws", nil)
+	repos, err := client.SearchRepositories(context.Background(), "ws", nil)
 	if err != nil {
 		t.Fatalf("SearchRepositories() error = %v", err)
 	}
@@ -141,7 +141,7 @@ func TestCollectPagesStopsWithoutNextLink(t *testing.T) {
 		writeJSON(w, http.StatusOK, `{"page":1,"pagelen":2,"size":5,"values":[{"build_number":5},{"build_number":4}]}`)
 	})
 
-	pipelines, err := client.ListPipelines("ws", "repo", &PipelineListOptions{Limit: 10, PageLen: 2})
+	pipelines, err := client.ListPipelines(context.Background(), "ws", "repo", &PipelineListOptions{Limit: 10, PageLen: 2})
 	if err != nil {
 		t.Fatalf("ListPipelines() error = %v", err)
 	}
@@ -164,7 +164,7 @@ func TestCollectPagesRejectsRepeatedNextLink(t *testing.T) {
 	})
 	serverURL = server.URL
 
-	_, err := client.ListBranches("ws", "repo", nil)
+	_, err := client.ListBranches(context.Background(), "ws", "repo", nil)
 	if err == nil || !strings.Contains(err.Error(), "did not advance") {
 		t.Fatalf("error = %v, want non-advancing pagination error", err)
 	}
@@ -202,19 +202,19 @@ func TestAuthenticatedRequestsRefuseRedirectsOffAPIOrigin(t *testing.T) {
 			return err
 		},
 		"GetBranch": func(c *Client, _ string) error {
-			_, err := c.GetBranch("ws", "repo", "main")
+			_, err := c.GetBranch(context.Background(), "ws", "repo", "main")
 			return err
 		},
 		"GetFileContent": func(c *Client, _ string) error {
-			_, err := c.GetFileContent("ws", "repo", "main", "README.md")
+			_, err := c.GetFileContent(context.Background(), "ws", "repo", "main", "README.md")
 			return err
 		},
 		"GetPullRequestDiff": func(c *Client, _ string) error {
-			_, err := c.GetPullRequestDiff("ws", "repo", 7)
+			_, err := c.GetPullRequestDiff(context.Background(), "ws", "repo", 7)
 			return err
 		},
 		"ListRepositories": func(c *Client, _ string) error {
-			_, err := c.ListRepositories("ws")
+			_, err := c.ListRepositories(context.Background(), "ws")
 			return err
 		},
 	}
@@ -258,7 +258,7 @@ func TestAuthenticatedRequestsFollowRedirectsWithinBaseURL(t *testing.T) {
 		writeJSON(w, http.StatusOK, `{"name":"trunk","target":{"hash":"abc"}}`)
 	})
 
-	branch, err := client.GetBranch("ws", "repo", "main")
+	branch, err := client.GetBranch(context.Background(), "ws", "repo", "main")
 	if err != nil {
 		t.Fatalf("GetBranch() error = %v", err)
 	}

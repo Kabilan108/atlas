@@ -21,7 +21,7 @@ func TestMergePullRequestSendsParametersAndParses200(t *testing.T) {
 		writeJSON(w, http.StatusOK, `{"id":7,"state":"MERGED","merge_commit":{"hash":"deadbeef"}}`)
 	})
 
-	result, err := client.MergePullRequest("ws", "repo", 7, PullRequestMergeOptions{
+	result, err := client.MergePullRequest(context.Background(), "ws", "repo", 7, PullRequestMergeOptions{
 		Strategy:          MergeStrategySquash,
 		Message:           "Squashed",
 		CloseSourceBranch: boolPtr(true),
@@ -62,7 +62,7 @@ func TestMergePullRequestOmitsUnsetParameters(t *testing.T) {
 		writeJSON(w, http.StatusOK, `{"id":7,"state":"MERGED"}`)
 	})
 
-	if _, err := client.MergePullRequest("ws", "repo", 7, PullRequestMergeOptions{Async: true}); err != nil {
+	if _, err := client.MergePullRequest(context.Background(), "ws", "repo", 7, PullRequestMergeOptions{Async: true}); err != nil {
 		t.Fatalf("MergePullRequest() error = %v", err)
 	}
 	req := recorder.all()[0]
@@ -84,7 +84,7 @@ func TestMergePullRequestRejectsUnknownStrategy(t *testing.T) {
 		writeJSON(w, http.StatusOK, `{}`)
 	})
 
-	_, err := client.MergePullRequest("ws", "repo", 7, PullRequestMergeOptions{Strategy: "octopus"})
+	_, err := client.MergePullRequest(context.Background(), "ws", "repo", 7, PullRequestMergeOptions{Strategy: "octopus"})
 	if err == nil || !strings.Contains(err.Error(), "octopus") {
 		t.Fatalf("error = %v, want unknown strategy", err)
 	}
@@ -101,7 +101,7 @@ func TestMergePullRequestPassesBitbucketMessageThrough(t *testing.T) {
 			writeJSON(w, status, `{"type":"error","error":{"message":"You can't merge until you resolve all merge checks."}}`)
 		})
 
-		_, err := client.MergePullRequest("ws", "repo", 7, PullRequestMergeOptions{})
+		_, err := client.MergePullRequest(context.Background(), "ws", "repo", 7, PullRequestMergeOptions{})
 		var apiErr *APIError
 		if !errors.As(err, &apiErr) {
 			t.Fatalf("status %d: error = %v, want APIError", status, err)
@@ -135,7 +135,7 @@ func TestMergePullRequest202PollsTaskStatusToSuccess(t *testing.T) {
 	})
 	serverURL = server.URL
 
-	result, err := client.MergePullRequest("ws", "repo", 7, PullRequestMergeOptions{})
+	result, err := client.MergePullRequest(context.Background(), "ws", "repo", 7, PullRequestMergeOptions{})
 	if err != nil {
 		t.Fatalf("MergePullRequest() error = %v", err)
 	}

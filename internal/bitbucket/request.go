@@ -16,11 +16,7 @@ const maxPageLen = 100
 
 // send performs an uncached JSON request. New endpoints use it instead of get
 // because statuses, pipelines, and merge tasks change faster than the cache TTL.
-func (c *Client) send(method, path string, body any) (*http.Response, []byte, error) {
-	return c.sendContext(context.Background(), method, path, body)
-}
-
-func (c *Client) sendContext(ctx context.Context, method, path string, body any) (*http.Response, []byte, error) {
+func (c *Client) send(ctx context.Context, method, path string, body any) (*http.Response, []byte, error) {
 	var payload io.Reader
 	if body != nil {
 		data, err := json.Marshal(body)
@@ -54,12 +50,8 @@ func (c *Client) sendContext(ctx context.Context, method, path string, body any)
 	return resp, data, nil
 }
 
-func (c *Client) getJSON(path string, out any, what string) error {
-	return c.getJSONContext(context.Background(), path, out, what)
-}
-
-func (c *Client) getJSONContext(ctx context.Context, path string, out any, what string) error {
-	_, data, err := c.sendContext(ctx, http.MethodGet, path, nil)
+func (c *Client) getJSON(ctx context.Context, path string, out any, what string) error {
+	_, data, err := c.send(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return err
 	}
@@ -71,7 +63,7 @@ func (c *Client) getJSONContext(ctx context.Context, path string, out any, what 
 
 // collectPages follows Bitbucket's next links until the last page or until
 // limit values are collected. A limit of zero or less collects every page.
-func collectPages[T any](c *Client, path string, limit int, what string) ([]T, error) {
+func collectPages[T any](ctx context.Context, c *Client, path string, limit int, what string) ([]T, error) {
 	var values []T
 	visited := map[string]bool{}
 	for path != "" {
@@ -81,7 +73,7 @@ func collectPages[T any](c *Client, path string, limit int, what string) ([]T, e
 		visited[path] = true
 
 		var page PaginatedResponse[T]
-		if err := c.getJSON(path, &page, what); err != nil {
+		if err := c.getJSON(ctx, path, &page, what); err != nil {
 			return nil, err
 		}
 

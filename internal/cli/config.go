@@ -145,7 +145,7 @@ func runConfigVerify(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("authentication failed: %w\nRun 'atlas login' to configure credentials", err)
 	}
 
-	user, err := client.GetCurrentUser()
+	user, err := client.GetCurrentUser(cmd.Context())
 	if err != nil {
 		return fmt.Errorf("authentication failed: %w", err)
 	}

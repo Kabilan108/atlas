@@ -1,6 +1,7 @@
 package bitbucket
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"testing"
@@ -19,7 +20,7 @@ func TestListWorkspaceMembersFiltersByName(t *testing.T) {
 	})
 	serverURL = server.URL
 
-	users, err := client.ListWorkspaceMembers("ws", &MemberListOptions{Name: "JAN"})
+	users, err := client.ListWorkspaceMembers(context.Background(), "ws", &MemberListOptions{Name: "JAN"})
 	if err != nil {
 		t.Fatalf("ListWorkspaceMembers() error = %v", err)
 	}
@@ -27,7 +28,7 @@ func TestListWorkspaceMembersFiltersByName(t *testing.T) {
 		t.Fatalf("users = %#v", users)
 	}
 
-	byNickname, err := client.ListWorkspaceMembers("ws", &MemberListOptions{Name: "bjon"})
+	byNickname, err := client.ListWorkspaceMembers(context.Background(), "ws", &MemberListOptions{Name: "bjon"})
 	if err != nil {
 		t.Fatalf("ListWorkspaceMembers(nickname) error = %v", err)
 	}
@@ -49,7 +50,7 @@ func TestListWorkspaceMembersLimitWithoutFilter(t *testing.T) {
 		writeJSON(w, http.StatusOK, `{"next":"https://not-followed","values":[{"user":{"account_id":"a"}},{"user":{"account_id":"b"}}]}`)
 	})
 
-	users, err := client.ListWorkspaceMembers("ws", &MemberListOptions{Limit: 1})
+	users, err := client.ListWorkspaceMembers(context.Background(), "ws", &MemberListOptions{Limit: 1})
 	if err != nil {
 		t.Fatalf("ListWorkspaceMembers() error = %v", err)
 	}
@@ -78,7 +79,7 @@ func TestListPullRequestActivityDecodesKinds(t *testing.T) {
 	})
 	serverURL = server.URL
 
-	activity, err := client.ListPullRequestActivity("ws", "repo", 7, 0)
+	activity, err := client.ListPullRequestActivity(context.Background(), "ws", "repo", 7, 0)
 	if err != nil {
 		t.Fatalf("ListPullRequestActivity() error = %v", err)
 	}
@@ -110,7 +111,7 @@ func TestListPullRequestActivityDecodesKinds(t *testing.T) {
 		t.Fatalf("unlimited query = %v, want server default pagelen", recorder.all()[0].Query)
 	}
 
-	limited, err := client.ListPullRequestActivity("ws", "repo", 7, 2)
+	limited, err := client.ListPullRequestActivity(context.Background(), "ws", "repo", 7, 2)
 	if err != nil {
 		t.Fatalf("ListPullRequestActivity(limit) error = %v", err)
 	}

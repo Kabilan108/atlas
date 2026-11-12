@@ -72,7 +72,7 @@ type MergeTaskStatus struct {
 	MergeResult *PullRequest `json:"merge_result,omitempty"`
 }
 
-func (c *Client) MergePullRequest(workspace, repo string, id int, opts PullRequestMergeOptions) (*MergeResult, error) {
+func (c *Client) MergePullRequest(ctx context.Context, workspace, repo string, id int, opts PullRequestMergeOptions) (*MergeResult, error) {
 	if opts.Strategy != "" && !slices.Contains(MergeStrategies, opts.Strategy) {
 		return nil, fmt.Errorf("unknown merge strategy %q (valid: %s)", opts.Strategy, strings.Join(MergeStrategies, ", "))
 	}
@@ -82,7 +82,7 @@ func (c *Client) MergePullRequest(workspace, repo string, id int, opts PullReque
 		path += "?async=true"
 	}
 
-	resp, data, err := c.send(http.MethodPost, path, mergeRequest{
+	resp, data, err := c.send(ctx, http.MethodPost, path, mergeRequest{
 		Type:              "pullrequest_merge_parameters",
 		Message:           opts.Message,
 		CloseSourceBranch: opts.CloseSourceBranch,
@@ -108,18 +108,14 @@ func (c *Client) MergePullRequest(workspace, repo string, id int, opts PullReque
 	return &MergeResult{PullRequest: &pr}, nil
 }
 
-func (c *Client) GetMergeTaskStatus(location string) (*MergeTaskStatus, error) {
-	return c.getMergeTaskStatus(context.Background(), location)
-}
-
-func (c *Client) getMergeTaskStatus(ctx context.Context, location string) (*MergeTaskStatus, error) {
+func (c *Client) GetMergeTaskStatus(ctx context.Context, location string) (*MergeTaskStatus, error) {
 	path, err := c.apiPathFromLocation(location)
 	if err != nil {
 		return nil, err
 	}
 
 	var status MergeTaskStatus
-	if err := c.getJSONContext(ctx, path, &status, "merge task status"); err != nil {
+	if err := c.getJSON(ctx, path, &status, "merge task status"); err != nil {
 		return nil, err
 	}
 	return &status, nil
@@ -138,7 +134,7 @@ func (c *Client) WaitForMerge(ctx context.Context, location string, deadline tim
 		if pollCtx.Err() != nil {
 			return nil, mergeWaitError(ctx, location)
 		}
-		status, err := c.getMergeTaskStatus(pollCtx, location)
+		status, err := c.GetMergeTaskStatus(pollCtx, location)
 		if err != nil {
 			if pollCtx.Err() != nil {
 				return nil, mergeWaitError(ctx, location)

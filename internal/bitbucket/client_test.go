@@ -1,6 +1,7 @@
 package bitbucket
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -124,7 +125,7 @@ func TestCreatePullRequestCommentSendsStructuredPayload(t *testing.T) {
 			defer server.Close()
 
 			client := newClientForTest(server.URL, server.Client())
-			comment, err := client.CreatePullRequestComment("ws", "repo", 7, tt.input)
+			comment, err := client.CreatePullRequestComment(context.Background(), "ws", "repo", 7, tt.input)
 			if err != nil {
 				t.Fatalf("CreatePullRequestComment() error = %v", err)
 			}
@@ -149,7 +150,7 @@ func TestReviewActionEndpoints(t *testing.T) {
 			method: http.MethodPost,
 			path:   "/repositories/ws/repo/pullrequests/7/approve",
 			call: func(client *Client) error {
-				_, err := client.ApprovePullRequest("ws", "repo", 7)
+				_, err := client.ApprovePullRequest(context.Background(), "ws", "repo", 7)
 				return err
 			},
 		},
@@ -157,14 +158,14 @@ func TestReviewActionEndpoints(t *testing.T) {
 			name:   "unapprove",
 			method: http.MethodDelete,
 			path:   "/repositories/ws/repo/pullrequests/7/approve",
-			call:   func(client *Client) error { return client.UnapprovePullRequest("ws", "repo", 7) },
+			call:   func(client *Client) error { return client.UnapprovePullRequest(context.Background(), "ws", "repo", 7) },
 		},
 		{
 			name:   "request changes",
 			method: http.MethodPost,
 			path:   "/repositories/ws/repo/pullrequests/7/request-changes",
 			call: func(client *Client) error {
-				_, err := client.RequestPullRequestChanges("ws", "repo", 7)
+				_, err := client.RequestPullRequestChanges(context.Background(), "ws", "repo", 7)
 				return err
 			},
 		},
@@ -172,7 +173,9 @@ func TestReviewActionEndpoints(t *testing.T) {
 			name:   "clear change request",
 			method: http.MethodDelete,
 			path:   "/repositories/ws/repo/pullrequests/7/request-changes",
-			call:   func(client *Client) error { return client.ClearPullRequestChanges("ws", "repo", 7) },
+			call: func(client *Client) error {
+				return client.ClearPullRequestChanges(context.Background(), "ws", "repo", 7)
+			},
 		},
 	}
 

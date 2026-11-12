@@ -1,6 +1,7 @@
 package bitbucket
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"time"
@@ -25,15 +26,15 @@ type CommitStatus struct {
 	UpdatedOn   time.Time `json:"updated_on"`
 }
 
-func (c *Client) ListPullRequestStatuses(workspace, repo string, id int) ([]CommitStatus, error) {
+func (c *Client) ListPullRequestStatuses(ctx context.Context, workspace, repo string, id int) ([]CommitStatus, error) {
 	path := fmt.Sprintf("%s/pullrequests/%d/statuses", repoPath(workspace, repo), id)
-	return collectPages[CommitStatus](c, path, 0, "pull request statuses")
+	return collectPages[CommitStatus](ctx, c, path, 0, "pull request statuses")
 }
 
-func (c *Client) ListCommitStatuses(workspace, repo, commit string) ([]CommitStatus, error) {
+func (c *Client) ListCommitStatuses(ctx context.Context, workspace, repo, commit string) ([]CommitStatus, error) {
 	if commit == "" {
 		return nil, fmt.Errorf("commit hash cannot be empty")
 	}
 	path := fmt.Sprintf("%s/commit/%s/statuses", repoPath(workspace, repo), url.PathEscape(commit))
-	return collectPages[CommitStatus](c, path, 0, "commit statuses")
+	return collectPages[CommitStatus](ctx, c, path, 0, "commit statuses")
 }

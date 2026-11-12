@@ -1,6 +1,7 @@
 package bitbucket
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -23,7 +24,7 @@ func TestSearchRepositoriesSendsNameQueryAndPaginates(t *testing.T) {
 	})
 	serverURL = server.URL
 
-	repos, err := client.SearchRepositories("ws", &RepositoryListOptions{Name: `api "core"`, Sort: "-updated_on"})
+	repos, err := client.SearchRepositories(context.Background(), "ws", &RepositoryListOptions{Name: `api "core"`, Sort: "-updated_on"})
 	if err != nil {
 		t.Fatalf("SearchRepositories() error = %v", err)
 	}
@@ -48,7 +49,7 @@ func TestSearchRepositoriesLimit(t *testing.T) {
 		writeJSON(w, http.StatusOK, `{"next":"https://elsewhere/ignored","values":[{"name":"a"},{"name":"b"},{"name":"c"}]}`)
 	})
 
-	repos, err := client.SearchRepositories("ws", &RepositoryListOptions{Limit: 2})
+	repos, err := client.SearchRepositories(context.Background(), "ws", &RepositoryListOptions{Limit: 2})
 	if err != nil {
 		t.Fatalf("SearchRepositories() error = %v", err)
 	}
@@ -76,7 +77,7 @@ func TestListAndGetBranches(t *testing.T) {
 		writeJSON(w, http.StatusOK, `{"name":"feature/login","target":{"hash":"abc","date":"2026-01-02T03:04:05Z"},"merge_strategies":["merge_commit","squash"],"default_merge_strategy":"squash"}`)
 	})
 
-	branches, err := client.ListBranches("ws", "repo", &BranchListOptions{Name: "login", Sort: "-target.date"})
+	branches, err := client.ListBranches(context.Background(), "ws", "repo", &BranchListOptions{Name: "login", Sort: "-target.date"})
 	if err != nil {
 		t.Fatalf("ListBranches() error = %v", err)
 	}
@@ -84,7 +85,7 @@ func TestListAndGetBranches(t *testing.T) {
 		t.Fatalf("branches = %#v", branches)
 	}
 
-	branch, err := client.GetBranch("ws", "repo", "feature/login")
+	branch, err := client.GetBranch(context.Background(), "ws", "repo", "feature/login")
 	if err != nil {
 		t.Fatalf("GetBranch() error = %v", err)
 	}
@@ -92,7 +93,7 @@ func TestListAndGetBranches(t *testing.T) {
 		t.Fatalf("branch = %#v", branch)
 	}
 
-	_, err = client.GetBranch("ws", "repo", "feature/missing")
+	_, err = client.GetBranch(context.Background(), "ws", "repo", "feature/missing")
 	if !errors.Is(err, ErrNotFound) || !strings.Contains(err.Error(), "branch 'feature/missing'") {
 		t.Fatalf("missing branch error = %v", err)
 	}
@@ -115,7 +116,7 @@ func TestListCommits(t *testing.T) {
 		writeJSON(w, http.StatusOK, `{"next":"https://not-followed","values":[{"hash":"c1","message":"one","date":"2026-01-02T03:04:05Z","author":{"raw":"Jane","user":{"display_name":"Jane"}},"parents":[{"hash":"c0"}]}]}`)
 	})
 
-	commits, err := client.ListCommits("ws", "repo", "main", &CommitListOptions{Exclude: []string{"release"}, Path: "go.mod"})
+	commits, err := client.ListCommits(context.Background(), "ws", "repo", "main", &CommitListOptions{Exclude: []string{"release"}, Path: "go.mod"})
 	if err != nil {
 		t.Fatalf("ListCommits() error = %v", err)
 	}
@@ -123,7 +124,7 @@ func TestListCommits(t *testing.T) {
 		t.Fatalf("commits = %#v", commits)
 	}
 
-	if _, err := client.ListCommits("ws", "repo", "feature/x", &CommitListOptions{Include: []string{"hotfix"}, Exclude: []string{"main"}, Limit: 1}); err != nil {
+	if _, err := client.ListCommits(context.Background(), "ws", "repo", "feature/x", &CommitListOptions{Include: []string{"hotfix"}, Exclude: []string{"main"}, Limit: 1}); err != nil {
 		t.Fatalf("ListCommits(slash) error = %v", err)
 	}
 
@@ -163,7 +164,7 @@ func TestGetFileContent(t *testing.T) {
 		}
 	})
 
-	data, err := client.GetFileContent("ws", "repo", "main", "config/version.json")
+	data, err := client.GetFileContent(context.Background(), "ws", "repo", "main", "config/version.json")
 	if err != nil {
 		t.Fatalf("GetFileContent() error = %v", err)
 	}
@@ -174,7 +175,7 @@ func TestGetFileContent(t *testing.T) {
 		t.Fatal("file request missing credentials")
 	}
 
-	data, err = client.GetFileContent("ws", "repo", "release/1.2", "version.json")
+	data, err = client.GetFileContent(context.Background(), "ws", "repo", "release/1.2", "version.json")
 	if err != nil {
 		t.Fatalf("GetFileContent(slash ref) error = %v", err)
 	}
@@ -182,7 +183,7 @@ func TestGetFileContent(t *testing.T) {
 		t.Fatalf("slash ref content = %q", data)
 	}
 
-	data, err = client.GetFileContent("ws", "repo", "releases/v2", "version.json")
+	data, err = client.GetFileContent(context.Background(), "ws", "repo", "releases/v2", "version.json")
 	if err != nil {
 		t.Fatalf("GetFileContent(slash tag) error = %v", err)
 	}
@@ -190,17 +191,17 @@ func TestGetFileContent(t *testing.T) {
 		t.Fatalf("slash tag content = %q", data)
 	}
 
-	_, err = client.GetFileContent("ws", "repo", "no/such-ref", "version.json")
+	_, err = client.GetFileContent(context.Background(), "ws", "repo", "no/such-ref", "version.json")
 	if !errors.Is(err, ErrNotFound) || !strings.Contains(err.Error(), "no/such-ref") {
 		t.Fatalf("unknown slash ref error = %v", err)
 	}
 
-	_, err = client.GetFileContent("ws", "repo", "main", "missing.json")
+	_, err = client.GetFileContent(context.Background(), "ws", "repo", "main", "missing.json")
 	if !errors.Is(err, ErrNotFound) || !strings.Contains(err.Error(), "file 'main:missing.json'") {
 		t.Fatalf("missing file error = %v", err)
 	}
 
-	if _, err := client.GetFileContent("ws", "repo", "main", "../etc/passwd"); err == nil {
+	if _, err := client.GetFileContent(context.Background(), "ws", "repo", "main", "../etc/passwd"); err == nil {
 		t.Fatal("dot segment error = nil, want error")
 	}
 }

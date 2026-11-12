@@ -59,7 +59,7 @@ func runLogin(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("authentication failed: %w", err)
 	}
 
-	user, err := client.GetCurrentUser()
+	user, err := client.GetCurrentUser(cmd.Context())
 	if err != nil {
 		return fmt.Errorf("authentication failed: %w", err)
 	}

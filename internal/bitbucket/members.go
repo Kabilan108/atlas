@@ -1,6 +1,7 @@
 package bitbucket
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"strings"
@@ -19,7 +20,7 @@ type workspaceMembership struct {
 	User User `json:"user"`
 }
 
-func (c *Client) ListWorkspaceMembers(workspace string, opts *MemberListOptions) ([]User, error) {
+func (c *Client) ListWorkspaceMembers(ctx context.Context, workspace string, opts *MemberListOptions) ([]User, error) {
 	path := fmt.Sprintf("/workspaces/%s/members?pagelen=%d", url.PathEscape(workspace), maxPageLen)
 	needle := ""
 	limit := 0
@@ -32,7 +33,7 @@ func (c *Client) ListWorkspaceMembers(workspace string, opts *MemberListOptions)
 	if needle == "" {
 		pageLimit = limit
 	}
-	memberships, err := collectPages[workspaceMembership](c, path, pageLimit, "workspace members")
+	memberships, err := collectPages[workspaceMembership](ctx, c, path, pageLimit, "workspace members")
 	if err != nil {
 		return nil, err
 	}
