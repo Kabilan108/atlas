@@ -88,7 +88,7 @@ func newPipelineLogCmd() *cobra.Command {
 	cmd.Flags().StringArray("step", nil, "Step name or UUID; repeatable")
 	cmd.Flags().Int("tail", 0, "Bytes from the end of each step log (default 12000)")
 	cmd.Flags().Int("max-bytes", 0, "Cap across all logs (default 48000)")
-	cmd.Flags().Bool("full", false, "Print whole logs, with no caps")
+	cmd.Flags().Bool("full", false, "Print up to 2 MiB of each step log, 8 MiB in all")
 	cmd.MarkFlagsMutuallyExclusive("full", "tail")
 	cmd.MarkFlagsMutuallyExclusive("full", "max-bytes")
 	return bind(cmd, binding[pipeline.LogInput, *pipeline.LogResult]{
@@ -102,7 +102,7 @@ func newPipelineLogCmd() *cobra.Command {
 			tail, _ := cmd.Flags().GetInt("tail")
 			maxBytes, _ := cmd.Flags().GetInt("max-bytes")
 			if full, _ := cmd.Flags().GetBool("full"); full {
-				tail, maxBytes = pipeline.Unlimited, pipeline.Unlimited
+				tail, maxBytes = pipeline.MaxTailBytes, pipeline.MaxCallBytes
 			}
 			return pipeline.LogInput{RepoRef: repo, Builds: args, Steps: steps, TailBytes: tail, MaxBytes: maxBytes}, nil
 		},
@@ -160,9 +160,12 @@ func pipelineRunInput(cmd *cobra.Command, _ []string, env *cliEnv) (pipeline.Run
 		secured bool
 	}{{"var", false}, {"secured-var", true}} {
 		values, _ := cmd.Flags().GetStringArray(flag.name)
-		for _, value := range values {
+		for i, value := range values {
 			key, val, ok := strings.Cut(value, "=")
 			if !ok || key == "" {
+				if flag.secured {
+					return pipeline.RunInput{}, fmt.Errorf("--%s #%d: expected KEY=VALUE (value not shown)", flag.name, i+1)
+				}
 				return pipeline.RunInput{}, fmt.Errorf("--%s %q: expected KEY=VALUE", flag.name, value)
 			}
 			in.Variables = append(in.Variables, pipeline.Variable{Key: key, Value: val, Secured: flag.secured})

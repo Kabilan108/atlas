@@ -204,20 +204,20 @@ func TestLogTotalCapSpansBuilds(t *testing.T) {
 	}
 }
 
-func TestLogUnlimitedFetchesWholeLog(t *testing.T) {
+func TestLogMaximumCapsFetchWholeSmallLogs(t *testing.T) {
 	env, fixture := newEnv(t)
 	result, err := pipeline.Log.Call(context.Background(), env, pipeline.LogInput{
-		RepoRef: ops.RepoRef{Repo: repo}, Builds: []string{"2090"}, TailBytes: pipeline.Unlimited, MaxBytes: pipeline.Unlimited,
+		RepoRef: ops.RepoRef{Repo: repo}, Builds: []string{"2090"}, TailBytes: pipeline.MaxTailBytes, MaxBytes: pipeline.MaxCallBytes,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if step := result.Results[0].Steps[0]; step.Truncated || step.Log != pipelinetest.FailedLog {
-		t.Fatalf("unlimited log truncated=%v, %d bytes", step.Truncated, step.Bytes)
+		t.Fatalf("log truncated=%v, %d bytes", step.Truncated, step.Bytes)
 	}
 	for _, req := range fixture.Requests() {
-		if req.Range != "" {
-			t.Fatalf("unlimited read sent Range %q", req.Range)
+		if strings.HasSuffix(req.Path, "/log") && req.Range != "bytes=-2097152" {
+			t.Fatalf("log read sent Range %q, want the per-step maximum", req.Range)
 		}
 	}
 }

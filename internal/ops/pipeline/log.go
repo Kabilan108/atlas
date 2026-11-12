@@ -12,12 +12,13 @@ import (
 	"github.com/kabilan108/atlas/internal/ops"
 )
 
+// Every log read is bounded, whoever calls. The maximums are what the CLI's
+// --full asks for.
 const (
 	defaultTailBytes = 12000
 	defaultMaxBytes  = 48000
-	// Unlimited as tail_bytes or max_bytes lifts that cap. The CLI uses it
-	// for --full.
-	Unlimited = -1
+	MaxTailBytes     = 2 << 20
+	MaxCallBytes     = 8 << 20
 )
 
 // LogInput is the input to pipeline_log.
@@ -25,8 +26,8 @@ type LogInput struct {
 	ops.RepoRef
 	Builds    []string `json:"builds" jsonschema:"build numbers (2090 or #2090) or pipeline UUIDs, at most 10"`
 	Steps     []string `json:"steps,omitempty" jsonschema:"step names (any case) or UUIDs; default: failed steps, else running ones"`
-	TailBytes int      `json:"tail_bytes,omitempty" jsonschema:"bytes from the end of each step log, default 12000"`
-	MaxBytes  int      `json:"max_bytes,omitempty" jsonschema:"cap across all logs in the call, default 48000"`
+	TailBytes int      `json:"tail_bytes,omitempty" jsonschema:"bytes from the end of each step log, default 12000, max 2097152"`
+	MaxBytes  int      `json:"max_bytes,omitempty" jsonschema:"cap across all logs in the call, default 48000, max 8388608"`
 }
 
 // LogResult holds one entry per requested build, in order.
@@ -75,11 +76,11 @@ func readLogs(ctx context.Context, env ops.Env, in LogInput) (*LogResult, error)
 	if err != nil {
 		return nil, err
 	}
-	tail, err := byteCap("tail_bytes", in.TailBytes, defaultTailBytes)
+	tail, err := byteCap("tail_bytes", in.TailBytes, defaultTailBytes, MaxTailBytes)
 	if err != nil {
 		return nil, err
 	}
-	budget, err := byteCap("max_bytes", in.MaxBytes, defaultMaxBytes)
+	budget, err := byteCap("max_bytes", in.MaxBytes, defaultMaxBytes, MaxCallBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -105,14 +106,14 @@ func readLogs(ctx context.Context, env ops.Env, in LogInput) (*LogResult, error)
 	return result, err
 }
 
-func byteCap(name string, value, def int) (int, error) {
+func byteCap(name string, value, def, maximum int) (int, error) {
 	switch {
 	case value == 0:
 		return def, nil
-	case value == Unlimited:
-		return Unlimited, nil
 	case value < 0:
 		return 0, ops.Errorf(ops.Invalid, "%s must be positive", name)
+	case value > maximum:
+		return 0, ops.Errorf(ops.Invalid, "%s %d is over the %d-byte maximum", name, value, maximum)
 	}
 	return value, nil
 }
@@ -121,7 +122,7 @@ type logReader struct {
 	client *bitbucket.Client
 	repo   ops.Repository
 	tail   int
-	// budget is the bytes left for the rest of the call, or Unlimited.
+	// budget is the bytes left for the rest of the call.
 	budget int
 }
 
@@ -156,19 +157,12 @@ func (r *logReader) read(ctx context.Context, entry *BuildLogs, build string, na
 
 func (r *logReader) stepLog(ctx context.Context, pipelineUUID string, step bitbucket.PipelineStep) (StepLog, error) {
 	out := StepLog{Name: step.Name, UUID: step.UUID, Status: step.State.Status(), TotalBytes: -1}
-	want := r.tail
-	if r.budget != Unlimited && (want == Unlimited || want > r.budget) {
-		want = r.budget
-	}
+	want := min(r.tail, r.budget)
 	if want == 0 {
 		out.Skipped = "the call's max_bytes is used up; ask for fewer builds or steps, or raise max_bytes"
 		return out, nil
 	}
-	byteRange := ""
-	if want != Unlimited {
-		byteRange = fmt.Sprintf("bytes=-%d", want)
-	}
-	log, err := r.client.GetPipelineStepLog(ctx, r.repo.Workspace, r.repo.Repo, pipelineUUID, step.UUID, byteRange)
+	log, err := r.client.GetPipelineStepLog(ctx, r.repo.Workspace, r.repo.Repo, pipelineUUID, step.UUID, want)
 	if errors.Is(err, bitbucket.ErrNotFound) {
 		out.Skipped = "no log yet: the step has not run"
 		return out, nil
@@ -178,12 +172,10 @@ func (r *logReader) stepLog(ctx context.Context, pipelineUUID string, step bitbu
 		return out, err
 	}
 	content := log.Content
-	if want != Unlimited && len(content) > want {
+	if len(content) > want {
 		content = content[len(content)-want:]
 	}
-	if r.budget != Unlimited {
-		r.budget -= len(content)
-	}
+	r.budget -= len(content)
 	out.TotalBytes = log.TotalSize
 	out.Truncated = log.TotalSize > int64(len(content)) || len(content) < len(log.Content)
 	if out.Truncated {

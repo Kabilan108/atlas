@@ -94,15 +94,17 @@ func run(ctx context.Context, env ops.Env, in RunInput) (*RunReceipt, error) {
 		CustomPipeline: in.Pipeline,
 		Variables:      variables,
 	})
+	secrets := securedValues(in.Variables)
 	if err != nil {
-		return nil, err
+		return nil, redactSecrets(err, secrets)
 	}
 	receipt := newRunReceipt(repo, started)
 	if wait == 0 || receipt.Finished {
 		return receipt, nil
 	}
 	receipt.waited = wait
-	return waitForRun(ctx, client, repo, receipt, time.Now().Add(wait))
+	receipt, err = waitForRun(ctx, client, repo, receipt, wait)
+	return receipt, redactSecrets(err, secrets)
 }
 
 func newRunReceipt(repo ops.Repository, p *bitbucket.Pipeline) *RunReceipt {
@@ -121,27 +123,38 @@ func newRunReceipt(repo ops.Repository, p *bitbucket.Pipeline) *RunReceipt {
 	}
 }
 
-// waitForRun polls until the run finishes or the deadline passes. Reaching
-// the deadline is not an error: the run started and keeps going, and the
-// receipt says so. A failed poll is Partial so the receipt still reaches the
-// caller.
-func waitForRun(ctx context.Context, client *bitbucket.Client, repo ops.Repository, receipt *RunReceipt, deadline time.Time) (*RunReceipt, error) {
+// waitForRun polls until the run finishes or wait passes. Every poll runs
+// under the wait's deadline, so a slow answer cannot hold the call past it.
+// Reaching the deadline is not an error: the run started and keeps going,
+// and the receipt says so. A failed poll, or the caller giving up, is
+// Partial so the receipt still reaches the caller.
+func waitForRun(ctx context.Context, client *bitbucket.Client, repo ops.Repository, receipt *RunReceipt, wait time.Duration) (*RunReceipt, error) {
+	pollCtx, cancel := context.WithTimeout(ctx, wait)
+	defer cancel()
+	stopped := func() (*RunReceipt, error) {
+		if err := ctx.Err(); err != nil {
+			return receipt, ops.Errorf(ops.Partial, "pipeline #%d started, but waiting stopped: %w", receipt.BuildNumber, err)
+		}
+		return receipt, nil
+	}
 	delay := pollInitial
 	for {
-		remaining := time.Until(deadline)
-		if remaining <= 0 {
-			return receipt, nil
-		}
-		timer := time.NewTimer(min(delay, remaining))
+		timer := time.NewTimer(delay)
 		select {
-		case <-ctx.Done():
+		case <-pollCtx.Done():
 			timer.Stop()
-			return receipt, ops.Errorf(ops.Partial, "pipeline #%d started, but waiting stopped: %w", receipt.BuildNumber, ctx.Err())
+			return stopped()
 		case <-timer.C:
 		}
+		if pollCtx.Err() != nil {
+			return stopped()
+		}
 		delay = min(delay*2, pollMax)
-		current, err := client.GetPipeline(ctx, repo.Workspace, repo.Repo, receipt.UUID)
+		current, err := client.GetPipeline(pollCtx, repo.Workspace, repo.Repo, receipt.UUID)
 		if err != nil {
+			if pollCtx.Err() != nil {
+				return stopped()
+			}
 			return receipt, ops.Errorf(ops.Partial, "pipeline #%d started, but checking on it failed: %w", receipt.BuildNumber, err)
 		}
 		waited := receipt.waited

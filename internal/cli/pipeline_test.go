@@ -47,8 +47,8 @@ func TestPipelineLogStepsAndFull(t *testing.T) {
 		t.Fatalf("output lacks the whole logs:\n%.400s", out)
 	}
 	for _, req := range fixture.Requests() {
-		if req.Range != "" {
-			t.Fatalf("--full sent Range %q", req.Range)
+		if strings.HasSuffix(req.Path, "/log") && req.Range != "bytes=-2097152" {
+			t.Fatalf("--full sent Range %q, want the per-step maximum", req.Range)
 		}
 	}
 	if _, err := runAtlas(t, fixture, "--no-cache", "pipeline", "log", "-R", "acme/widgets", "2090", "--full", "--tail", "10"); err == nil {
@@ -61,10 +61,10 @@ func TestPipelineRunVariablesAndWaitDeadline(t *testing.T) {
 	fixture := pipelinetest.New()
 	out, err := runAtlas(t, fixture, "--no-cache", "pipeline", "run", "-R", "acme/widgets", "-b", "main", "-p", "db-backup",
 		"--var", "TARGET=iam", "--secured-var", "TOKEN=a=b", "--wait", "1s")
-	if err == nil || !strings.Contains(err.Error(), "pipeline #2100 is still RUNNING") {
+	if err == nil || !strings.Contains(err.Error(), "pipeline #2100 is still PENDING") {
 		t.Fatalf("err = %v", err)
 	}
-	if !strings.Contains(out, "Pipeline #2100 (custom:db-backup) is still RUNNING after waiting 1s") {
+	if !strings.Contains(out, "Pipeline #2100 (custom:db-backup) is still PENDING after waiting 1s") {
 		t.Fatalf("output:\n%s", out)
 	}
 	body := fixture.Requests()[0].Body
@@ -98,5 +98,23 @@ func TestPipelineStop(t *testing.T) {
 	}
 	if !strings.Contains(out, "Asked Bitbucket to stop pipeline #2096 (was RUNNING)") {
 		t.Fatalf("output:\n%s", out)
+	}
+}
+
+func TestPipelineRunSecuredVarErrorsHideTheValue(t *testing.T) {
+	setupCLIEnv(t)
+	const secret = "synthetic-secret-77ad02"
+	for _, arg := range []string{secret, "=" + secret} {
+		fixture := pipelinetest.New()
+		_, err := runAtlas(t, fixture, "--no-cache", "pipeline", "run", "-R", "acme/widgets", "-b", "main", "--secured-var", arg)
+		if err == nil || !strings.Contains(err.Error(), "KEY=VALUE") {
+			t.Fatalf("--secured-var %s: err = %v, want a KEY=VALUE error", arg, err)
+		}
+		if strings.Contains(err.Error(), secret) {
+			t.Fatalf("error leaks the secured value: %v", err)
+		}
+		if len(fixture.Requests()) != 0 {
+			t.Fatal("a malformed variable reached Bitbucket")
+		}
 	}
 }

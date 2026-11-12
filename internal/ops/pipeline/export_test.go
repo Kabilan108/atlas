@@ -9,3 +9,10 @@ func FastPolls(t interface{ Cleanup(func()) }) {
 	pollInitial, pollMax = time.Millisecond, time.Millisecond
 	t.Cleanup(func() { pollInitial, pollMax = initial, maximum })
 }
+
+// SetPolls sets pipeline_run's poll intervals until the test ends.
+func SetPolls(t interface{ Cleanup(func()) }, initial, maximum time.Duration) {
+	oldInitial, oldMaximum := pollInitial, pollMax
+	pollInitial, pollMax = initial, maximum
+	t.Cleanup(func() { pollInitial, pollMax = oldInitial, oldMaximum })
+}

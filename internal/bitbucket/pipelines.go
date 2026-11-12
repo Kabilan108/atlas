@@ -312,10 +312,19 @@ func (c *Client) GetPipelineStep(ctx context.Context, workspace, repo, pipeline,
 	return &result, nil
 }
 
-// GetPipelineStepLog fetches a step log. byteRange is an optional HTTP Range
-// value such as "bytes=-65536" for the last 64 KiB. Bitbucket may redirect to
-// presigned storage; that hop is fetched without credentials or Atlas headers.
-func (c *Client) GetPipelineStepLog(ctx context.Context, workspace, repo, pipeline, step, byteRange string) (*StepLog, error) {
+// maxStepLogResponse bounds how much of one log response is read when the
+// server ignores the requested range and sends more than the tail.
+const maxStepLogResponse = 16 << 20
+
+// GetPipelineStepLog fetches the last tailBytes bytes of a step log, asking
+// for only that range and reading at most maxStepLogResponse bytes of the
+// response. Bitbucket may redirect to presigned storage; that hop is fetched
+// without credentials or Atlas headers.
+func (c *Client) GetPipelineStepLog(ctx context.Context, workspace, repo, pipeline, step string, tailBytes int) (*StepLog, error) {
+	if tailBytes <= 0 {
+		return nil, fmt.Errorf("pipeline log tail must be positive, got %d", tailBytes)
+	}
+	byteRange := fmt.Sprintf("bytes=-%d", tailBytes)
 	uuid, err := c.resolvePipelineUUID(ctx, workspace, repo, pipeline)
 	if err != nil {
 		return nil, err
@@ -332,9 +341,7 @@ func (c *Client) GetPipelineStepLog(ctx context.Context, workspace, repo, pipeli
 	}
 	req.SetBasicAuth(c.username, c.password)
 	req.Header.Set("Accept", "application/octet-stream, text/plain, */*")
-	if byteRange != "" {
-		req.Header.Set("Range", byteRange)
-	}
+	req.Header.Set("Range", byteRange)
 
 	resp, err := c.withoutRedirects().Do(req)
 	if err != nil {
@@ -348,22 +355,61 @@ func (c *Client) GetPipelineStepLog(ctx context.Context, workspace, repo, pipeli
 			return nil, fmt.Errorf("pipeline log redirect has no usable Location: %w", err)
 		}
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
-		return c.fetchStepLogFromStorage(ctx, location, byteRange)
+		return c.fetchStepLogFromStorage(ctx, location, tailBytes)
 	}
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
 	if resp.StatusCode == http.StatusNotFound {
 		return nil, NewNotFoundError("pipeline step log", step)
 	}
-	if resp.StatusCode != http.StatusRequestedRangeNotSatisfiable {
+	if resp.StatusCode != http.StatusRequestedRangeNotSatisfiable && (resp.StatusCode < 200 || resp.StatusCode >= 300) {
+		body, err := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
+		if err != nil {
+			return nil, err
+		}
 		if err := checkResponseWithMessage(resp, body); err != nil {
 			return nil, err
 		}
 	}
-	return newStepLog(resp, body), nil
+	return readStepLog(resp, tailBytes)
+}
+
+// maxErrorBody bounds how much of a failed log response is read for its
+// error message.
+const maxErrorBody = 64 << 10
+
+// readStepLog keeps the last tailBytes bytes of a log response. A server
+// that honours the range sends no more than that; one that ignores it is
+// read up to maxStepLogResponse and then refused, since what was read is
+// not the tail.
+func readStepLog(resp *http.Response, tailBytes int) (*StepLog, error) {
+	if resp.StatusCode == http.StatusRequestedRangeNotSatisfiable {
+		return newStepLog(resp, nil, 0), nil
+	}
+	limited := io.LimitReader(resp.Body, maxStepLogResponse+1)
+	var kept []byte
+	var read int64
+	chunk := make([]byte, 32<<10)
+	for {
+		n, err := limited.Read(chunk)
+		read += int64(n)
+		kept = append(kept, chunk[:n]...)
+		if len(kept) > 2*tailBytes {
+			kept = append(kept[:0], kept[len(kept)-tailBytes:]...)
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	if read > maxStepLogResponse {
+		return nil, fmt.Errorf("pipeline log response is over %d bytes although only the last %d were asked for; not reading it", maxStepLogResponse, tailBytes)
+	}
+	if len(kept) > tailBytes {
+		kept = kept[len(kept)-tailBytes:]
+	}
+	return newStepLog(resp, kept, read), nil
 }
 
 func (c *Client) withoutRedirects() *http.Client {
@@ -392,7 +438,7 @@ func newStorageClient() *http.Client {
 	}
 }
 
-func (c *Client) fetchStepLogFromStorage(ctx context.Context, location *url.URL, byteRange string) (*StepLog, error) {
+func (c *Client) fetchStepLogFromStorage(ctx context.Context, location *url.URL, tailBytes int) (*StepLog, error) {
 	if location.Scheme != "https" && location.Scheme != "http" {
 		return nil, fmt.Errorf("refusing pipeline log redirect to %s URL", location.Scheme)
 	}
@@ -401,9 +447,7 @@ func (c *Client) fetchStepLogFromStorage(ctx context.Context, location *url.URL,
 	if err != nil {
 		return nil, err
 	}
-	if byteRange != "" {
-		req.Header.Set("Range", byteRange)
-	}
+	req.Header.Set("Range", fmt.Sprintf("bytes=-%d", tailBytes))
 
 	resp, err := newStorageClient().Do(req)
 	if err != nil {
@@ -411,12 +455,12 @@ func (c *Client) fetchStepLogFromStorage(ctx context.Context, location *url.URL,
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	if resp.StatusCode == http.StatusRequestedRangeNotSatisfiable || (resp.StatusCode >= 200 && resp.StatusCode < 300) {
+		return readStepLog(resp, tailBytes)
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
 	if err != nil {
 		return nil, err
-	}
-	if resp.StatusCode == http.StatusRequestedRangeNotSatisfiable || (resp.StatusCode >= 200 && resp.StatusCode < 300) {
-		return newStepLog(resp, body), nil
 	}
 
 	message := strings.TrimSpace(string(body))
@@ -430,19 +474,19 @@ func (c *Client) fetchStepLogFromStorage(ctx context.Context, location *url.URL,
 	}
 }
 
-func newStepLog(resp *http.Response, body []byte) *StepLog {
+// newStepLog describes a log response whose last bytes are content and
+// whose body was read bytes long.
+func newStepLog(resp *http.Response, content []byte, read int64) *StepLog {
 	log := &StepLog{
+		Content:      content,
 		ContentRange: resp.Header.Get("Content-Range"),
 		Partial:      resp.StatusCode == http.StatusPartialContent,
 		TotalSize:    -1,
 	}
-	if resp.StatusCode != http.StatusRequestedRangeNotSatisfiable {
-		log.Content = body
-	}
 	if total, ok := contentRangeTotal(log.ContentRange); ok {
 		log.TotalSize = total
 	} else if resp.StatusCode == http.StatusOK {
-		log.TotalSize = int64(len(body))
+		log.TotalSize = read
 	}
 	return log
 }
