@@ -424,6 +424,32 @@ func hasReviewer(pr PullRequest, reviewer string) bool {
 	return false
 }
 
+// RepositoryError is one repository whose pull requests could not be listed.
+type RepositoryError struct {
+	Repository string
+	Err        error
+}
+
+// RepositoryListError is returned by ListAllPullRequests together with the
+// pull requests of every repository that did answer.
+type RepositoryListError struct {
+	Repositories int
+	Failed       []RepositoryError
+}
+
+func (e *RepositoryListError) Error() string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "failed to list pull requests in %d of %d repositories:", len(e.Failed), e.Repositories)
+	for _, failed := range e.Failed {
+		message, _, _ := strings.Cut(failed.Err.Error(), "\n")
+		fmt.Fprintf(&b, "\n  %s: %s", failed.Repository, message)
+	}
+	return b.String()
+}
+
+// ListAllPullRequests lists pull requests in every repository of workspace.
+// Repositories that fail are reported in a *RepositoryListError returned
+// with the pull requests from the rest.
 func (c *Client) ListAllPullRequests(ctx context.Context, workspace string, opts *PRListOptions) ([]PullRequest, error) {
 	repos, err := c.ListRepositories(ctx, workspace)
 	if err != nil {
@@ -431,15 +457,32 @@ func (c *Client) ListAllPullRequests(ctx context.Context, workspace string, opts
 	}
 
 	var allPRs []PullRequest
+	listErr := &RepositoryListError{Repositories: len(repos)}
 	for _, repo := range repos {
-		prs, err := c.ListPullRequests(ctx, workspace, repo.Name, opts)
+		slug := repositorySlug(repo)
+		prs, err := c.ListPullRequests(ctx, workspace, slug, opts)
 		if err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return allPRs, ctxErr
+			}
+			listErr.Failed = append(listErr.Failed, RepositoryError{Repository: slug, Err: err})
 			continue
 		}
 		allPRs = append(allPRs, prs...)
 	}
-
+	if len(listErr.Failed) > 0 {
+		return allPRs, listErr
+	}
 	return allPRs, nil
+}
+
+// repositorySlug is the path segment for repo: the part of full_name after
+// the workspace, since a repository's display name may differ from its slug.
+func repositorySlug(repo Repository) string {
+	if _, slug, ok := strings.Cut(repo.FullName, "/"); ok && slug != "" {
+		return slug
+	}
+	return repo.Name
 }
 
 func (c *Client) FindPullRequestByBranch(ctx context.Context, workspace, repo, branch string) (*PullRequest, error) {

@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -220,13 +221,20 @@ func runPRList(cmd *cobra.Command, args []string) error {
 	} else {
 		prs, err = ctx.client.ListPullRequests(cmd.Context(), ctx.workspace, ctx.repo, opts)
 	}
-	if err != nil {
+	var partial *bitbucket.RepositoryListError
+	if err != nil && !errors.As(err, &partial) {
 		return err
 	}
 	if jsonOutput {
-		return output.WriteJSON(os.Stdout, prs)
+		if writeErr := output.WriteJSON(os.Stdout, prs); writeErr != nil {
+			return writeErr
+		}
+		return err
 	}
-	return printPRTable(prs)
+	if printErr := printPRTable(prs); printErr != nil {
+		return printErr
+	}
+	return err
 }
 
 func printPRTable(prs []bitbucket.PullRequest) error {
