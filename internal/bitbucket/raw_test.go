@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -78,5 +79,31 @@ func TestGetPullRequestDiffLimitStopsReading(t *testing.T) {
 	}
 	if served >= size {
 		t.Fatalf("server wrote the whole %d-byte diff; the client should stop reading at the limit", size)
+	}
+}
+
+func TestListRepositoriesStopsAtTheMaximum(t *testing.T) {
+	var requests int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		var b strings.Builder
+		b.WriteString(`{"values":[`)
+		for i := 0; i < 100; i++ {
+			if i > 0 {
+				b.WriteString(",")
+			}
+			b.WriteString(`{"slug":"r","full_name":"acme/r"}`)
+		}
+		b.WriteString(`],"next":"` + "http://" + r.Host + `/repositories/acme?page=` + strconv.Itoa(requests+1) + `&pagelen=100"}`)
+		w.Write([]byte(b.String()))
+	}))
+	defer server.Close()
+	client := newClientForTest(server.URL, server.Client())
+	_, err := client.ListRepositories(context.Background(), "acme")
+	if err == nil || !strings.Contains(err.Error(), "more than") {
+		t.Fatalf("err = %v, want a too-many-repositories error", err)
+	}
+	if requests > maxListPages+1 {
+		t.Fatalf("made %d requests; paging should stop near %d items", requests, MaxListItems)
 	}
 }

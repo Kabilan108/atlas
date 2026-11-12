@@ -318,7 +318,10 @@ func (c *Client) ListRepositories(ctx context.Context, workspace string) ([]Repo
 	var repos []Repository
 	path := "/repositories/" + url.PathEscape(workspace)
 
-	for path != "" {
+	for pages := 0; path != ""; pages++ {
+		if pages == maxListPages || len(repos) >= MaxListItems {
+			return nil, fmt.Errorf("workspace %s has more than %d repositories; name the repos to list instead", workspace, len(repos))
+		}
 		data, err := c.get(ctx, path)
 		if err != nil {
 			return nil, err
