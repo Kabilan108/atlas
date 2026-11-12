@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"runtime/debug"
+	"time"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/kabilan108/atlas/internal/bitbucket"
@@ -22,6 +23,9 @@ import (
 const (
 	// DefaultMaxBodyBytes caps request bodies when Options.MaxBodyBytes is zero.
 	DefaultMaxBodyBytes = 1 << 20
+	// DefaultBodyReadTimeout bounds reading a request body when
+	// Options.BodyReadTimeout is zero.
+	DefaultBodyReadTimeout = 30 * time.Second
 	// DefaultWorkspace and DefaultJiraCloudID are what `atlas mcp serve`
 	// uses when neither a flag nor its environment variable is set.
 	DefaultWorkspace   = "moberg-analytics"
@@ -38,6 +42,14 @@ type Options struct {
 	Logger *slog.Logger
 	// MaxBodyBytes caps each request body; zero means DefaultMaxBodyBytes.
 	MaxBodyBytes int64
+	// BodyReadTimeout bounds how long a client may take to send a request
+	// body; zero means DefaultBodyReadTimeout. Tool calls themselves are not
+	// bounded by it.
+	BodyReadTimeout time.Duration
+	// AllowedHosts are Host header names accepted on a loopback listener
+	// besides localhost and loopback IPs, such as the name a reverse proxy on
+	// the same machine forwards. Ports are ignored.
+	AllowedHosts []string
 	// JiraCloudID selects the Jira site behind the Atlassian API gateway.
 	JiraCloudID string
 	// BitbucketOptions are applied to every Bitbucket client. Never pass
@@ -54,10 +66,14 @@ func (o Options) logger() *slog.Logger {
 	return o.Logger
 }
 
-// Handler serves catalog.All() at /mcp, with request logging and a body
-// size limit.
+// Handler serves catalog.All() at /mcp, with request logging, a Host check
+// on loopback listeners, and a size limit and read deadline on bodies.
 func Handler(opts Options) (http.Handler, error) {
-	server, err := NewServer(opts, catalog.All())
+	return handlerFor(opts, catalog.All())
+}
+
+func handlerFor(opts Options, defs []ops.Def) (http.Handler, error) {
+	server, err := NewServer(opts, defs)
 	if err != nil {
 		return nil, err
 	}
@@ -65,12 +81,18 @@ func Handler(opts Options) (http.Handler, error) {
 	if maxBody == 0 {
 		maxBody = DefaultMaxBodyBytes
 	}
+	bodyTimeout := opts.BodyReadTimeout
+	if bodyTimeout == 0 {
+		bodyTimeout = DefaultBodyReadTimeout
+	}
 	mcpHandler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{
 		Stateless:           true,
 		MaxRequestBodyBytes: maxBody,
+		// guardHost does the SDK's DNS rebinding check, plus AllowedHosts.
+		DisableLocalhostProtection: true,
 	})
 	mux := http.NewServeMux()
-	mux.Handle("/mcp", mcpHandler)
+	mux.Handle("/mcp", guardHost(opts.AllowedHosts, readBody(maxBody, bodyTimeout, mcpHandler)))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	})
@@ -118,7 +140,9 @@ func toolHandler(def ops.Def, schema *jsonschema.Resolved, opts Options) mcp.Too
 	return func(ctx context.Context, req *mcp.CallToolRequest) (result *mcp.CallToolResult, err error) {
 		defer func() {
 			if recovered := recover(); recovered != nil {
-				opts.logger().Error("tool panicked", "tool", name, "panic", fmt.Sprint(recovered), "stack", string(debug.Stack()))
+				// The panic value may hold request data, so only the tool
+				// name and the stack (frames and addresses) are logged.
+				opts.logger().Error("tool panicked", "tool", name, "stack", string(debug.Stack()))
 				result, err = errorResult(fmt.Errorf("%s failed with an internal error", name), ""), nil
 			}
 		}()

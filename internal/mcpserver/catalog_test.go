@@ -32,3 +32,7 @@ func TestToolsListMatchesCatalog(t *testing.T) {
 		t.Fatalf("tools/list = %v, want the catalog's MCP ops %v", tools, want)
 	}
 }
+
+func catalogDefs() []ops.Def {
+	return catalog.All()
+}

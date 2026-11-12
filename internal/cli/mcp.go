@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -16,8 +17,9 @@ import (
 )
 
 const (
-	mcpWorkspaceEnv   = "ATLAS_MCP_WORKSPACE"
-	mcpJiraCloudIDEnv = "ATLAS_MCP_JIRA_CLOUD_ID"
+	mcpWorkspaceEnv    = "ATLAS_MCP_WORKSPACE"
+	mcpJiraCloudIDEnv  = "ATLAS_MCP_JIRA_CLOUD_ID"
+	mcpAllowedHostsEnv = "ATLAS_MCP_ALLOWED_HOSTS"
 )
 
 func newMCPCmd(version string) *cobra.Command {
@@ -43,24 +45,27 @@ cache. Request logs go to stderr and never include headers.`, mcpserver.HeaderEm
 		RunE: runMCPServe(version),
 	}
 	cmd.Flags().String("addr", "127.0.0.1:8080", "Address to listen on")
-	cmd.Flags().String("workspace", "", "Default Bitbucket workspace for repo arguments without one (env "+mcpWorkspaceEnv+")")
+	cmd.Flags().String("workspace", "", "Default Bitbucket workspace for repo arguments without one (env "+mcpWorkspaceEnv+", default "+mcpserver.DefaultWorkspace+")")
 	cmd.Flags().String("jira-cloud-id", "", "Jira cloud ID behind the Atlassian API gateway (env "+mcpJiraCloudIDEnv+", default "+mcpserver.DefaultJiraCloudID+")")
+	cmd.Flags().StringArray("allowed-host", nil, "Also accept this Host header on a loopback address, e.g. the name a local reverse proxy forwards; repeatable (env "+mcpAllowedHostsEnv+", comma-separated)")
 	return cmd
 }
 
 func runMCPServe(version string) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, _ []string) error {
 		addr, _ := cmd.Flags().GetString("addr")
-		workspace, _ := cmd.Flags().GetString("workspace")
-		if !cmd.Flags().Changed("workspace") {
-			workspace = os.Getenv(mcpWorkspaceEnv)
-		}
+		workspace := flagOrEnv(cmd, "workspace", mcpWorkspaceEnv, mcpserver.DefaultWorkspace)
 		jiraCloudID := flagOrEnv(cmd, "jira-cloud-id", mcpJiraCloudIDEnv, mcpserver.DefaultJiraCloudID)
+		allowedHosts, _ := cmd.Flags().GetStringArray("allowed-host")
+		if !cmd.Flags().Changed("allowed-host") {
+			allowedHosts = splitList(os.Getenv(mcpAllowedHostsEnv))
+		}
 		logger := slog.New(slog.NewJSONHandler(cmd.ErrOrStderr(), nil))
 		handler, err := mcpserver.Handler(mcpserver.Options{
 			Version:          version,
 			DefaultWorkspace: workspace,
 			JiraCloudID:      jiraCloudID,
+			AllowedHosts:     allowedHosts,
 			Logger:           logger,
 		})
 		if err != nil {
@@ -70,7 +75,8 @@ func runMCPServe(version string) func(*cobra.Command, []string) error {
 		if err != nil {
 			return err
 		}
-		server := &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second}
+		// The handler bounds body reads itself (BodyReadTimeout).
+		server := &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute}
 		ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 		served := make(chan error, 1)
@@ -98,4 +104,14 @@ func flagOrEnv(cmd *cobra.Command, flag, env, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func splitList(value string) []string {
+	var items []string
+	for _, item := range strings.Split(value, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			items = append(items, item)
+		}
+	}
+	return items
 }
