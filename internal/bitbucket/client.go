@@ -335,7 +335,7 @@ func (c *Client) GetUser(ctx context.Context, identifier string) (*User, error) 
 
 func (c *Client) ListRepositories(ctx context.Context, workspace string) ([]Repository, error) {
 	var repos []Repository
-	path := fmt.Sprintf("/repositories/%s", workspace)
+	path := "/repositories/" + url.PathEscape(workspace)
 
 	for path != "" {
 		data, err := c.get(ctx, path)
@@ -356,7 +356,7 @@ func (c *Client) ListRepositories(ctx context.Context, workspace string) ([]Repo
 }
 
 func (c *Client) GetRepository(ctx context.Context, workspace, repo string) (*Repository, error) {
-	path := fmt.Sprintf("/repositories/%s/%s", workspace, repo)
+	path := repoPath(workspace, repo)
 	data, err := c.get(ctx, path)
 	if err != nil {
 		return nil, err
@@ -372,17 +372,11 @@ func (c *Client) GetRepository(ctx context.Context, workspace, repo string) (*Re
 
 func (c *Client) ListPullRequests(ctx context.Context, workspace, repo string, opts *PRListOptions) ([]PullRequest, error) {
 	var prs []PullRequest
-	path := fmt.Sprintf("/repositories/%s/%s/pullrequests", workspace, repo)
-
-	var queryParams []string
-	if opts != nil {
-		if opts.State != "" {
-			queryParams = append(queryParams, "state="+opts.State)
-		}
+	values := url.Values{}
+	if opts != nil && opts.State != "" {
+		values.Set("state", opts.State)
 	}
-	if len(queryParams) > 0 {
-		path += "?" + strings.Join(queryParams, "&")
-	}
+	path := withQuery(repoPath(workspace, repo)+"/pullrequests", values)
 
 	for path != "" {
 		data, err := c.get(ctx, path)
@@ -486,7 +480,7 @@ func repositorySlug(repo Repository) string {
 }
 
 func (c *Client) FindPullRequestByBranch(ctx context.Context, workspace, repo, branch string) (*PullRequest, error) {
-	path := fmt.Sprintf("/repositories/%s/%s/pullrequests?q=source.branch.name=\"%s\"", workspace, repo, branch)
+	path := withQuery(repoPath(workspace, repo)+"/pullrequests", url.Values{"q": {"source.branch.name=" + bbqlString(branch)}})
 	data, err := c.get(ctx, path)
 	if err != nil {
 		return nil, err
@@ -516,7 +510,7 @@ func (c *Client) FindPullRequestByBranch(ctx context.Context, workspace, repo, b
 }
 
 func (c *Client) GetPullRequest(ctx context.Context, workspace, repo string, id int) (*PullRequest, error) {
-	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d", workspace, repo, id)
+	path := fmt.Sprintf("%s/pullrequests/%d", repoPath(workspace, repo), id)
 	data, err := c.get(ctx, path)
 	if err != nil {
 		return nil, err
@@ -531,7 +525,7 @@ func (c *Client) GetPullRequest(ctx context.Context, workspace, repo string, id 
 }
 
 func (c *Client) CreatePullRequest(ctx context.Context, workspace, repo string, input PullRequestCreate) (*PullRequest, error) {
-	path := fmt.Sprintf("/repositories/%s/%s/pullrequests", workspace, repo)
+	path := repoPath(workspace, repo) + "/pullrequests"
 	data, err := c.post(ctx, path, input)
 	if err != nil {
 		return nil, err
@@ -548,7 +542,7 @@ func (c *Client) CreatePullRequest(ctx context.Context, workspace, repo string, 
 }
 
 func (c *Client) UpdatePullRequest(ctx context.Context, workspace, repo string, id int, update PullRequestUpdate) (*PullRequest, error) {
-	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d", workspace, repo, id)
+	path := fmt.Sprintf("%s/pullrequests/%d", repoPath(workspace, repo), id)
 	data, err := c.put(ctx, path, update)
 	if err != nil {
 		return nil, err
@@ -565,7 +559,7 @@ func (c *Client) UpdatePullRequest(ctx context.Context, workspace, repo string, 
 }
 
 func (c *Client) DeclinePullRequest(ctx context.Context, workspace, repo string, id int) (*PullRequest, error) {
-	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d/decline", workspace, repo, id)
+	path := fmt.Sprintf("%s/pullrequests/%d/decline", repoPath(workspace, repo), id)
 	data, err := c.post(ctx, path, nil)
 	if err != nil {
 		return nil, err
@@ -581,7 +575,7 @@ func (c *Client) DeclinePullRequest(ctx context.Context, workspace, repo string,
 
 func (c *Client) ListPullRequestComments(ctx context.Context, workspace, repo string, id int) ([]Comment, error) {
 	var comments []Comment
-	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d/comments", workspace, repo, id)
+	path := fmt.Sprintf("%s/pullrequests/%d/comments", repoPath(workspace, repo), id)
 
 	for path != "" {
 		data, err := c.get(ctx, path)
@@ -602,7 +596,7 @@ func (c *Client) ListPullRequestComments(ctx context.Context, workspace, repo st
 }
 
 func (c *Client) CreatePullRequestComment(ctx context.Context, workspace, repo string, id int, input CommentCreate) (*Comment, error) {
-	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d/comments", workspace, repo, id)
+	path := fmt.Sprintf("%s/pullrequests/%d/comments", repoPath(workspace, repo), id)
 	data, err := c.post(ctx, path, input)
 	if err != nil {
 		return nil, err
@@ -623,7 +617,7 @@ func (c *Client) CreatePullRequestCommentText(ctx context.Context, workspace, re
 }
 
 func (c *Client) ApprovePullRequest(ctx context.Context, workspace, repo string, id int) (*ReviewActionResult, error) {
-	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d/approve", workspace, repo, id)
+	path := fmt.Sprintf("%s/pullrequests/%d/approve", repoPath(workspace, repo), id)
 	data, err := c.post(ctx, path, nil)
 	if err != nil {
 		return nil, err
@@ -638,13 +632,13 @@ func (c *Client) ApprovePullRequest(ctx context.Context, workspace, repo string,
 }
 
 func (c *Client) UnapprovePullRequest(ctx context.Context, workspace, repo string, id int) error {
-	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d/approve", workspace, repo, id)
+	path := fmt.Sprintf("%s/pullrequests/%d/approve", repoPath(workspace, repo), id)
 	_, err := c.delete(ctx, path)
 	return err
 }
 
 func (c *Client) RequestPullRequestChanges(ctx context.Context, workspace, repo string, id int) (*ReviewActionResult, error) {
-	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d/request-changes", workspace, repo, id)
+	path := fmt.Sprintf("%s/pullrequests/%d/request-changes", repoPath(workspace, repo), id)
 	data, err := c.post(ctx, path, nil)
 	if err != nil {
 		return nil, err
@@ -659,19 +653,19 @@ func (c *Client) RequestPullRequestChanges(ctx context.Context, workspace, repo 
 }
 
 func (c *Client) ClearPullRequestChanges(ctx context.Context, workspace, repo string, id int) error {
-	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d/request-changes", workspace, repo, id)
+	path := fmt.Sprintf("%s/pullrequests/%d/request-changes", repoPath(workspace, repo), id)
 	_, err := c.delete(ctx, path)
 	return err
 }
 
 func (c *Client) GetPullRequestDiff(ctx context.Context, workspace, repo string, id int) ([]byte, error) {
-	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d/diff", workspace, repo, id)
+	path := fmt.Sprintf("%s/pullrequests/%d/diff", repoPath(workspace, repo), id)
 	return c.getRaw(ctx, path)
 }
 
 func (c *Client) ListPullRequestTasks(ctx context.Context, workspace, repo string, id int) ([]Task, error) {
 	var tasks []Task
-	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d/tasks", workspace, repo, id)
+	path := fmt.Sprintf("%s/pullrequests/%d/tasks", repoPath(workspace, repo), id)
 
 	for path != "" {
 		data, err := c.get(ctx, path)
