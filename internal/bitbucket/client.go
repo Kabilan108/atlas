@@ -38,20 +38,6 @@ func WithNoCache(noCache bool) ClientOption {
 	}
 }
 
-// WithBaseURL points the client at another API root, such as a test server.
-func WithBaseURL(baseURL string) ClientOption {
-	return func(c *Client) {
-		c.baseURL = strings.TrimRight(baseURL, "/")
-	}
-}
-
-// WithHTTPClient replaces the HTTP client used for every request.
-func WithHTTPClient(httpClient *http.Client) ClientOption {
-	return func(c *Client) {
-		c.httpClient = httpClient
-	}
-}
-
 func WithRetry(retry bool) ClientOption {
 	return func(c *Client) {
 		c.retry = retry
