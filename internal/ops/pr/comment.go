@@ -33,7 +33,7 @@ func (r *CommentResult) Edited() bool { return r.edited }
 var Comment = &ops.Op[CommentInput, *CommentResult]{
 	Meta: ops.Meta{
 		Name:        "pr_comment",
-		Description: "Comment on a Bitbucket pull request: top level, a reply, or inline on a file or line. With edit, replace a comment's body.",
+		Description: "Post one comment on a Bitbucket pull request: top level, a reply, or inline on a file or line. With edit, replace a comment's body. For several comments or a verdict use pr_review.",
 		Surfaces:    ops.Both,
 	},
 	Run: comment,

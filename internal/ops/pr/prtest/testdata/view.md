@@ -9,7 +9,9 @@ author:
   name: 'ada'
   mention: '@ada'
 source_branch: 'feature/login'
+head_commit: 'abc1234'
 destination_branch: 'main'
+created_at: '2025-03-01T09:00:00Z'
 updated_at: '2025-03-05T16:30:00Z'
 bitbucket_url: 'https://bitbucket.org/acme/widgets/pull-requests/42'
 comment_count: 5
@@ -18,14 +20,17 @@ reviewers:
   -
     name: 'grace'
     mention: '@grace'
+    account_id: '557058:grace'
     status: 'approved'
   -
     name: 'ken'
     mention: '@ken'
+    account_id: '557058:ken'
     status: 'pending'
   -
     name: 'linus'
     mention: '@linus'
+    account_id: '557058:linus'
     status: 'changes_requested'
 ---
 

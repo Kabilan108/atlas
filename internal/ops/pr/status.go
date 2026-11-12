@@ -32,7 +32,7 @@ type StatusResult struct {
 var Status = &ops.Op[StatusInput, *StatusResult]{
 	Meta: ops.Meta{
 		Name:        "pr_status",
-		Description: "Show the open Bitbucket pull requests in a repo that you created or are asked to review, and the one for branch if given.",
+		Description: "Your open pull requests in one repo: those you created and those awaiting your review, plus the PR for branch if given. For one PR's state use pr_view; for build results use pr_checks.",
 		Surfaces:    ops.Both,
 		ReadOnly:    true,
 	},

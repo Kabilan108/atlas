@@ -60,7 +60,7 @@ func (r *ReviewResult) Complete() bool { return r.complete }
 var Review = &ops.Op[ReviewInput, *ReviewResult]{
 	Meta: ops.Meta{
 		Name:        "pr_review",
-		Description: "Review a Bitbucket pull request in one call: post inline and reply comments, a summary, then approve, request changes, or leave it at comments.",
+		Description: "Post a whole review in one call: any number of inline and reply comments, a summary, then approve, request changes, or neither (action comment). Prefer this to repeated pr_comment calls.",
 		Surfaces:    ops.Both,
 	},
 	Run:      review,

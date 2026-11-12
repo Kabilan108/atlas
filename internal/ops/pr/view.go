@@ -41,7 +41,7 @@ type ViewResult struct {
 var View = &ops.Op[ViewInput, *ViewResult]{
 	Meta: ops.Meta{
 		Name:        "pr_view",
-		Description: "Show a Bitbucket pull request as markdown: state, branches, reviewers, and description. Set comments to add review threads and tasks.",
+		Description: "Show one Bitbucket pull request as markdown: state, draft, branches, head commit, reviewers and their verdicts, description. comments adds review threads with comment IDs (for reply_to) and tasks; activity adds approvals and pushes with times.",
 		Surfaces:    ops.Both,
 		ReadOnly:    true,
 	},
