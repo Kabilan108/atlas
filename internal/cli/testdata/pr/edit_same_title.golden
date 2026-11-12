@@ -1,0 +1,5 @@
+$ atlas pr edit 42 -R acme/widgets --title "Fix login: handle 'empty' users"
+--- stdout
+No changes.
+--- requests
+GET /2.0/repositories/acme/widgets/pullrequests/42

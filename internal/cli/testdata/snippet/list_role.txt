@@ -1,0 +1,7 @@
+$ atlas snippet ls --workspace acme --role owner
+ID      Title            Files  Visibility  Updated
+abc123  Deploy notes     2      private     Mar 4, 2024
+ghi789  Private scratch  1      private     Jan 1, 2024
+--- error ---
+--- requests ---
+GET /2.0/snippets/acme?pagelen=10&role=owner

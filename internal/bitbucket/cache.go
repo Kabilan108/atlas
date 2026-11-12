@@ -11,9 +11,12 @@ import (
 
 const defaultTTL = 5 * time.Minute
 
+// Cache keeps GET responses on disk for a few minutes. A client uses one only
+// when given WithCache.
 type Cache struct {
-	dir string
-	ttl time.Duration
+	dir            string
+	ttl            time.Duration
+	invalidateOnly bool
 }
 
 type cacheEntry struct {
@@ -22,24 +25,20 @@ type cacheEntry struct {
 	ExpiresAt time.Time       `json:"expires_at"`
 }
 
-func NewCache() (*Cache, error) {
-	cacheDir, err := cacheDir()
-	if err != nil {
-		return nil, err
-	}
-	return &Cache{dir: cacheDir, ttl: defaultTTL}, nil
+// NewCache stores entries in dir, creating it on the first write.
+func NewCache(dir string) *Cache {
+	return &Cache{dir: dir, ttl: defaultTTL}
 }
 
-func cacheDir() (string, error) {
-	dir := os.Getenv("XDG_CACHE_HOME")
-	if dir == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", err
-		}
-		dir = filepath.Join(home, ".cache")
-	}
-	return filepath.Join(dir, "atlas"), nil
+// InvalidateOnly returns a cache that serves and stores nothing but is still
+// cleared after writes, so a write made while bypassing the cache does not
+// leave stale entries for later cached reads.
+func (c *Cache) InvalidateOnly() *Cache {
+	return &Cache{dir: c.dir, ttl: c.ttl, invalidateOnly: true}
+}
+
+func (c *Cache) serves() bool {
+	return c != nil && !c.invalidateOnly
 }
 
 func (c *Cache) Get(key string) ([]byte, bool) {

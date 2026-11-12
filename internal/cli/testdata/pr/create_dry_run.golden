@@ -1,0 +1,7 @@
+$ atlas pr create -R acme/widgets --title "Add login" -F $BODY -r "557058:linus, @557058:ken" --draft --dry-run
+--- stdout
+{"draft":true,"title":"Add login","description":"Body from file:\n\n- one\n","source":{"branch":{"name":"feature/login"}},"destination":{"branch":{"name":"main"}},"reviewers":[{"uuid":"{linus-uuid}","username":"","nickname":"linus","display_name":"Linus Torvalds","account_id":"557058:linus","links":{"self":{"href":""},"html":{"href":""},"avatar":{"href":""}}},{"uuid":"{ken-uuid}","username":"","nickname":"ken","display_name":"Ken Thompson","account_id":"557058:ken","links":{"self":{"href":""},"html":{"href":""},"avatar":{"href":""}}}]}
+--- requests
+GET /2.0/repositories/acme/widgets
+GET /2.0/users/557058:linus
+GET /2.0/users/557058:ken

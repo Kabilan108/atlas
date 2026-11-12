@@ -1,0 +1,5 @@
+$ atlas pr list --all
+--- stdout
+--- requests
+--- error
+workspace not configured. Run 'atlas config set workspace <name>' or use -R workspace/repo

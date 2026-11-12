@@ -1,0 +1,5 @@
+$ atlas pr create -R acme/widgets -H local-only -t x --push --dry-run
+--- stdout
+{"title":"x","source":{"branch":{"name":"local-only"}},"destination":{"branch":{"name":"main"}}}
+--- requests
+GET /2.0/repositories/acme/widgets

@@ -2,7 +2,9 @@ package bitbucket
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -13,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kabilan108/atlas/internal/config"
+	"github.com/kabilan108/atlas/internal/redact"
 )
 
 const defaultBaseURL = "https://api.bitbucket.org/2.0"
@@ -23,32 +25,31 @@ type Client struct {
 	baseURL    string
 	username   string
 	password   string
-	cache      *Cache
-	noCache    bool
-	retry      bool
+	// cache is nil unless WithCache set one; without it the client never
+	// touches the disk.
+	cache *Cache
+	retry bool
+	// redactor scrubs the credentials from anything a server sends back
+	// that ends up in an error.
+	redactor *redact.Credentials
 }
 
 type ClientOption func(*Client)
 
-func WithNoCache(noCache bool) ClientOption {
+// WithCache caches GET responses in cache, keyed by username and URL, and
+// clears it after writes.
+func WithCache(cache *Cache) ClientOption {
 	return func(c *Client) {
-		c.noCache = noCache
+		c.cache = cache
 	}
 }
 
+// WithRetry waits for the rate-limit reset and retries once when Bitbucket
+// answers 429. The wait ends early when the request's context does.
 func WithRetry(retry bool) ClientOption {
 	return func(c *Client) {
 		c.retry = retry
 	}
-}
-
-func NewClient(opts ...ClientOption) (*Client, error) {
-	creds, err := config.LoadCredentials()
-	if err != nil {
-		return nil, fmt.Errorf("failed to load credentials: %w", err)
-	}
-
-	return NewClientWithCredentials(creds.Username, creds.APIToken, opts...)
 }
 
 func NewClientWithCredentials(username, apiToken string, opts ...ClientOption) (*Client, error) {
@@ -56,22 +57,17 @@ func NewClientWithCredentials(username, apiToken string, opts ...ClientOption) (
 		return nil, NewAuthError(401, "missing credentials")
 	}
 
-	cache, err := NewCache()
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize cache: %w", err)
-	}
-
 	c := &Client{
 		httpClient: &http.Client{Timeout: 30 * time.Second},
 		baseURL:    defaultBaseURL,
 		username:   username,
 		password:   apiToken,
-		cache:      cache,
 	}
 
 	for _, opt := range opts {
 		opt(c)
 	}
+	c.redactor = redact.Basic(username, apiToken)
 
 	return c, nil
 }
@@ -82,43 +78,94 @@ func newClientForTest(baseURL string, httpClient *http.Client) *Client {
 		baseURL:    baseURL,
 		username:   "user",
 		password:   "password",
-		noCache:    true,
+		redactor:   redact.Basic("user", "password"),
 	}
 }
 
 func (c *Client) do(req *http.Request) (*http.Response, error) {
-	req.SetBasicAuth(c.username, c.password)
 	req.Header.Set("Accept", "application/json")
+	return c.doAuthenticated(req)
+}
 
-	resp, err := c.httpClient.Do(req)
+// doAuthenticated sends req with the client's credentials. The rate-limit
+// wait and retry stop when the request's context ends.
+func (c *Client) doAuthenticated(req *http.Request) (*http.Response, error) {
+	req.SetBasicAuth(c.username, c.password)
+	httpClient := c.authenticatedHTTPClient()
+
+	resp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, c.redactError(err)
 	}
 
 	if resp.StatusCode == 429 && c.retry {
 		resetTime := parseRateLimitReset(resp.Header)
 		resp.Body.Close()
 
-		waitDuration := time.Until(resetTime)
-		if waitDuration > 0 {
-			time.Sleep(waitDuration)
+		if err := sleepContext(req.Context(), time.Until(resetTime)); err != nil {
+			return nil, err
 		}
-		return c.httpClient.Do(req)
+		if req.GetBody != nil {
+			body, err := req.GetBody()
+			if err != nil {
+				return nil, err
+			}
+			req.Body = body
+		}
+		resp, err := httpClient.Do(req)
+		return resp, c.redactError(err)
 	}
 
 	return resp, nil
 }
 
-func (c *Client) get(path string) ([]byte, error) {
-	requestURL := c.baseURL + path
+// authenticatedHTTPClient copies the configured client, including one injected
+// with WithHTTPClient, and refuses redirects that leave the base URL before its
+// own policy runs. Go's default policy forwards Authorization to the same host
+// on any port and to subdomains, which would leak credentials.
+func (c *Client) authenticatedHTTPClient() *http.Client {
+	clone := *c.httpClient
+	callerPolicy := c.httpClient.CheckRedirect
+	clone.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if _, ok := c.apiScopePath(req.URL); !ok {
+			return fmt.Errorf("refusing redirect outside %s: %s", c.baseURL, req.URL.Redacted())
+		}
+		if callerPolicy != nil {
+			return callerPolicy(req, via)
+		}
+		if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
+		}
+		return nil
+	}
+	return &clone
+}
 
-	if !c.noCache {
-		if data, ok := c.cache.Get(requestURL); ok {
+func sleepContext(ctx context.Context, d time.Duration) error {
+	if d <= 0 {
+		return ctx.Err()
+	}
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+func (c *Client) get(ctx context.Context, path string) ([]byte, error) {
+	requestURL := c.baseURL + path
+	cacheKey := c.username + "\x00" + requestURL
+
+	if c.cache.serves() {
+		if data, ok := c.cache.Get(cacheKey); ok {
 			return data, nil
 		}
 	}
 
-	req, err := http.NewRequest(http.MethodGet, requestURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -129,63 +176,61 @@ func (c *Client) get(path string) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readBody(resp)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := checkResponse(resp, body); err != nil {
+	if err := c.checkResponse(resp, body); err != nil {
 		return nil, err
 	}
 
-	if !c.noCache {
-		c.cache.Set(requestURL, body)
+	if c.cache.serves() {
+		c.cache.Set(cacheKey, body)
 	}
 
 	return body, nil
 }
 
-func (c *Client) getRaw(path string) ([]byte, error) {
+func (c *Client) getRaw(ctx context.Context, path string) ([]byte, error) {
 	requestURL := c.baseURL + path
 
-	req, err := http.NewRequest(http.MethodGet, requestURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	req.SetBasicAuth(c.username, c.password)
-
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doAuthenticated(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readBody(resp)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := checkResponse(resp, body); err != nil {
+	if err := c.checkResponse(resp, body); err != nil {
 		return nil, err
 	}
 
 	return body, nil
 }
 
-func (c *Client) post(path string, body any) ([]byte, error) {
-	return c.sendJSON(http.MethodPost, path, body)
+func (c *Client) post(ctx context.Context, path string, body any) ([]byte, error) {
+	return c.sendJSON(ctx, http.MethodPost, path, body)
 }
 
-func (c *Client) put(path string, body any) ([]byte, error) {
-	return c.sendJSON(http.MethodPut, path, body)
+func (c *Client) put(ctx context.Context, path string, body any) ([]byte, error) {
+	return c.sendJSON(ctx, http.MethodPut, path, body)
 }
 
-func (c *Client) delete(path string) ([]byte, error) {
-	return c.sendJSON(http.MethodDelete, path, nil)
+func (c *Client) delete(ctx context.Context, path string) ([]byte, error) {
+	return c.sendJSON(ctx, http.MethodDelete, path, nil)
 }
 
-func (c *Client) sendJSON(method, path string, body any) ([]byte, error) {
+func (c *Client) sendJSON(ctx context.Context, method, path string, body any) ([]byte, error) {
 	var payload io.Reader
 	if body != nil {
 		data, err := json.Marshal(body)
@@ -195,7 +240,7 @@ func (c *Client) sendJSON(method, path string, body any) ([]byte, error) {
 		payload = bytes.NewReader(data)
 	}
 
-	req, err := http.NewRequest(method, c.baseURL+path, payload)
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, payload)
 	if err != nil {
 		return nil, err
 	}
@@ -209,41 +254,14 @@ func (c *Client) sendJSON(method, path string, body any) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 
-	data, err := io.ReadAll(resp.Body)
+	data, err := readBody(resp)
 	if err != nil {
 		return nil, err
 	}
-	if err := checkResponse(resp, data); err != nil {
+	if err := c.checkResponse(resp, data); err != nil {
 		return nil, err
 	}
 	return data, nil
-}
-
-func checkResponse(resp *http.Response, body []byte) error {
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		return nil
-	}
-
-	switch resp.StatusCode {
-	case 401:
-		return NewAuthError(401, "invalid credentials")
-	case 403:
-		return NewAuthError(403, "access denied")
-	case 404:
-		return NewNotFoundError("resource", extractResource(resp.Request.URL.Path))
-	case 429:
-		resetTime := parseRateLimitReset(resp.Header)
-		return NewRateLimitError(resetTime)
-	default:
-		if resp.StatusCode >= 500 {
-			return NewServerError(resp.StatusCode, string(body))
-		}
-		return &APIError{
-			StatusCode: resp.StatusCode,
-			Message:    string(body),
-			Resource:   "api",
-		}
-	}
 }
 
 func parseRateLimitReset(header http.Header) time.Time {
@@ -267,8 +285,8 @@ func extractResource(path string) string {
 	return path
 }
 
-func (c *Client) GetCurrentUser() (*User, error) {
-	data, err := c.get("/user")
+func (c *Client) GetCurrentUser(ctx context.Context) (*User, error) {
+	data, err := c.get(ctx, "/user")
 	if err != nil {
 		return nil, err
 	}
@@ -281,9 +299,9 @@ func (c *Client) GetCurrentUser() (*User, error) {
 	return &user, nil
 }
 
-func (c *Client) GetUser(identifier string) (*User, error) {
+func (c *Client) GetUser(ctx context.Context, identifier string) (*User, error) {
 	path := "/users/" + url.PathEscape(identifier)
-	data, err := c.get(path)
+	data, err := c.get(ctx, path)
 	if err != nil {
 		return nil, err
 	}
@@ -296,12 +314,15 @@ func (c *Client) GetUser(identifier string) (*User, error) {
 	return &user, nil
 }
 
-func (c *Client) ListRepositories(workspace string) ([]Repository, error) {
+func (c *Client) ListRepositories(ctx context.Context, workspace string) ([]Repository, error) {
 	var repos []Repository
-	path := fmt.Sprintf("/repositories/%s", workspace)
+	path := "/repositories/" + url.PathEscape(workspace)
 
-	for path != "" {
-		data, err := c.get(path)
+	for pages := 0; path != ""; pages++ {
+		if pages == maxListPages || len(repos) >= MaxListItems {
+			return nil, fmt.Errorf("workspace %s has more than %d repositories; name the repos to list instead", workspace, len(repos))
+		}
+		data, err := c.get(ctx, path)
 		if err != nil {
 			return nil, err
 		}
@@ -318,9 +339,9 @@ func (c *Client) ListRepositories(workspace string) ([]Repository, error) {
 	return repos, nil
 }
 
-func (c *Client) GetRepository(workspace, repo string) (*Repository, error) {
-	path := fmt.Sprintf("/repositories/%s/%s", workspace, repo)
-	data, err := c.get(path)
+func (c *Client) GetRepository(ctx context.Context, workspace, repo string) (*Repository, error) {
+	path := repoPath(workspace, repo)
+	data, err := c.get(ctx, path)
 	if err != nil {
 		return nil, err
 	}
@@ -333,22 +354,60 @@ func (c *Client) GetRepository(workspace, repo string) (*Repository, error) {
 	return &repository, nil
 }
 
-func (c *Client) ListPullRequests(workspace, repo string, opts *PRListOptions) ([]PullRequest, error) {
-	var prs []PullRequest
-	path := fmt.Sprintf("/repositories/%s/%s/pullrequests", workspace, repo)
+// MaxPRListLimit is the most pull requests one ListPullRequests call
+// returns, and maxPRListScan the most it reads while filtering by author or
+// reviewer, so no listing walks a repository's whole history.
+const (
+	MaxPRListLimit = 500
+	maxPRListScan  = 1000
+	prPageLen      = 50
+)
 
-	var queryParams []string
+// PullRequestList is one repository's pull requests, newest updated first.
+type PullRequestList struct {
+	PullRequests []PullRequest
+	// More is set when the listing stopped at its limit, or after reading
+	// maxPRListScan pull requests, with more left on the server.
+	More bool
+}
+
+// ListPullRequests lists a repository's pull requests newest updated first,
+// reading pages only until opts.Limit match or the pull requests get older
+// than opts.UpdatedSince.
+func (c *Client) ListPullRequests(ctx context.Context, workspace, repo string, opts *PRListOptions) (*PullRequestList, error) {
+	var o PRListOptions
 	if opts != nil {
-		if opts.State != "" {
-			queryParams = append(queryParams, "state="+opts.State)
-		}
+		o = *opts
 	}
-	if len(queryParams) > 0 {
-		path += "?" + strings.Join(queryParams, "&")
+	limit := o.Limit
+	if limit <= 0 || limit > MaxPRListLimit {
+		limit = MaxPRListLimit
 	}
+	filtered := o.Author != "" || o.Reviewer != ""
+	pageLen := prPageLen
+	if !filtered {
+		pageLen = min(limit, prPageLen)
+	}
+	values := url.Values{}
+	for _, state := range o.States {
+		values.Add("state", state)
+	}
+	if !o.UpdatedSince.IsZero() {
+		values.Set("q", "updated_on >= "+o.UpdatedSince.UTC().Format("2006-01-02T15:04:05-07:00"))
+	}
+	values.Set("sort", "-updated_on")
+	values.Set("pagelen", strconv.Itoa(pageLen))
+	path := withQuery(repoPath(workspace, repo)+"/pullrequests", values)
 
+	list := &PullRequestList{}
+	scanned := 0
+	visited := map[string]bool{}
 	for path != "" {
-		data, err := c.get(path)
+		if visited[path] {
+			return nil, fmt.Errorf("pull requests pagination did not advance: %s", path)
+		}
+		visited[path] = true
+		data, err := c.get(ctx, path)
 		if err != nil {
 			return nil, err
 		}
@@ -359,18 +418,30 @@ func (c *Client) ListPullRequests(workspace, repo string, opts *PRListOptions) (
 		}
 
 		for _, pr := range page.Values {
-			if opts != nil && opts.Author != "" && !pr.Author.MatchesStableIdentifier(opts.Author) {
+			if !o.UpdatedSince.IsZero() && pr.UpdatedOn.Before(o.UpdatedSince) {
+				return list, nil
+			}
+			scanned++
+			if o.Author != "" && !pr.Author.MatchesStableIdentifier(o.Author) {
 				continue
 			}
-			if opts != nil && opts.Reviewer != "" && !hasReviewer(pr, opts.Reviewer) {
+			if o.Reviewer != "" && !hasReviewer(pr, o.Reviewer) {
 				continue
 			}
-			prs = append(prs, pr)
+			if len(list.PullRequests) == limit {
+				list.More = true
+				return list, nil
+			}
+			list.PullRequests = append(list.PullRequests, pr)
 		}
 		path = c.extractNextPath(page.Next)
+		if path != "" && (len(list.PullRequests) == limit || scanned >= maxPRListScan) {
+			list.More = true
+			return list, nil
+		}
 	}
 
-	return prs, nil
+	return list, nil
 }
 
 func hasReviewer(pr PullRequest, reviewer string) bool {
@@ -387,27 +458,33 @@ func hasReviewer(pr PullRequest, reviewer string) bool {
 	return false
 }
 
-func (c *Client) ListAllPullRequests(workspace string, opts *PRListOptions) ([]PullRequest, error) {
-	repos, err := c.ListRepositories(workspace)
-	if err != nil {
-		return nil, err
-	}
-
-	var allPRs []PullRequest
-	for _, repo := range repos {
-		prs, err := c.ListPullRequests(workspace, repo.Name, opts)
-		if err != nil {
-			continue
-		}
-		allPRs = append(allPRs, prs...)
-	}
-
-	return allPRs, nil
+// RepositoryError is one repository whose pull requests could not be listed.
+type RepositoryError struct {
+	Repository string
+	Err        error
 }
 
-func (c *Client) FindPullRequestByBranch(workspace, repo, branch string) (*PullRequest, error) {
-	path := fmt.Sprintf("/repositories/%s/%s/pullrequests?q=source.branch.name=\"%s\"", workspace, repo, branch)
-	data, err := c.get(path)
+// RepositoryListError reports the repositories a multi-repository listing
+// could not read; it comes with the results of every repository that did
+// answer.
+type RepositoryListError struct {
+	Repositories int
+	Failed       []RepositoryError
+}
+
+func (e *RepositoryListError) Error() string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "failed to list pull requests in %d of %d repositories:", len(e.Failed), e.Repositories)
+	for _, failed := range e.Failed {
+		message, _, _ := strings.Cut(failed.Err.Error(), "\n")
+		fmt.Fprintf(&b, "\n  %s: %s", failed.Repository, message)
+	}
+	return b.String()
+}
+
+func (c *Client) FindPullRequestByBranch(ctx context.Context, workspace, repo, branch string) (*PullRequest, error) {
+	path := withQuery(repoPath(workspace, repo)+"/pullrequests", url.Values{"q": {"source.branch.name=" + bbqlString(branch)}})
+	data, err := c.get(ctx, path)
 	if err != nil {
 		return nil, err
 	}
@@ -435,9 +512,9 @@ func (c *Client) FindPullRequestByBranch(workspace, repo, branch string) (*PullR
 	return selected, nil
 }
 
-func (c *Client) GetPullRequest(workspace, repo string, id int) (*PullRequest, error) {
-	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d", workspace, repo, id)
-	data, err := c.get(path)
+func (c *Client) GetPullRequest(ctx context.Context, workspace, repo string, id int) (*PullRequest, error) {
+	path := fmt.Sprintf("%s/pullrequests/%d", repoPath(workspace, repo), id)
+	data, err := c.get(ctx, path)
 	if err != nil {
 		return nil, err
 	}
@@ -450,26 +527,9 @@ func (c *Client) GetPullRequest(workspace, repo string, id int) (*PullRequest, e
 	return &pr, nil
 }
 
-func (c *Client) CreatePullRequest(workspace, repo string, input PullRequestCreate) (*PullRequest, error) {
-	path := fmt.Sprintf("/repositories/%s/%s/pullrequests", workspace, repo)
-	data, err := c.post(path, input)
-	if err != nil {
-		return nil, err
-	}
-
-	c.invalidatePRCache()
-
-	var pr PullRequest
-	if err := json.Unmarshal(data, &pr); err != nil {
-		return nil, fmt.Errorf("failed to parse pull request response: %w", err)
-	}
-
-	return &pr, nil
-}
-
-func (c *Client) UpdatePullRequest(workspace, repo string, id int, update PullRequestUpdate) (*PullRequest, error) {
-	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d", workspace, repo, id)
-	data, err := c.put(path, update)
+func (c *Client) CreatePullRequest(ctx context.Context, workspace, repo string, input PullRequestCreate) (*PullRequest, error) {
+	path := repoPath(workspace, repo) + "/pullrequests"
+	data, err := c.post(ctx, path, input)
 	if err != nil {
 		return nil, err
 	}
@@ -484,9 +544,26 @@ func (c *Client) UpdatePullRequest(workspace, repo string, id int, update PullRe
 	return &pr, nil
 }
 
-func (c *Client) DeclinePullRequest(workspace, repo string, id int) (*PullRequest, error) {
-	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d/decline", workspace, repo, id)
-	data, err := c.post(path, nil)
+func (c *Client) UpdatePullRequest(ctx context.Context, workspace, repo string, id int, update PullRequestUpdate) (*PullRequest, error) {
+	path := fmt.Sprintf("%s/pullrequests/%d", repoPath(workspace, repo), id)
+	data, err := c.put(ctx, path, update)
+	if err != nil {
+		return nil, err
+	}
+
+	c.invalidatePRCache()
+
+	var pr PullRequest
+	if err := json.Unmarshal(data, &pr); err != nil {
+		return nil, fmt.Errorf("failed to parse pull request response: %w", err)
+	}
+
+	return &pr, nil
+}
+
+func (c *Client) DeclinePullRequest(ctx context.Context, workspace, repo string, id int) (*PullRequest, error) {
+	path := fmt.Sprintf("%s/pullrequests/%d/decline", repoPath(workspace, repo), id)
+	data, err := c.post(ctx, path, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -499,31 +576,16 @@ func (c *Client) DeclinePullRequest(workspace, repo string, id int) (*PullReques
 	return &pr, nil
 }
 
-func (c *Client) ListPullRequestComments(workspace, repo string, id int) ([]Comment, error) {
-	var comments []Comment
-	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d/comments", workspace, repo, id)
-
-	for path != "" {
-		data, err := c.get(path)
-		if err != nil {
-			return nil, err
-		}
-
-		var page PaginatedResponse[Comment]
-		if err := json.Unmarshal(data, &page); err != nil {
-			return nil, fmt.Errorf("failed to parse comments response: %w", err)
-		}
-
-		comments = append(comments, page.Values...)
-		path = c.extractNextPath(page.Next)
-	}
-
-	return comments, nil
+// ListPullRequestComments returns up to limit comments (zero means
+// MaxListItems); the Scan says whether there are more.
+func (c *Client) ListPullRequestComments(ctx context.Context, workspace, repo string, id, limit int) ([]Comment, Scan, error) {
+	path := fmt.Sprintf("%s/pullrequests/%d/comments", repoPath(workspace, repo), id)
+	return collectCachedPages[Comment](ctx, c, path, limit, "comments")
 }
 
-func (c *Client) CreatePullRequestComment(workspace, repo string, id int, input CommentCreate) (*Comment, error) {
-	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d/comments", workspace, repo, id)
-	data, err := c.post(path, input)
+func (c *Client) CreatePullRequestComment(ctx context.Context, workspace, repo string, id int, input CommentCreate) (*Comment, error) {
+	path := fmt.Sprintf("%s/pullrequests/%d/comments", repoPath(workspace, repo), id)
+	data, err := c.post(ctx, path, input)
 	if err != nil {
 		return nil, err
 	}
@@ -536,15 +598,15 @@ func (c *Client) CreatePullRequestComment(workspace, repo string, id int, input 
 	return &comment, nil
 }
 
-func (c *Client) CreatePullRequestCommentText(workspace, repo string, id int, body string) (*Comment, error) {
-	return c.CreatePullRequestComment(workspace, repo, id, CommentCreate{
+func (c *Client) CreatePullRequestCommentText(ctx context.Context, workspace, repo string, id int, body string) (*Comment, error) {
+	return c.CreatePullRequestComment(ctx, workspace, repo, id, CommentCreate{
 		Content: ContentInput{Raw: body},
 	})
 }
 
-func (c *Client) ApprovePullRequest(workspace, repo string, id int) (*ReviewActionResult, error) {
-	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d/approve", workspace, repo, id)
-	data, err := c.post(path, nil)
+func (c *Client) ApprovePullRequest(ctx context.Context, workspace, repo string, id int) (*ReviewActionResult, error) {
+	path := fmt.Sprintf("%s/pullrequests/%d/approve", repoPath(workspace, repo), id)
+	data, err := c.post(ctx, path, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -557,15 +619,15 @@ func (c *Client) ApprovePullRequest(workspace, repo string, id int) (*ReviewActi
 	return &result, nil
 }
 
-func (c *Client) UnapprovePullRequest(workspace, repo string, id int) error {
-	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d/approve", workspace, repo, id)
-	_, err := c.delete(path)
+func (c *Client) UnapprovePullRequest(ctx context.Context, workspace, repo string, id int) error {
+	path := fmt.Sprintf("%s/pullrequests/%d/approve", repoPath(workspace, repo), id)
+	_, err := c.delete(ctx, path)
 	return err
 }
 
-func (c *Client) RequestPullRequestChanges(workspace, repo string, id int) (*ReviewActionResult, error) {
-	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d/request-changes", workspace, repo, id)
-	data, err := c.post(path, nil)
+func (c *Client) RequestPullRequestChanges(ctx context.Context, workspace, repo string, id int) (*ReviewActionResult, error) {
+	path := fmt.Sprintf("%s/pullrequests/%d/request-changes", repoPath(workspace, repo), id)
+	data, err := c.post(ctx, path, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -578,50 +640,39 @@ func (c *Client) RequestPullRequestChanges(workspace, repo string, id int) (*Rev
 	return &result, nil
 }
 
-func (c *Client) ClearPullRequestChanges(workspace, repo string, id int) error {
-	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d/request-changes", workspace, repo, id)
-	_, err := c.delete(path)
+func (c *Client) ClearPullRequestChanges(ctx context.Context, workspace, repo string, id int) error {
+	path := fmt.Sprintf("%s/pullrequests/%d/request-changes", repoPath(workspace, repo), id)
+	_, err := c.delete(ctx, path)
 	return err
 }
 
-func (c *Client) GetPullRequestDiff(workspace, repo string, id int) ([]byte, error) {
-	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d/diff", workspace, repo, id)
-	return c.getRaw(path)
+func (c *Client) GetPullRequestDiff(ctx context.Context, workspace, repo string, id int) ([]byte, error) {
+	path := fmt.Sprintf("%s/pullrequests/%d/diff", repoPath(workspace, repo), id)
+	return c.getRaw(ctx, path)
 }
 
-func (c *Client) ListPullRequestTasks(workspace, repo string, id int) ([]Task, error) {
-	var tasks []Task
-	path := fmt.Sprintf("/repositories/%s/%s/pullrequests/%d/tasks", workspace, repo, id)
-
-	for path != "" {
-		data, err := c.get(path)
-		if err != nil {
-			if apiErr, ok := err.(*APIError); ok && apiErr.StatusCode == 404 {
-				return []Task{}, nil
-			}
-			return nil, err
-		}
-
-		var page PaginatedResponse[Task]
-		if err := json.Unmarshal(data, &page); err != nil {
-			return nil, fmt.Errorf("failed to parse tasks response: %w", err)
-		}
-
-		tasks = append(tasks, page.Values...)
-		path = c.extractNextPath(page.Next)
+// ListPullRequestTasks returns up to limit tasks (zero means MaxListItems);
+// the Scan says whether there are more. A repository without tasks has none.
+func (c *Client) ListPullRequestTasks(ctx context.Context, workspace, repo string, id, limit int) ([]Task, Scan, error) {
+	path := fmt.Sprintf("%s/pullrequests/%d/tasks", repoPath(workspace, repo), id)
+	tasks, scan, err := collectCachedPages[Task](ctx, c, path, limit, "tasks")
+	if apiErr, ok := err.(*APIError); ok && apiErr.StatusCode == 404 {
+		return []Task{}, Scan{}, nil
 	}
-
-	return tasks, nil
+	return tasks, scan, err
 }
 
+// extractNextPath returns the path of a next link under the base URL, or ""
+// to stop paging when the link is missing or points elsewhere.
 func (c *Client) extractNextPath(nextURL string) string {
 	if nextURL == "" {
 		return ""
 	}
-	if len(nextURL) > len(c.baseURL) && nextURL[:len(c.baseURL)] == c.baseURL {
-		return nextURL[len(c.baseURL):]
+	path, err := c.apiPath(nextURL)
+	if err != nil {
+		return ""
 	}
-	return ""
+	return path
 }
 
 func escapePathPreservingSlashes(path string) (string, error) {
@@ -646,19 +697,23 @@ func escapePathPreservingSlashes(path string) (string, error) {
 }
 
 type SnippetListOptions struct {
+	// Limit caps the snippets returned. Zero means MaxListItems.
 	Limit int
 	Role  string
+	// Private, when set, keeps only private (true) or public (false)
+	// snippets. Bitbucket cannot filter by visibility, so this runs
+	// client-side over at most MaxScan snippets (zero means MaxListItems).
+	Private *bool
+	MaxScan int
 }
 
 func snippetListPath(workspace string, opts *SnippetListOptions) string {
 	values := url.Values{}
 	if opts != nil {
-		if opts.Limit > 0 {
-			pageLen := opts.Limit
-			if pageLen > 100 {
-				pageLen = 100
-			}
-			values.Set("pagelen", strconv.Itoa(pageLen))
+		if opts.Private != nil {
+			values.Set("pagelen", strconv.Itoa(maxPageLen))
+		} else if opts.Limit > 0 {
+			values.Set("pagelen", strconv.Itoa(min(opts.Limit, maxPageLen)))
 		}
 		if opts.Role != "" {
 			values.Set("role", opts.Role)
@@ -672,34 +727,23 @@ func snippetListPath(workspace string, opts *SnippetListOptions) string {
 	return path
 }
 
-func (c *Client) ListSnippets(workspace string, opts *SnippetListOptions) ([]Snippet, error) {
-	var snippets []Snippet
-	path := snippetListPath(workspace, opts)
-
-	for path != "" {
-		data, err := c.get(path)
-		if err != nil {
-			return nil, err
+// ListSnippets stops paging once it has Limit snippets, or has read MaxScan
+// while filtering by visibility, and says which in the Scan.
+func (c *Client) ListSnippets(ctx context.Context, workspace string, opts *SnippetListOptions) ([]Snippet, Scan, error) {
+	limit, maxScan := 0, 0
+	var keep func(Snippet) bool
+	if opts != nil {
+		limit, maxScan = opts.Limit, opts.MaxScan
+		if private := opts.Private; private != nil {
+			keep = func(snippet Snippet) bool { return snippet.IsPrivate == *private }
 		}
-
-		var page PaginatedResponse[Snippet]
-		if err := json.Unmarshal(data, &page); err != nil {
-			return nil, fmt.Errorf("failed to parse snippets response: %w", err)
-		}
-
-		snippets = append(snippets, page.Values...)
-		if opts != nil && opts.Limit > 0 && len(snippets) >= opts.Limit {
-			return snippets[:opts.Limit], nil
-		}
-		path = c.extractNextPath(page.Next)
 	}
-
-	return snippets, nil
+	return scanPages(ctx, pageFetcher{c.getCachedJSON, c.apiPath}, snippetListPath(workspace, opts), keep, limit, maxScan, "snippets")
 }
 
-func (c *Client) GetSnippet(workspace, id string) (*Snippet, error) {
+func (c *Client) GetSnippet(ctx context.Context, workspace, id string) (*Snippet, error) {
 	path := fmt.Sprintf("/snippets/%s/%s", url.PathEscape(workspace), url.PathEscape(id))
-	data, err := c.get(path)
+	data, err := c.get(ctx, path)
 	if err != nil {
 		return nil, err
 	}
@@ -712,16 +756,16 @@ func (c *Client) GetSnippet(workspace, id string) (*Snippet, error) {
 	return &snippet, nil
 }
 
-func (c *Client) GetSnippetFileContent(workspace, id, filename string) ([]byte, error) {
+func (c *Client) GetSnippetFileContent(ctx context.Context, workspace, id, filename string) ([]byte, error) {
 	escapedFilename, err := escapePathPreservingSlashes(filename)
 	if err != nil {
 		return nil, err
 	}
 	path := fmt.Sprintf("/snippets/%s/%s/files/%s", url.PathEscape(workspace), url.PathEscape(id), escapedFilename)
-	return c.getRaw(path)
+	return c.getRaw(ctx, path)
 }
 
-func (c *Client) CreateSnippet(workspace, title string, files map[string][]byte, isPrivate bool) (*Snippet, error) {
+func (c *Client) CreateSnippet(ctx context.Context, workspace, title string, files map[string][]byte, isPrivate bool) (*Snippet, error) {
 	requestURL := c.baseURL + fmt.Sprintf("/snippets/%s", url.PathEscape(workspace))
 
 	var buf bytes.Buffer
@@ -749,7 +793,7 @@ func (c *Client) CreateSnippet(workspace, title string, files map[string][]byte,
 		return nil, fmt.Errorf("failed to close multipart writer: %w", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, requestURL, &buf)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, &buf)
 	if err != nil {
 		return nil, err
 	}
@@ -761,12 +805,12 @@ func (c *Client) CreateSnippet(workspace, title string, files map[string][]byte,
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readBody(resp)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := checkResponse(resp, body); err != nil {
+	if err := c.checkResponse(resp, body); err != nil {
 		return nil, err
 	}
 
@@ -778,7 +822,7 @@ func (c *Client) CreateSnippet(workspace, title string, files map[string][]byte,
 	return &snippet, nil
 }
 
-func (c *Client) UpdateSnippet(workspace, id, title string, addFiles map[string][]byte, removeFiles []string) error {
+func (c *Client) UpdateSnippet(ctx context.Context, workspace, id, title string, addFiles map[string][]byte, removeFiles []string) error {
 	requestURL := c.baseURL + fmt.Sprintf("/snippets/%s/%s", url.PathEscape(workspace), url.PathEscape(id))
 
 	var buf bytes.Buffer
@@ -810,7 +854,7 @@ func (c *Client) UpdateSnippet(workspace, id, title string, addFiles map[string]
 		return fmt.Errorf("failed to close multipart writer: %w", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPut, requestURL, &buf)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, requestURL, &buf)
 	if err != nil {
 		return err
 	}
@@ -822,18 +866,18 @@ func (c *Client) UpdateSnippet(workspace, id, title string, addFiles map[string]
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readBody(resp)
 	if err != nil {
 		return err
 	}
 
-	return checkResponse(resp, body)
+	return c.checkResponse(resp, body)
 }
 
-func (c *Client) DeleteSnippet(workspace, id string) error {
+func (c *Client) DeleteSnippet(ctx context.Context, workspace, id string) error {
 	requestURL := c.baseURL + fmt.Sprintf("/snippets/%s/%s", url.PathEscape(workspace), url.PathEscape(id))
 
-	req, err := http.NewRequest(http.MethodDelete, requestURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, requestURL, nil)
 	if err != nil {
 		return err
 	}
@@ -844,22 +888,22 @@ func (c *Client) DeleteSnippet(workspace, id string) error {
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readBody(resp)
 	if err != nil {
 		return err
 	}
 
-	return checkResponse(resp, body)
+	return c.checkResponse(resp, body)
 }
 
 // PR reads include detail, filtered lists, and branch lookups. Clear all cached
 // responses because the disk keys are hashes and cannot be matched by URL prefix.
-// This also applies to writes made with --no-cache.
+// An invalidate-only cache is cleared too.
 func (c *Client) invalidatePRCache() {
 	if c.cache == nil {
 		return
 	}
 	if err := c.cache.Clear(); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: pull request saved, but failed to invalidate cache: %v; use --no-cache for fresh reads\n", err)
+		fmt.Fprintf(os.Stderr, "Warning: pull request saved, but failed to clear the response cache: %v; cached reads may be stale for %s\n", err, c.cache.ttl)
 	}
 }

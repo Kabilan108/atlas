@@ -1,0 +1,5 @@
+$ atlas pr review 42 -R acme/widgets --approve --comment-spec $BADSPEC
+--- stdout
+--- requests
+--- error
+comments[1]: side requires line

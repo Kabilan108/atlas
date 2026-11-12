@@ -1,0 +1,13 @@
+$ atlas pr status -R acme/widgets
+--- stdout
+Current branch
+  #42 Fix login: handle 'empty' users [feature/login] 1 approved, 1 changes requested, 1 pending 5 comments, 2 tasks
+
+Created by you
+  #43 Tidy the docs [docs/tidy] 1 pending
+
+Requesting your review
+  #42 Fix login: handle 'empty' users [feature/login] 1 approved, 1 changes requested, 1 pending 5 comments, 2 tasks
+--- requests
+GET /2.0/user
+GET /2.0/repositories/acme/widgets/pullrequests?pagelen=50&sort=-updated_on&state=OPEN

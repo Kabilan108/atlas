@@ -1,0 +1,4 @@
+$ atlas snippet delete abc123 --workspace acme
+--- error ---
+refusing to delete non-interactively without --yes
+--- requests ---

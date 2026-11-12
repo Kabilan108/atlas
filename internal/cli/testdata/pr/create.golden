@@ -1,0 +1,7 @@
+$ atlas pr create -R acme/widgets --title "Add login" -b "Checklist:\n- tests\n\nhttps://bitbucket.org/acme/widgets/pull-requests/42"
+--- stdout
+https://bitbucket.org/acme/widgets/pull-requests/44
+--- requests
+GET /2.0/repositories/acme/widgets
+POST /2.0/repositories/acme/widgets/pullrequests
+  {"title":"Add login","description":"Checklist:\n\n- tests\n\n[https://bitbucket.org/acme/widgets/pull-requests/42](https://bitbucket.org/acme/widgets/pull-requests/42){: data-inline-card='' }","source":{"branch":{"name":"feature/login"}},"destination":{"branch":{"name":"main"}}}

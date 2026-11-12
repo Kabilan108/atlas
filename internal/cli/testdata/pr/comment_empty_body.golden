@@ -1,0 +1,5 @@
+$ atlas pr comment 42 -R acme/widgets -b "  "
+--- stdout
+--- requests
+--- error
+comment body cannot be empty

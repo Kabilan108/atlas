@@ -1,0 +1,4 @@
+$ atlas snippet list --workspace acme --role admin
+--- error ---
+invalid role "admin": expected owner, contributor, or member
+--- requests ---

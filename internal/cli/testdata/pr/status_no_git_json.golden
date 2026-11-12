@@ -1,0 +1,453 @@
+$ atlas pr status -R acme/widgets --json
+--- stdout
+{
+  "createdByYou": [
+    {
+      "id": 43,
+      "title": "Tidy the docs",
+      "description": "",
+      "state": "OPEN",
+      "draft": true,
+      "author": {
+        "uuid": "{grace-uuid}",
+        "username": "",
+        "nickname": "grace",
+        "display_name": "Grace Hopper",
+        "account_id": "557058:grace",
+        "links": {
+          "self": {
+            "href": ""
+          },
+          "html": {
+            "href": ""
+          },
+          "avatar": {
+            "href": ""
+          }
+        }
+      },
+      "source": {
+        "branch": {
+          "name": "docs/tidy"
+        },
+        "commit": {
+          "hash": "aaa1111"
+        },
+        "repository": {
+          "uuid": "",
+          "name": "",
+          "full_name": "acme/widgets",
+          "description": "",
+          "is_private": false,
+          "owner": {
+            "uuid": "",
+            "username": "",
+            "nickname": "",
+            "display_name": "",
+            "account_id": "",
+            "links": {
+              "self": {
+                "href": ""
+              },
+              "html": {
+                "href": ""
+              },
+              "avatar": {
+                "href": ""
+              }
+            }
+          },
+          "mainbranch": {
+            "name": ""
+          },
+          "created_on": "0001-01-01T00:00:00Z",
+          "updated_on": "0001-01-01T00:00:00Z",
+          "links": {
+            "self": {
+              "href": ""
+            },
+            "html": {
+              "href": ""
+            },
+            "avatar": {
+              "href": ""
+            }
+          }
+        }
+      },
+      "destination": {
+        "branch": {
+          "name": "main"
+        },
+        "commit": {
+          "hash": "def5678"
+        },
+        "repository": {
+          "uuid": "",
+          "name": "",
+          "full_name": "acme/widgets",
+          "description": "",
+          "is_private": false,
+          "owner": {
+            "uuid": "",
+            "username": "",
+            "nickname": "",
+            "display_name": "",
+            "account_id": "",
+            "links": {
+              "self": {
+                "href": ""
+              },
+              "html": {
+                "href": ""
+              },
+              "avatar": {
+                "href": ""
+              }
+            }
+          },
+          "mainbranch": {
+            "name": ""
+          },
+          "created_on": "0001-01-01T00:00:00Z",
+          "updated_on": "0001-01-01T00:00:00Z",
+          "links": {
+            "self": {
+              "href": ""
+            },
+            "html": {
+              "href": ""
+            },
+            "avatar": {
+              "href": ""
+            }
+          }
+        }
+      },
+      "reviewers": [
+        {
+          "uuid": "{ada-uuid}",
+          "username": "",
+          "nickname": "ada",
+          "display_name": "Ada Lovelace",
+          "account_id": "557058:ada",
+          "links": {
+            "self": {
+              "href": ""
+            },
+            "html": {
+              "href": ""
+            },
+            "avatar": {
+              "href": ""
+            }
+          }
+        }
+      ],
+      "participants": [],
+      "created_on": "2025-03-04T09:00:00Z",
+      "updated_on": "2025-03-04T10:00:00Z",
+      "links": {
+        "self": {
+          "href": ""
+        },
+        "html": {
+          "href": "https://bitbucket.org/acme/widgets/pull-requests/43"
+        },
+        "commits": {
+          "href": ""
+        },
+        "approve": {
+          "href": ""
+        },
+        "diff": {
+          "href": ""
+        },
+        "comments": {
+          "href": ""
+        }
+      },
+      "comment_count": 0,
+      "task_count": 0
+    }
+  ],
+  "reviewRequested": [
+    {
+      "id": 42,
+      "title": "Fix login: handle 'empty' users",
+      "description": "Fixes login for @{557058:mentioned} and @{557058:grace}.\n\n- returns errEmpty\n- keeps the session\n\n```\n@{557058:in-fence}\n```\n\nSee `@{557058:inline-code}` for details.",
+      "state": "OPEN",
+      "draft": false,
+      "author": {
+        "uuid": "{ada-uuid}",
+        "username": "",
+        "nickname": "ada",
+        "display_name": "Ada Lovelace",
+        "account_id": "557058:ada",
+        "links": {
+          "self": {
+            "href": ""
+          },
+          "html": {
+            "href": ""
+          },
+          "avatar": {
+            "href": ""
+          }
+        }
+      },
+      "source": {
+        "branch": {
+          "name": "feature/login"
+        },
+        "commit": {
+          "hash": "abc1234"
+        },
+        "repository": {
+          "uuid": "",
+          "name": "",
+          "full_name": "acme/widgets",
+          "description": "",
+          "is_private": false,
+          "owner": {
+            "uuid": "",
+            "username": "",
+            "nickname": "",
+            "display_name": "",
+            "account_id": "",
+            "links": {
+              "self": {
+                "href": ""
+              },
+              "html": {
+                "href": ""
+              },
+              "avatar": {
+                "href": ""
+              }
+            }
+          },
+          "mainbranch": {
+            "name": ""
+          },
+          "created_on": "0001-01-01T00:00:00Z",
+          "updated_on": "0001-01-01T00:00:00Z",
+          "links": {
+            "self": {
+              "href": ""
+            },
+            "html": {
+              "href": ""
+            },
+            "avatar": {
+              "href": ""
+            }
+          }
+        }
+      },
+      "destination": {
+        "branch": {
+          "name": "main"
+        },
+        "commit": {
+          "hash": "def5678"
+        },
+        "repository": {
+          "uuid": "",
+          "name": "",
+          "full_name": "acme/widgets",
+          "description": "",
+          "is_private": false,
+          "owner": {
+            "uuid": "",
+            "username": "",
+            "nickname": "",
+            "display_name": "",
+            "account_id": "",
+            "links": {
+              "self": {
+                "href": ""
+              },
+              "html": {
+                "href": ""
+              },
+              "avatar": {
+                "href": ""
+              }
+            }
+          },
+          "mainbranch": {
+            "name": ""
+          },
+          "created_on": "0001-01-01T00:00:00Z",
+          "updated_on": "0001-01-01T00:00:00Z",
+          "links": {
+            "self": {
+              "href": ""
+            },
+            "html": {
+              "href": ""
+            },
+            "avatar": {
+              "href": ""
+            }
+          }
+        }
+      },
+      "reviewers": [
+        {
+          "uuid": "{grace-uuid}",
+          "username": "",
+          "nickname": "grace",
+          "display_name": "Grace Hopper",
+          "account_id": "557058:grace",
+          "links": {
+            "self": {
+              "href": ""
+            },
+            "html": {
+              "href": ""
+            },
+            "avatar": {
+              "href": ""
+            }
+          }
+        },
+        {
+          "uuid": "{linus-uuid}",
+          "username": "",
+          "nickname": "linus",
+          "display_name": "Linus Torvalds",
+          "account_id": "557058:linus",
+          "links": {
+            "self": {
+              "href": ""
+            },
+            "html": {
+              "href": ""
+            },
+            "avatar": {
+              "href": ""
+            }
+          }
+        },
+        {
+          "uuid": "{ken-uuid}",
+          "username": "",
+          "nickname": "ken",
+          "display_name": "Ken Thompson",
+          "account_id": "557058:ken",
+          "links": {
+            "self": {
+              "href": ""
+            },
+            "html": {
+              "href": ""
+            },
+            "avatar": {
+              "href": ""
+            }
+          }
+        }
+      ],
+      "participants": [
+        {
+          "user": {
+            "uuid": "{grace-uuid}",
+            "username": "",
+            "nickname": "grace",
+            "display_name": "Grace Hopper",
+            "account_id": "557058:grace",
+            "links": {
+              "self": {
+                "href": ""
+              },
+              "html": {
+                "href": ""
+              },
+              "avatar": {
+                "href": ""
+              }
+            }
+          },
+          "role": "REVIEWER",
+          "approved": true,
+          "state": "approved"
+        },
+        {
+          "user": {
+            "uuid": "{linus-uuid}",
+            "username": "",
+            "nickname": "linus",
+            "display_name": "Linus Torvalds",
+            "account_id": "557058:linus",
+            "links": {
+              "self": {
+                "href": ""
+              },
+              "html": {
+                "href": ""
+              },
+              "avatar": {
+                "href": ""
+              }
+            }
+          },
+          "role": "REVIEWER",
+          "approved": false,
+          "state": "changes_requested"
+        },
+        {
+          "user": {
+            "uuid": "{ada-uuid}",
+            "username": "",
+            "nickname": "ada",
+            "display_name": "Ada Lovelace",
+            "account_id": "557058:ada",
+            "links": {
+              "self": {
+                "href": ""
+              },
+              "html": {
+                "href": ""
+              },
+              "avatar": {
+                "href": ""
+              }
+            }
+          },
+          "role": "PARTICIPANT",
+          "approved": false,
+          "state": ""
+        }
+      ],
+      "created_on": "2025-03-01T09:00:00Z",
+      "updated_on": "2025-03-05T16:30:00Z",
+      "links": {
+        "self": {
+          "href": ""
+        },
+        "html": {
+          "href": "https://bitbucket.org/acme/widgets/pull-requests/42"
+        },
+        "commits": {
+          "href": ""
+        },
+        "approve": {
+          "href": ""
+        },
+        "diff": {
+          "href": ""
+        },
+        "comments": {
+          "href": ""
+        }
+      },
+      "comment_count": 5,
+      "task_count": 2
+    }
+  ]
+}
+--- requests
+GET /2.0/user
+GET /2.0/repositories/acme/widgets/pullrequests?pagelen=50&sort=-updated_on&state=OPEN

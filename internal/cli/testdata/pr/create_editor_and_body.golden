@@ -1,0 +1,5 @@
+$ atlas pr create -e -b x
+--- stdout
+--- requests
+--- error
+--editor cannot be used with --body or --body-file

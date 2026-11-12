@@ -1,0 +1,5 @@
+$ atlas pr comment 42 -R acme/widgets
+--- stdout
+--- requests
+--- error
+one of --body, --body-file, or --editor is required

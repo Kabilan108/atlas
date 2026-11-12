@@ -1,0 +1,443 @@
+package jira
+
+import (
+	"encoding/json"
+	"net/http"
+	"slices"
+	"strings"
+	"testing"
+
+	"github.com/kabilan108/atlas/internal/ops"
+	"github.com/kabilan108/atlas/internal/ops/jira/jiratest"
+)
+
+const createMetaTypes = `{"startAt":0,"maxResults":50,"total":2,"isLast":true,"issueTypes":[
+	{"id":"10010","name":"Bug"},{"id":"10011","name":"Task"}]}`
+
+const createMetaFields = `{"startAt":0,"maxResults":50,"total":7,"isLast":true,"fields":[
+	{"fieldId":"summary","name":"Summary","required":true,"schema":{"type":"string","system":"summary"}},
+	{"fieldId":"description","name":"Description","required":false,"schema":{"type":"string","system":"description"}},
+	{"fieldId":"priority","name":"Priority","required":false,"schema":{"type":"priority","system":"priority"},
+	 "allowedValues":[{"id":"1","name":"Highest"},{"id":"2","name":"High"}]},
+	{"fieldId":"customfield_10153","name":"Product","required":true,
+	 "schema":{"type":"array","items":"option","custom":"com.atlassian.jira.plugin.system.customfieldtypes:multiselect"},
+	 "allowedValues":[{"id":"10237","value":"MCP Data Aggregator"},{"id":"10238","value":"Connect"}]},
+	{"fieldId":"customfield_10469","name":"Software Version","required":false,
+	 "schema":{"type":"string","custom":"com.atlassian.jira.plugin.system.customfieldtypes:textfield"}},
+	{"fieldId":"customfield_10500","name":"Reviewer","required":false,"schema":{"type":"user","custom":"com.atlassian.jira.plugin.system.customfieldtypes:userpicker"}},
+	{"fieldId":"labels","name":"Labels","required":false,"schema":{"type":"array","items":"string","system":"labels"}}]}`
+
+func createFake() *jiratest.Fake {
+	fake := jiratest.New()
+	fake.JSON("GET /rest/api/3/issue/createmeta/CSM/issuetypes", http.StatusOK, createMetaTypes)
+	fake.JSON("GET /rest/api/3/issue/createmeta/CSM/issuetypes/10010", http.StatusOK, createMetaFields)
+	fake.JSON("GET /rest/api/3/myself", http.StatusOK, `{"accountId":"acc-me","displayName":"Agent","active":true}`)
+	fake.JSON("GET /rest/api/3/user/assignable/search", http.StatusOK, `[{"accountId":"acc-mia","displayName":"Mia Krystof","emailAddress":"mia@example.org","active":true}]`)
+	fake.JSON("POST /rest/api/3/issue", http.StatusCreated, `{"id":"30001","key":"CSM-757","self":"x"}`)
+	return fake
+}
+
+func TestCreateShapesFieldsByName(t *testing.T) {
+	fake := createFake()
+	res := mustInvoke(t, fake, Create, `{"project":"csm","type":"bug","summary":"Gateway stuck","body":"## Steps\n\n- [ ] restart",
+		"priority":"high","assignee":"me","parent":"CSM-600","labels":["field"],
+		"fields":{"product":["MCP Data Aggregator","connect"],"Software Version":"2.4.1","Reviewer":"mia@example.org"}}`)
+	if res.Text != `{"key":"CSM-757","id":"30001","url":"https://acme.atlassian.net/browse/CSM-757"}` {
+		t.Errorf("receipt = %s", res.Text)
+	}
+	posts := fake.Find("POST /rest/api/3/issue")
+	if len(posts) != 1 {
+		t.Fatalf("posts = %d", len(posts))
+	}
+	fields := body(t, posts[0])["fields"].(map[string]any)
+	for id, want := range map[string]string{
+		"project":           `{"key":"CSM"}`,
+		"issuetype":         `{"id":"10010"}`,
+		"summary":           `"Gateway stuck"`,
+		"priority":          `{"name":"High"}`,
+		"assignee":          `{"accountId":"acc-me"}`,
+		"parent":            `{"key":"CSM-600"}`,
+		"labels":            `["field"]`,
+		"customfield_10153": `[{"value":"MCP Data Aggregator"},{"value":"Connect"}]`,
+		"customfield_10469": `"2.4.1"`,
+		"customfield_10500": `{"accountId":"acc-mia"}`,
+	} {
+		if got := jsonOf(t, fields[id]); got != want {
+			t.Errorf("fields.%s = %s, want %s", id, got, want)
+		}
+	}
+	if desc := jsonOf(t, fields["description"]); !strings.Contains(desc, `"type":"taskList"`) || !strings.Contains(desc, `"type":"heading"`) {
+		t.Errorf("description = %s", desc)
+	}
+}
+
+func TestCreateResolverMisses(t *testing.T) {
+	tests := []struct {
+		name string
+		args string
+		want []string
+	}{
+		{"type", `{"project":"CSM","type":"Epic","summary":"x"}`, []string{"no issue type \"Epic\"", "valid: Bug, Task"}},
+		{"field", `{"project":"CSM","type":"Bug","summary":"x","fields":{"Nope":"y"}}`, []string{`no field "Nope"`, "Product", "Software Version"}},
+		{"option", `{"project":"CSM","type":"Bug","summary":"x","fields":{"Product":["Widget"]}}`, []string{`no value for Product "Widget"`, "Connect, MCP Data Aggregator"}},
+		{"priority", `{"project":"CSM","type":"Bug","summary":"x","priority":"Low"}`, []string{`"Low"`, "High, Highest"}},
+		{"twice", `{"project":"CSM","type":"Bug","summary":"x","fields":{"summary":"y"}}`, []string{"Summary (summary) is set twice"}},
+		{"project", `{"project":"C SM","type":"Bug","summary":"x"}`, []string{"invalid project"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := createFake()
+			_, err := invoke(t, fake, Create, tc.args)
+			wantKind(t, err, ops.Invalid, tc.want...)
+			noWrites(t, fake)
+		})
+	}
+}
+
+func TestCreateNamesFieldsInJiraErrors(t *testing.T) {
+	fake := createFake()
+	fake.JSON("POST /rest/api/3/issue", http.StatusBadRequest, `{"errorMessages":[],"errors":{"customfield_10153":"Product is required."}}`)
+	_, err := invoke(t, fake, Create, `{"project":"CSM","type":"Bug","summary":"x"}`)
+	wantKind(t, err, ops.Invalid, "customfield_10153: Product is required.", "customfield_10153 is Product (allowed: MCP Data Aggregator, Connect)")
+}
+
+const richDescription = `{"type":"doc","version":1,"content":[
+	{"type":"paragraph","content":[{"type":"text","text":"keep <me> & \"this\"","marks":[{"type":"textColor","attrs":{"color":"#ff5630"}}]}]},
+	{"type":"mediaSingle","content":[{"type":"media","attrs":{"id":"m1","type":"file","collection":""}}]}]}`
+
+func editFake(description string) *jiratest.Fake {
+	fake := jiratest.New()
+	fake.JSON("GET /rest/api/3/issue/CSM-756", http.StatusOK, `{"id":"1","key":"CSM-756","fields":{"description":`+description+`}}`)
+	fake.JSON("PUT /rest/api/3/issue/CSM-756", http.StatusNoContent, ``)
+	fake.JSON("GET /rest/api/3/issue/CSM-756/editmeta", http.StatusOK, `{"fields":{
+		"customfield_10469":{"name":"Software Version","required":false,"schema":{"type":"string"}},
+		"customfield_10153":{"name":"Product","required":true,"schema":{"type":"array","items":"option"},"allowedValues":[{"value":"Connect"}]}}}`)
+	fake.JSON("GET /rest/api/3/user/assignable/search", http.StatusOK, `[{"accountId":"acc-1","displayName":"Ana Lee","active":true},{"accountId":"acc-2","displayName":"Ana Lima","active":true}]`)
+	return fake
+}
+
+func TestEditAppendKeepsExistingADF(t *testing.T) {
+	fake := editFake(richDescription)
+	res := mustInvoke(t, fake, Edit, `{"issue":"CSM-756","body":"Follow-up: **done**","body_mode":"append","labels":["triaged","-stale"],"assignee":"none"}`)
+	if res.Text != `{"key":"CSM-756","url":"https://acme.atlassian.net/browse/CSM-756","changed":["description (appended)","labels","assignee"]}` {
+		t.Errorf("receipt = %s", res.Text)
+	}
+	put := fake.Find("PUT /rest/api/3/issue/CSM-756")[0]
+	got := body(t, put)
+	var original map[string]any
+	if err := json.Unmarshal([]byte(richDescription), &original); err != nil {
+		t.Fatal(err)
+	}
+	blocks := got["fields"].(map[string]any)["description"].(map[string]any)["content"].([]any)
+	want := original["content"].([]any)
+	if len(blocks) != len(want)+1 || jsonOf(t, blocks[:len(want)]) != jsonOf(t, want) {
+		t.Errorf("existing blocks changed:\n%s", put.Body)
+	}
+	if last := jsonOf(t, blocks[len(want)]); !strings.Contains(last, `"marks":[{"type":"strong"}],"text":"done"`) {
+		t.Errorf("appended block = %s", last)
+	}
+	if jsonOf(t, got["update"]) != `{"labels":[{"add":"triaged"},{"remove":"stale"}]}` {
+		t.Errorf("update = %s", jsonOf(t, got["update"]))
+	}
+	if fields := got["fields"].(map[string]any); fields["assignee"] != nil {
+		t.Errorf("assignee = %v, want null", fields["assignee"])
+	} else if _, ok := fields["assignee"]; !ok {
+		t.Error("assignee missing; want explicit null")
+	}
+}
+
+func TestEditReplaceRefusesLossyDescription(t *testing.T) {
+	fake := editFake(richDescription)
+	_, err := invoke(t, fake, Edit, `{"issue":"CSM-756","body":"new text"}`)
+	wantKind(t, err, ops.Invalid, "media x1, text color x1", "body_mode append", "force")
+	noWrites(t, fake)
+
+	fake = editFake(richDescription)
+	mustInvoke(t, fake, Edit, `{"issue":"CSM-756","body":"new text","force":true}`)
+	if len(fake.Find("GET /rest/api/3/issue/CSM-756")) != 0 {
+		t.Error("force still read the description")
+	}
+	desc := jsonOf(t, body(t, fake.Find("PUT /rest/api/3/issue/CSM-756")[0])["fields"].(map[string]any)["description"])
+	if strings.Contains(desc, "media") || !strings.Contains(desc, "new text") {
+		t.Errorf("forced description = %s", desc)
+	}
+}
+
+func TestEditReplaceSimpleDescription(t *testing.T) {
+	fake := editFake(`{"type":"doc","version":1,"content":[{"type":"paragraph","content":[{"type":"text","text":"old"}]}]}`)
+	mustInvoke(t, fake, Edit, `{"issue":"CSM-756","body":"new","summary":"Renamed","fields":{"software version":"3.0","Product":["connect"]}}`)
+	fields := body(t, fake.Find("PUT /rest/api/3/issue/CSM-756")[0])["fields"].(map[string]any)
+	if fields["summary"] != "Renamed" || fields["customfield_10469"] != "3.0" || jsonOf(t, fields["customfield_10153"]) != `[{"value":"Connect"}]` {
+		t.Errorf("fields = %s", jsonOf(t, fields))
+	}
+}
+
+func TestEditErrors(t *testing.T) {
+	tests := []struct {
+		name, args string
+		want       []string
+	}{
+		{"nothing", `{"issue":"CSM-756"}`, []string{"nothing to change"}},
+		{"mode without body", `{"issue":"CSM-756","body_mode":"append","summary":"x"}`, []string{"only with body"}},
+		{"bad mode", `{"issue":"CSM-756","body":"x","body_mode":"prepend"}`, []string{"replace, append"}},
+		{"ambiguous assignee", `{"issue":"CSM-756","assignee":"Ana"}`, []string{"ambiguous", "Ana Lee (acc-1)", "Ana Lima (acc-2)"}},
+		{"bad label", `{"issue":"CSM-756","labels":["two words"]}`, []string{"invalid label"}},
+		{"unknown field", `{"issue":"CSM-756","fields":{"Severity":"1"}}`, []string{`no field "Severity"`, "Product, Software Version"}},
+		{"huge body", `{"issue":"CSM-756","body":"` + strings.Repeat("x", MaxBodyBytes+1) + `","force":true}`, []string{"over the 131072-byte limit"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := editFake(`null`)
+			_, err := invoke(t, fake, Edit, tc.args)
+			wantKind(t, err, ops.Invalid, tc.want...)
+			noWrites(t, fake)
+		})
+	}
+}
+
+func TestSearchPagesAndResolvesFieldNames(t *testing.T) {
+	fake := jiratest.New()
+	fake.JSON("GET /rest/api/3/field", http.StatusOK, `[{"id":"customfield_10153","name":"Product","custom":true},{"id":"summary","name":"Summary"}]`)
+	var tokens []string
+	fake.Handle("POST /rest/api/3/search/jql", func(w http.ResponseWriter, r *http.Request) {
+		req := map[string]any{}
+		_ = jsonDecode(r, &req)
+		token, _ := req["nextPageToken"].(string)
+		tokens = append(tokens, token)
+		if req["jql"] != "project = CSM AND text ~ \"a|b\" ORDER BY updated DESC" {
+			t.Errorf("jql = %v", req["jql"])
+		}
+		if jsonOf(t, req["fields"]) != `["issuetype","status","priority","assignee","updated","summary","customfield_10153"]` {
+			t.Errorf("fields = %s", jsonOf(t, req["fields"]))
+		}
+		switch token {
+		case "":
+			jiratest.Write(w, 200, `{"nextPageToken":"p2","issues":[{"key":"CSM-1","fields":{"summary":"One | pipe","status":{"name":"Open"},"issuetype":{"name":"Bug"},"updated":"2026-11-01T10:00:00.000-0400","customfield_10153":[{"value":"Connect"}]}}]}`)
+		case "p2":
+			jiratest.Write(w, 200, `{"nextPageToken":"p3","issues":[{"key":"CSM-2","fields":{"summary":"Two","assignee":{"displayName":"Mia"}}}]}`)
+		default:
+			t.Errorf("fetched past the limit with token %q", token)
+			jiratest.Write(w, 200, `{"issues":[]}`)
+		}
+	})
+	res := mustInvoke(t, fake, Search, `{"jql":"project = CSM AND text ~ \"a|b\" ORDER BY updated DESC","columns":["product"],"limit":2}`)
+	want := "| Key | Type | Status | Priority | Assignee | Updated | Summary | Product |\n" +
+		"| --- | --- | --- | --- | --- | --- | --- | --- |\n" +
+		"| CSM-1 | Bug | Open | — | — | 2026-11-01 | One \\| pipe | Connect |\n" +
+		"| CSM-2 | — | — | — | Mia | — | Two | — |\n" +
+		"\n2 issues. More match: call again with page_token \"p3\".\n"
+	if res.Text != want {
+		t.Errorf("search =\n%s\nwant\n%s", res.Text, want)
+	}
+	if strings.Join(tokens, ",") != ",p2" {
+		t.Errorf("tokens = %v", tokens)
+	}
+}
+
+func TestSearchErrors(t *testing.T) {
+	fake := jiratest.New()
+	fake.JSON("GET /rest/api/3/field", http.StatusOK, `[{"id":"summary","name":"Summary"}]`)
+	_, err := invoke(t, fake, Search, `{"jql":"project = CSM","columns":["Nope"]}`)
+	wantKind(t, err, ops.Invalid, `no field "Nope"`)
+	_, err = invoke(t, fake, Search, `{"jql":"project = CSM","fields":["Summary"]}`)
+	wantKind(t, err, ops.Invalid, `unknown field "fields"`)
+	_, err = invoke(t, fake, Search, `{"jql":" "}`)
+	wantKind(t, err, ops.Invalid, "jql is required")
+	for _, limit := range []string{"-1", "1001"} {
+		_, err = invoke(t, fake, Search, `{"jql":"x","limit":`+limit+`}`)
+		wantKind(t, err, ops.Invalid, "between 1 and 1000")
+	}
+	fake.JSON("POST /rest/api/3/search/jql", http.StatusBadRequest, `{"errorMessages":["Error in the JQL Query"]}`)
+	_, err = invoke(t, fake, Search, `{"jql":"project = = CSM"}`)
+	wantKind(t, err, ops.Invalid, "Error in the JQL Query")
+}
+
+func TestSearchNoResults(t *testing.T) {
+	fake := jiratest.New()
+	fake.JSON("POST /rest/api/3/search/jql", http.StatusOK, `{"issues":[],"isLast":true}`)
+	if res := mustInvoke(t, fake, Search, `{"jql":"project = CSM"}`); res.Text != "No issues match.\n" {
+		t.Errorf("text = %q", res.Text)
+	}
+}
+
+const simpleDescription = `{"type":"doc","version":1,"content":[{"type":"paragraph","content":[{"type":"text","text":"old"}]}]}`
+
+// richEditFake's issue has a lossy description and environment and a
+// plain-text Steps (textarea) field; editmeta offers all three.
+func richEditFake(description string) *jiratest.Fake {
+	fake := jiratest.New()
+	fake.JSON("GET /rest/api/3/issue/CSM-756", http.StatusOK, `{"id":"1","key":"CSM-756","fields":{"description":`+description+
+		`,"environment":`+richDescription+`,"customfield_10600":`+simpleDescription+`}}`)
+	fake.JSON("PUT /rest/api/3/issue/CSM-756", http.StatusNoContent, ``)
+	fake.JSON("GET /rest/api/3/issue/CSM-756/editmeta", http.StatusOK, `{"fields":{
+		"description":{"name":"Description","schema":{"type":"string","system":"description"}},
+		"environment":{"name":"Environment","schema":{"type":"string","system":"environment"}},
+		"customfield_10600":{"name":"Steps","schema":{"type":"string","custom":"com.atlassian.jira.plugin.system.customfieldtypes:textarea"}},
+		"customfield_10469":{"name":"Software Version","schema":{"type":"string"}}}}`)
+	return fake
+}
+
+// Rich-text fields given in fields get the same protection as body: no
+// replacing content markdown can't hold, no clearing, without force.
+func TestEditRichTextFieldsAreGuarded(t *testing.T) {
+	refused := []struct {
+		name, description, args string
+		want                    []string
+	}{
+		{"description by name", richDescription, `{"issue":"CSM-756","fields":{"Description":"new"}}`,
+			[]string{"Description has content markdown can't hold", "media x1", "body_mode append", "force"}},
+		{"description as ADF", richDescription, `{"issue":"CSM-756","fields":{"description":{"type":"doc","version":1,"content":[]}}}`,
+			[]string{"Description has content markdown can't hold"}},
+		{"environment", simpleDescription, `{"issue":"CSM-756","fields":{"Environment":"linux"}}`,
+			[]string{"Environment has content markdown can't hold", "force"}},
+		{"clear description", simpleDescription, `{"issue":"CSM-756","fields":{"Description":null}}`,
+			[]string{"clearing Description", "force"}},
+		{"empty description", simpleDescription, `{"issue":"CSM-756","fields":{"Description":""}}`,
+			[]string{"Description is empty"}},
+		{"huge textarea", simpleDescription, `{"issue":"CSM-756","force":true,"fields":{"Steps":"` + strings.Repeat("x", MaxBodyBytes+1) + `"}}`,
+			[]string{"Steps is 131073 bytes, over the 131072-byte limit"}},
+		{"huge ADF", simpleDescription, `{"issue":"CSM-756","force":true,"fields":{"Steps":{"type":"doc","version":1,"content":[{"type":"paragraph","content":[{"type":"text","text":"` +
+			strings.Repeat("x", MaxBodyBytes) + `"}]}]}}}`, []string{"Steps is", "over the 131072-byte limit"}},
+		{"force without rich text", simpleDescription, `{"issue":"CSM-756","force":true,"fields":{"Software Version":"2"}}`,
+			[]string{"force applies only with body or a rich-text field"}},
+	}
+	for _, tc := range refused {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := richEditFake(tc.description)
+			_, err := invoke(t, fake, Edit, tc.args)
+			wantKind(t, err, ops.Invalid, tc.want...)
+			noWrites(t, fake)
+		})
+	}
+
+	allowed := []struct {
+		name, description, args, field, want string
+	}{
+		{"replace simple description", simpleDescription, `{"issue":"CSM-756","fields":{"Description":"new **text**"}}`, "description", `"text":"new "`},
+		{"force replaces lossy", richDescription, `{"issue":"CSM-756","force":true,"fields":{"Description":"new"}}`, "description", `"text":"new"`},
+		{"force clears", richDescription, `{"issue":"CSM-756","force":true,"fields":{"Description":null}}`, "description", `null`},
+		{"replace simple textarea", richDescription, `{"issue":"CSM-756","fields":{"Steps":"1. go"}}`, "customfield_10600", `"type":"orderedList"`},
+	}
+	for _, tc := range allowed {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := richEditFake(tc.description)
+			mustInvoke(t, fake, Edit, tc.args)
+			fields := body(t, fake.Find("PUT /rest/api/3/issue/CSM-756")[0])["fields"].(map[string]any)
+			value, ok := fields[tc.field]
+			if !ok {
+				t.Fatalf("PUT did not set %s: %s", tc.field, jsonOf(t, fields))
+			}
+			wantContains(t, jsonOf(t, value), tc.want)
+		})
+	}
+}
+
+func TestCreateCapsRichTextFields(t *testing.T) {
+	huge := strings.Repeat("x", MaxBodyBytes+1)
+	for _, args := range []string{
+		`{"project":"CSM","type":"Bug","summary":"x","fields":{"Description":"` + huge + `"}}`,
+		`{"project":"CSM","type":"Bug","summary":"x","body":"` + huge + `"}`,
+	} {
+		fake := createFake()
+		_, err := invoke(t, fake, Create, args)
+		wantKind(t, err, ops.Invalid, "131073 bytes, over the 131072-byte limit")
+		noWrites(t, fake)
+	}
+	fake := createFake()
+	mustInvoke(t, fake, Create, `{"project":"CSM","type":"Bug","summary":"x","fields":{"Description":"## Steps"}}`)
+	fields := body(t, fake.Find("POST /rest/api/3/issue")[0])["fields"].(map[string]any)
+	wantContains(t, jsonOf(t, fields["description"]), `"type":"heading"`)
+}
+
+// A transition screen can carry Description; it gets the same protection
+// as edit.
+func TestTransitionRichTextFieldsAreGuarded(t *testing.T) {
+	fakeFor := func() *jiratest.Fake {
+		fake := richEditFake(richDescription)
+		fake.JSON("GET /rest/api/3/issue/CSM-756/transitions", http.StatusOK, `{"transitions":[{"id":"61","name":"Resolved (2)","to":{"name":"Resolved"},
+			"fields":{"description":{"name":"Description","required":false,"schema":{"type":"string","system":"description"}}}}]}`)
+		fake.JSON("POST /rest/api/3/issue/CSM-756/transitions", http.StatusNoContent, ``)
+		return fake
+	}
+	fake := fakeFor()
+	_, err := invoke(t, fake, Transition, `{"issue":"CSM-756","transition":"Resolved","fields":{"Description":"closing note"}}`)
+	wantKind(t, err, ops.Invalid, "Description has content markdown can't hold", "force")
+	noWrites(t, fake)
+
+	fake = fakeFor()
+	_, err = invoke(t, fake, Transition, `{"issue":"CSM-756","transition":"Resolved","force":true}`)
+	wantKind(t, err, ops.Invalid, "force applies only when a transition sets a rich-text field")
+	noWrites(t, fake)
+
+	fake = fakeFor()
+	if _, err := invoke(t, fake, Transition, `{"issue":"CSM-756","transition":"Resolved","force":true,"fields":{"Description":"closing note"}}`); err != nil {
+		t.Fatalf("forced transition: %v", err)
+	}
+}
+
+func TestCreateAddsLinks(t *testing.T) {
+	fake := createFake()
+	fake.Links(`{"issueLinkTypes":[
+		{"id":"10000","name":"Blocks","inward":"is blocked by","outward":"blocks"},
+		{"id":"10003","name":"2 Relates","inward":"relates to","outward":"relates to"}]}`)
+	res := mustInvoke(t, fake, Create, `{"project":"CSM","type":"Bug","summary":"s",
+		"links":[{"type":"blocks","target":"csm-2"},{"type":"Relates","target":"CSM-3","direction":"inward"}]}`)
+	want := `{"key":"CSM-757","id":"30001","url":"https://acme.atlassian.net/browse/CSM-757","links":[` +
+		`{"index":0,"status":"ok","reads":"CSM-757 blocks CSM-2"},{"index":1,"status":"ok","reads":"CSM-757 relates to CSM-3"}]}`
+	if res.Text != want {
+		t.Errorf("receipt = %s\nwant      %s", res.Text, want)
+	}
+	routes := fake.Routes()
+	created := slices.Index(routes, "POST /rest/api/3/issue")
+	if created < 0 || slices.Index(routes, "POST /rest/api/3/issueLink") < created {
+		t.Fatalf("routes = %v, want the issue created before its links", routes)
+	}
+	links := fake.Find("POST /rest/api/3/issueLink")
+	if len(links) != 2 {
+		t.Fatalf("link posts = %d", len(links))
+	}
+	for i, want := range []string{
+		`{"inwardIssue":{"key":"CSM-757"},"outwardIssue":{"key":"CSM-2"},"type":{"name":"Blocks"}}`,
+		`{"inwardIssue":{"key":"CSM-3"},"outwardIssue":{"key":"CSM-757"},"type":{"name":"2 Relates"}}`,
+	} {
+		if got := jsonOf(t, body(t, links[i])); got != want {
+			t.Errorf("link %d body = %s, want %s", i, got, want)
+		}
+	}
+}
+
+func TestCreateLinkFailureKeepsTheKey(t *testing.T) {
+	fake := createFake()
+	fake.Links(`{"issueLinkTypes":[{"id":"10000","name":"Blocks","inward":"is blocked by","outward":"blocks"}]}`)
+	fake.Handle("POST /rest/api/3/issueLink", func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		_ = jsonDecode(r, &req)
+		if strings.Contains(jsonOf(t, req), "CSM-404") {
+			jiratest.Write(w, http.StatusNotFound, `{"errorMessages":["Issue Does Not Exist"]}`)
+			return
+		}
+		jiratest.Write(w, http.StatusCreated, ``)
+	})
+	res, err := invoke(t, fake, Create, `{"project":"CSM","type":"Bug","summary":"s","links":[{"type":"Blocks","target":"CSM-404"},{"type":"Blocks","target":"CSM-2"}]}`)
+	wantKind(t, err, ops.Partial, "created CSM-757, but 1 of 2 links failed", "jira_link")
+	wantContains(t, res.Text, `"key":"CSM-757"`, `{"index":0,"status":"failed","error":`, "Issue Does Not Exist", `{"index":1,"status":"ok","reads":"CSM-757 blocks CSM-2"}`)
+}
+
+func TestCreateChecksLinksBeforeCreating(t *testing.T) {
+	links := make([]string, MaxCreateLinks+1)
+	for i := range links {
+		links[i] = `{"type":"Blocks","target":"CSM-2"}`
+	}
+	for _, tc := range []struct{ links, want string }{
+		{`[{"type":"Duplicates","target":"CSM-2"}]`, `links[0]: jira: no link type "Duplicates"; valid: Blocks`},
+		{`[{"type":"Blocks","target":"https://example.org/x"}]`, "links[0].target"},
+		{`[{"type":"","target":"CSM-2"}]`, "links[0]: type is required"},
+		{`[` + strings.Join(links, ",") + `]`, "the limit is 20"},
+	} {
+		fake := createFake()
+		fake.Links(`{"issueLinkTypes":[{"id":"10000","name":"Blocks","inward":"is blocked by","outward":"blocks"}]}`)
+		_, err := invoke(t, fake, Create, `{"project":"CSM","type":"Bug","summary":"s","links":`+tc.links+`}`)
+		wantKind(t, err, ops.Invalid, tc.want)
+		noWrites(t, fake)
+	}
+}

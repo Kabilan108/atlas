@@ -1,0 +1,5 @@
+$ atlas pr review 42 -R acme/widgets --approve --comment -b x
+--- stdout
+--- requests
+--- error
+exactly one of --approve, --request-changes, or --comment is required

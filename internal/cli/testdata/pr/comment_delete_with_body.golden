@@ -1,0 +1,5 @@
+$ atlas pr comment 42 -R acme/widgets --delete 101 -b x
+--- stdout
+--- requests
+--- error
+--delete cannot be combined with --body

@@ -199,3 +199,36 @@ func TestPRMarkdownWriterDoesNotResolveMentionsInsideCode(t *testing.T) {
 		}
 	}
 }
+
+func TestPRMarkdownWriterShowsCommitsAndDates(t *testing.T) {
+	t.Parallel()
+
+	merged := &bitbucket.PullRequest{
+		ID:          9,
+		State:       "MERGED",
+		Source:      bitbucket.PullRequestRef{Branch: bitbucket.Branch{Name: "fix"}, Commit: bitbucket.Commit{Hash: "1234abcd"}},
+		Destination: bitbucket.PullRequestRef{Branch: bitbucket.Branch{Name: "main"}},
+		MergeCommit: &bitbucket.Commit{Hash: "feedface"},
+		CreatedOn:   time.Date(2026, time.March, 1, 9, 0, 0, 0, time.UTC),
+		UpdatedOn:   time.Date(2026, time.March, 2, 9, 0, 0, 0, time.UTC),
+	}
+	var buf bytes.Buffer
+	if err := NewPRMarkdownWriter(&buf).WritePR(merged); err != nil {
+		t.Fatal(err)
+	}
+	want := "source_branch: 'fix'\nhead_commit: '1234abcd'\ndestination_branch: 'main'\nmerge_commit: 'feedface'\ncreated_at: '2026-03-01T09:00:00Z'\nupdated_at: '2026-03-02T09:00:00Z'\n"
+	if !strings.Contains(buf.String(), want) {
+		t.Fatalf("frontmatter lacks\n%s\nin:\n%s", want, buf.String())
+	}
+
+	buf.Reset()
+	merged.MergeCommit, merged.Source.Commit.Hash, merged.CreatedOn = nil, "", time.Time{}
+	if err := NewPRMarkdownWriter(&buf).WritePR(merged); err != nil {
+		t.Fatal(err)
+	}
+	for _, absent := range []string{"head_commit:", "merge_commit:", "created_at:"} {
+		if strings.Contains(buf.String(), absent) {
+			t.Errorf("frontmatter has %q without the value:\n%s", absent, buf.String())
+		}
+	}
+}

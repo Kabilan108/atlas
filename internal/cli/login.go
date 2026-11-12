@@ -54,12 +54,12 @@ func runLogin(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	client, err := bitbucket.NewClientWithCredentials(username, apiToken, bitbucket.WithNoCache(true))
+	client, err := bitbucket.NewClientWithCredentials(username, apiToken, bitbucketOptions(cmd)...)
 	if err != nil {
 		return fmt.Errorf("authentication failed: %w", err)
 	}
 
-	user, err := client.GetCurrentUser()
+	user, err := client.GetCurrentUser(cmd.Context())
 	if err != nil {
 		return fmt.Errorf("authentication failed: %w", err)
 	}

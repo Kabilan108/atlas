@@ -1,0 +1,5 @@
+$ atlas snippet view abc123 --workspace acme -f nope.txt
+--- error ---
+file "nope.txt" not found in snippet abc123
+--- requests ---
+GET /2.0/snippets/acme/abc123

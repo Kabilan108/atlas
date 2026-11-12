@@ -1,0 +1,21 @@
+$ atlas pr approve 42 -R acme/widgets -b lgtm --json
+--- stdout
+{
+  "failed": {
+    "pull_request": 42,
+    "step": "approve",
+    "comment": {
+      "id": 201,
+      "url": "https://bitbucket.org/acme/widgets/pull-requests/42#comment-201"
+    },
+    "error": "server: injected failure\nHint: This is a Bitbucket server error. Try again later"
+  }
+}
+--- requests
+GET /2.0/repositories/acme/widgets/pullrequests/42
+POST /2.0/repositories/acme/widgets/pullrequests/42/comments
+  {"content":{"raw":"lgtm"}}
+POST /2.0/repositories/acme/widgets/pullrequests/42/approve
+--- error
+posted comment but failed to approve pull request: server: injected failure
+Hint: This is a Bitbucket server error. Try again later

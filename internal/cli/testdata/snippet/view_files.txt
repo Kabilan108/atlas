@@ -1,0 +1,6 @@
+$ atlas snippet view abc123 --workspace acme --files
+notes.md
+run.sh
+--- error ---
+--- requests ---
+GET /2.0/snippets/acme/abc123

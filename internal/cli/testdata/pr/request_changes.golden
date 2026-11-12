@@ -1,0 +1,8 @@
+$ atlas pr request-changes 42 -R acme/widgets -b "please fix"
+--- stdout
+Requested changes on pull request #42
+--- requests
+GET /2.0/repositories/acme/widgets/pullrequests/42
+POST /2.0/repositories/acme/widgets/pullrequests/42/comments
+  {"content":{"raw":"please fix"}}
+POST /2.0/repositories/acme/widgets/pullrequests/42/request-changes

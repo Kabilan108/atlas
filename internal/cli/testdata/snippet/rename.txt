@@ -1,0 +1,6 @@
+$ atlas snippet rename abc123 run.sh deploy.sh --workspace acme
+Renamed run.sh to deploy.sh in snippet abc123
+--- error ---
+--- requests ---
+GET /2.0/snippets/acme/abc123/files/run.sh
+PUT /2.0/snippets/acme/abc123 files=["run.sh"] file[deploy.sh]="#!/bin/sh\necho deploy"

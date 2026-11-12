@@ -1,0 +1,7 @@
+$ atlas snippet edit def456 --workspace acme
+Updated snippet: def456
+--- error ---
+--- requests ---
+GET /2.0/snippets/acme/def456
+GET /2.0/snippets/acme/def456/files/query.sql
+PUT /2.0/snippets/acme/def456 file[query.sql]="select 1;\nedited\n"

@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,13 +17,16 @@ var (
 )
 
 type Config struct {
-	Workspace string `mapstructure:"workspace"`
-	Username  string `mapstructure:"username"`
+	Workspace   string `mapstructure:"workspace"`
+	Username    string `mapstructure:"username"`
+	JiraCloudID string `mapstructure:"jira_cloud_id"`
 }
 
+// Credentials are the Atlassian email (the configured username) and one
+// product's API token.
 type Credentials struct {
 	Username string
-	APIToken string
+	Token    string
 }
 
 func ConfigDir() (string, error) {
@@ -82,6 +86,9 @@ func configWithEnv(cfg *Config) *Config {
 	}
 	if username := os.Getenv("ATLAS_USERNAME"); username != "" {
 		cfg.Username = username
+	}
+	if cloudID := os.Getenv("ATLAS_JIRA_CLOUD_ID"); cloudID != "" {
+		cfg.JiraCloudID = cloudID
 	}
 	return cfg
 }
@@ -159,15 +166,27 @@ func Set(key, value string) error {
 	return nil
 }
 
-func LoadCredentials() (*Credentials, error) {
+// BitbucketCredentials returns the Bitbucket API token from ATLAS_API_TOKEN,
+// or else api_token in credentials.toml.
+func BitbucketCredentials() (*Credentials, error) {
+	return loadCredentials("ATLAS_API_TOKEN", "api_token")
+}
+
+// JiraCredentials returns the Jira API token from ATLAS_JIRA_TOKEN, or else
+// jira_token in credentials.toml.
+func JiraCredentials() (*Credentials, error) {
+	return loadCredentials("ATLAS_JIRA_TOKEN", "jira_token")
+}
+
+// loadCredentials reads the credentials file only when envVar is unset, so
+// a broken entry for one product never blocks the other.
+func loadCredentials(envVar, fileKey string) (*Credentials, error) {
 	cfg, err := Load()
 	if err != nil {
 		return nil, err
 	}
-
-	creds := &Credentials{Username: cfg.Username}
-	if token := os.Getenv("ATLAS_API_TOKEN"); token != "" {
-		creds.APIToken = token
+	creds := &Credentials{Username: cfg.Username, Token: os.Getenv(envVar)}
+	if creds.Token != "" {
 		return creds, nil
 	}
 
@@ -175,19 +194,10 @@ func LoadCredentials() (*Credentials, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	v := viper.New()
-	v.SetConfigFile(credentialsPath)
-	v.SetConfigType("toml")
-	if err := v.ReadInConfig(); err != nil {
-		var configFileNotFoundError viper.ConfigFileNotFoundError
-		if errors.As(err, &configFileNotFoundError) || os.IsNotExist(err) {
-			return creds, nil
-		}
-		return nil, fmt.Errorf("failed to read credentials: %w", err)
+	creds.Token, err = storedCredential(credentialsPath, fileKey)
+	if err != nil {
+		return nil, err
 	}
-
-	creds.APIToken = v.GetString("api_token")
 	return creds, nil
 }
 
@@ -205,8 +215,13 @@ func SaveAPIToken(token string) error {
 		return fmt.Errorf("failed to set config directory permissions: %w", err)
 	}
 
-	data := []byte(fmt.Sprintf("api_token = %q\n", token))
-	if err := os.WriteFile(credentialsPath, data, 0600); err != nil {
+	data := fmt.Sprintf("api_token = %q\n", token)
+	if jiraToken, err := storedCredential(credentialsPath, "jira_token"); err != nil {
+		return err
+	} else if jiraToken != "" {
+		data += fmt.Sprintf("jira_token = %q\n", jiraToken)
+	}
+	if err := os.WriteFile(credentialsPath, []byte(data), 0600); err != nil {
 		return fmt.Errorf("failed to write credentials: %w", err)
 	}
 	if err := os.Chmod(credentialsPath, 0600); err != nil {
@@ -216,8 +231,24 @@ func SaveAPIToken(token string) error {
 	return nil
 }
 
+// storedCredential reads key from the credentials file, or "" when the file
+// does not exist.
+func storedCredential(path, key string) (string, error) {
+	v := viper.New()
+	v.SetConfigFile(path)
+	v.SetConfigType("toml")
+	if err := v.ReadInConfig(); err != nil {
+		var configFileNotFoundError viper.ConfigFileNotFoundError
+		if errors.As(err, &configFileNotFoundError) || errors.Is(err, fs.ErrNotExist) {
+			return "", nil
+		}
+		return "", fmt.Errorf("failed to read credentials: %w", err)
+	}
+	return v.GetString(key), nil
+}
+
 func ValidKeys() []string {
-	return []string{"workspace", "username"}
+	return []string{"workspace", "username", "jira_cloud_id"}
 }
 
 func IsValidKey(key string) bool {

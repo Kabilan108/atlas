@@ -111,12 +111,21 @@ type PullRequest struct {
 	Links        PullRequestLinks `json:"links"`
 	CommentCount int              `json:"comment_count"`
 	TaskCount    int              `json:"task_count"`
+	MergeCommit  *Commit          `json:"merge_commit,omitempty"`
 }
 
+// PRListOptions filters and bounds ListPullRequests.
 type PRListOptions struct {
-	State    string
+	// States lists OPEN, MERGED, DECLINED, or SUPERSEDED pull requests;
+	// empty means OPEN, Bitbucket's default.
+	States   []string
 	Author   string
 	Reviewer string
+	// UpdatedSince keeps pull requests updated at or after it.
+	UpdatedSince time.Time
+	// Limit caps the pull requests returned; zero or more than
+	// MaxPRListLimit means MaxPRListLimit.
+	Limit int
 }
 
 type PullRequestRef struct {
@@ -145,10 +154,11 @@ type PullRequestCreate struct {
 }
 
 type PullRequestUpdate struct {
-	Draft       *bool   `json:"draft,omitempty"`
-	Title       *string `json:"title,omitempty"`
-	Description *string `json:"description,omitempty"`
-	Reviewers   *[]User `json:"reviewers,omitempty"`
+	Draft       *bool                `json:"draft,omitempty"`
+	Title       *string              `json:"title,omitempty"`
+	Description *string              `json:"description,omitempty"`
+	Reviewers   *[]User              `json:"reviewers,omitempty"`
+	Destination *PullRequestRefInput `json:"destination,omitempty"`
 }
 
 type Branch struct {

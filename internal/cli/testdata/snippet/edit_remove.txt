@@ -1,0 +1,5 @@
+$ atlas snippet edit https://bitbucket.org/snippets/acme/abc123 -r run.sh
+Updated snippet: abc123
+--- error ---
+--- requests ---
+PUT /2.0/snippets/acme/abc123 files=["run.sh"]

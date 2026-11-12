@@ -1,0 +1,6 @@
+$ atlas snippet create a.txt dir/b.txt --title Two files --workspace acme
+Created snippet: new001
+URL: https://bitbucket.org/snippets/acme/new001
+--- error ---
+--- requests ---
+POST /2.0/snippets/acme is_private=["true"] title=["Two files"] file[a.txt]="alpha\n" file[b.txt]="beta\n"

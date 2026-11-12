@@ -1,0 +1,172 @@
+$ atlas snippet list --workspace acme --json
+[
+  {
+    "id": "abc123",
+    "title": "Deploy notes",
+    "is_private": true,
+    "owner": {
+      "uuid": "{ada}",
+      "username": "",
+      "nickname": "",
+      "display_name": "Ada Lovelace",
+      "account_id": "557058:ada",
+      "links": {
+        "self": {
+          "href": ""
+        },
+        "html": {
+          "href": ""
+        },
+        "avatar": {
+          "href": ""
+        }
+      }
+    },
+    "files": {
+      "notes.md": {
+        "links": {
+          "self": {
+            "href": "https://api.bitbucket.org/2.0/snippets/acme/abc123/files/notes.md"
+          },
+          "html": {
+            "href": ""
+          },
+          "avatar": {
+            "href": ""
+          }
+        }
+      },
+      "run.sh": {
+        "links": {
+          "self": {
+            "href": "https://api.bitbucket.org/2.0/snippets/acme/abc123/files/run.sh"
+          },
+          "html": {
+            "href": ""
+          },
+          "avatar": {
+            "href": ""
+          }
+        }
+      }
+    },
+    "created_on": "2024-01-01T00:00:00Z",
+    "updated_on": "2024-03-04T05:06:07Z",
+    "links": {
+      "self": {
+        "href": "https://api.bitbucket.org/2.0/snippets/acme/abc123"
+      },
+      "html": {
+        "href": "https://bitbucket.org/snippets/acme/abc123"
+      },
+      "avatar": {
+        "href": ""
+      }
+    }
+  },
+  {
+    "id": "def456",
+    "title": "A public query with a title long enough to be truncated",
+    "is_private": false,
+    "owner": {
+      "uuid": "{ada}",
+      "username": "",
+      "nickname": "",
+      "display_name": "Ada Lovelace",
+      "account_id": "557058:ada",
+      "links": {
+        "self": {
+          "href": ""
+        },
+        "html": {
+          "href": ""
+        },
+        "avatar": {
+          "href": ""
+        }
+      }
+    },
+    "files": {
+      "query.sql": {
+        "links": {
+          "self": {
+            "href": "https://api.bitbucket.org/2.0/snippets/acme/def456/files/query.sql"
+          },
+          "html": {
+            "href": ""
+          },
+          "avatar": {
+            "href": ""
+          }
+        }
+      }
+    },
+    "created_on": "2024-01-01T00:00:00Z",
+    "updated_on": "2024-02-01T00:00:00Z",
+    "links": {
+      "self": {
+        "href": "https://api.bitbucket.org/2.0/snippets/acme/def456"
+      },
+      "html": {
+        "href": "https://bitbucket.org/snippets/acme/def456"
+      },
+      "avatar": {
+        "href": ""
+      }
+    }
+  },
+  {
+    "id": "ghi789",
+    "title": "Private scratch",
+    "is_private": true,
+    "owner": {
+      "uuid": "{ada}",
+      "username": "",
+      "nickname": "",
+      "display_name": "Ada Lovelace",
+      "account_id": "557058:ada",
+      "links": {
+        "self": {
+          "href": ""
+        },
+        "html": {
+          "href": ""
+        },
+        "avatar": {
+          "href": ""
+        }
+      }
+    },
+    "files": {
+      "scratch.txt": {
+        "links": {
+          "self": {
+            "href": "https://api.bitbucket.org/2.0/snippets/acme/ghi789/files/scratch.txt"
+          },
+          "html": {
+            "href": ""
+          },
+          "avatar": {
+            "href": ""
+          }
+        }
+      }
+    },
+    "created_on": "2024-01-01T00:00:00Z",
+    "updated_on": "2024-01-01T00:00:00Z",
+    "links": {
+      "self": {
+        "href": "https://api.bitbucket.org/2.0/snippets/acme/ghi789"
+      },
+      "html": {
+        "href": "https://bitbucket.org/snippets/acme/ghi789"
+      },
+      "avatar": {
+        "href": ""
+      }
+    }
+  }
+]
+--- error ---
+--- requests ---
+GET /2.0/snippets/acme?pagelen=10

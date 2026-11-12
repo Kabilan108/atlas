@@ -1,0 +1,5 @@
+$ atlas pr close -R acme/widgets
+--- stdout
+--- requests
+--- error
+accepts 1 arg(s), received 0

@@ -1,0 +1,4 @@
+$ atlas snippet view --workspace acme
+--- error ---
+snippet ID or URL is required
+--- requests ---

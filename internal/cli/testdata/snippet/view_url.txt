@@ -1,0 +1,6 @@
+$ atlas snippet view https://bitbucket.org/snippets/acme/def456
+select 1;
+--- error ---
+--- requests ---
+GET /2.0/snippets/acme/def456
+GET /2.0/snippets/acme/def456/files/query.sql
