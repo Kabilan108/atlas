@@ -106,7 +106,7 @@ func newSnippetListCmd() *cobra.Command {
 	}
 
 	cmd.Flags().String("workspace", "", "Target workspace")
-	cmd.Flags().IntP("limit", "L", 10, "Maximum number of snippets to fetch")
+	cmd.Flags().IntP("limit", "L", 10, "Maximum number of snippets to fetch (max 100)")
 	cmd.Flags().String("role", "", "Filter by role: owner, contributor, member")
 	cmd.Flags().Bool("public", false, "Show only public snippets")
 	cmd.Flags().Bool("private", false, "Show only private snippets")
@@ -149,14 +149,14 @@ func snippetListInput(cmd *cobra.Command, _ []string, _ *cliEnv) (snippetops.Lis
 	return in, nil
 }
 
-func writeSnippetTable(w io.Writer, snippets snippetops.ListResult) error {
-	if len(snippets) == 0 {
-		_, err := fmt.Fprintln(w, "No snippets found.")
+func writeSnippetTable(w io.Writer, result snippetops.ListResult) error {
+	if len(result.Snippets) == 0 {
+		_, err := fmt.Fprint(w, "No snippets found.\n"+result.Note())
 		return err
 	}
 
 	tw := output.NewTableWriter(w, "ID", "Title", "Files", "Visibility", "Updated")
-	for _, s := range snippets {
+	for _, s := range result.Snippets {
 		tw.AddRow(
 			s.ID,
 			output.Truncate(s.Title, 40),
@@ -166,7 +166,11 @@ func writeSnippetTable(w io.Writer, snippets snippetops.ListResult) error {
 		)
 	}
 
-	return tw.Flush()
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+	_, err := io.WriteString(w, result.Note())
+	return err
 }
 
 func newSnippetViewCmd() *cobra.Command {
@@ -496,7 +500,7 @@ func resolveSnippetArg(ctx context.Context, env *cliEnv, workspace string, args 
 }
 
 func selectSnippet(ctx context.Context, client *bitbucket.Client, workspace string) (snippetRef, error) {
-	snippets, err := client.ListSnippets(ctx, workspace, &bitbucket.SnippetListOptions{Limit: 10, Role: "owner"})
+	snippets, _, err := client.ListSnippets(ctx, workspace, &bitbucket.SnippetListOptions{Limit: 10, Role: "owner"})
 	if err != nil {
 		return snippetRef{}, err
 	}

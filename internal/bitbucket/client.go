@@ -554,26 +554,11 @@ func (c *Client) DeclinePullRequest(ctx context.Context, workspace, repo string,
 	return &pr, nil
 }
 
-func (c *Client) ListPullRequestComments(ctx context.Context, workspace, repo string, id int) ([]Comment, error) {
-	var comments []Comment
+// ListPullRequestComments returns up to limit comments (zero means
+// MaxListItems); the Scan says whether there are more.
+func (c *Client) ListPullRequestComments(ctx context.Context, workspace, repo string, id, limit int) ([]Comment, Scan, error) {
 	path := fmt.Sprintf("%s/pullrequests/%d/comments", repoPath(workspace, repo), id)
-
-	for path != "" {
-		data, err := c.get(ctx, path)
-		if err != nil {
-			return nil, err
-		}
-
-		var page PaginatedResponse[Comment]
-		if err := json.Unmarshal(data, &page); err != nil {
-			return nil, fmt.Errorf("failed to parse comments response: %w", err)
-		}
-
-		comments = append(comments, page.Values...)
-		path = c.extractNextPath(page.Next)
-	}
-
-	return comments, nil
+	return collectCachedPages[Comment](ctx, c, path, limit, "comments")
 }
 
 func (c *Client) CreatePullRequestComment(ctx context.Context, workspace, repo string, id int, input CommentCreate) (*Comment, error) {
@@ -644,29 +629,15 @@ func (c *Client) GetPullRequestDiff(ctx context.Context, workspace, repo string,
 	return c.getRaw(ctx, path)
 }
 
-func (c *Client) ListPullRequestTasks(ctx context.Context, workspace, repo string, id int) ([]Task, error) {
-	var tasks []Task
+// ListPullRequestTasks returns up to limit tasks (zero means MaxListItems);
+// the Scan says whether there are more. A repository without tasks has none.
+func (c *Client) ListPullRequestTasks(ctx context.Context, workspace, repo string, id, limit int) ([]Task, Scan, error) {
 	path := fmt.Sprintf("%s/pullrequests/%d/tasks", repoPath(workspace, repo), id)
-
-	for path != "" {
-		data, err := c.get(ctx, path)
-		if err != nil {
-			if apiErr, ok := err.(*APIError); ok && apiErr.StatusCode == 404 {
-				return []Task{}, nil
-			}
-			return nil, err
-		}
-
-		var page PaginatedResponse[Task]
-		if err := json.Unmarshal(data, &page); err != nil {
-			return nil, fmt.Errorf("failed to parse tasks response: %w", err)
-		}
-
-		tasks = append(tasks, page.Values...)
-		path = c.extractNextPath(page.Next)
+	tasks, scan, err := collectCachedPages[Task](ctx, c, path, limit, "tasks")
+	if apiErr, ok := err.(*APIError); ok && apiErr.StatusCode == 404 {
+		return []Task{}, Scan{}, nil
 	}
-
-	return tasks, nil
+	return tasks, scan, err
 }
 
 // extractNextPath returns the path of a next link under the base URL, or ""
@@ -704,19 +675,23 @@ func escapePathPreservingSlashes(path string) (string, error) {
 }
 
 type SnippetListOptions struct {
+	// Limit caps the snippets returned. Zero means MaxListItems.
 	Limit int
 	Role  string
+	// Private, when set, keeps only private (true) or public (false)
+	// snippets. Bitbucket cannot filter by visibility, so this runs
+	// client-side over at most MaxScan snippets (zero means MaxListItems).
+	Private *bool
+	MaxScan int
 }
 
 func snippetListPath(workspace string, opts *SnippetListOptions) string {
 	values := url.Values{}
 	if opts != nil {
-		if opts.Limit > 0 {
-			pageLen := opts.Limit
-			if pageLen > 100 {
-				pageLen = 100
-			}
-			values.Set("pagelen", strconv.Itoa(pageLen))
+		if opts.Private != nil {
+			values.Set("pagelen", strconv.Itoa(maxPageLen))
+		} else if opts.Limit > 0 {
+			values.Set("pagelen", strconv.Itoa(min(opts.Limit, maxPageLen)))
 		}
 		if opts.Role != "" {
 			values.Set("role", opts.Role)
@@ -730,29 +705,18 @@ func snippetListPath(workspace string, opts *SnippetListOptions) string {
 	return path
 }
 
-func (c *Client) ListSnippets(ctx context.Context, workspace string, opts *SnippetListOptions) ([]Snippet, error) {
-	var snippets []Snippet
-	path := snippetListPath(workspace, opts)
-
-	for path != "" {
-		data, err := c.get(ctx, path)
-		if err != nil {
-			return nil, err
+// ListSnippets stops paging once it has Limit snippets, or has read MaxScan
+// while filtering by visibility, and says which in the Scan.
+func (c *Client) ListSnippets(ctx context.Context, workspace string, opts *SnippetListOptions) ([]Snippet, Scan, error) {
+	limit, maxScan := 0, 0
+	var keep func(Snippet) bool
+	if opts != nil {
+		limit, maxScan = opts.Limit, opts.MaxScan
+		if private := opts.Private; private != nil {
+			keep = func(snippet Snippet) bool { return snippet.IsPrivate == *private }
 		}
-
-		var page PaginatedResponse[Snippet]
-		if err := json.Unmarshal(data, &page); err != nil {
-			return nil, fmt.Errorf("failed to parse snippets response: %w", err)
-		}
-
-		snippets = append(snippets, page.Values...)
-		if opts != nil && opts.Limit > 0 && len(snippets) >= opts.Limit {
-			return snippets[:opts.Limit], nil
-		}
-		path = c.extractNextPath(page.Next)
 	}
-
-	return snippets, nil
+	return scanPages(ctx, pageFetcher{c.getCachedJSON, c.apiPath}, snippetListPath(workspace, opts), keep, limit, maxScan, "snippets")
 }
 
 func (c *Client) GetSnippet(ctx context.Context, workspace, id string) (*Snippet, error) {

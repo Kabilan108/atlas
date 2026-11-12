@@ -23,13 +23,28 @@ func Ops() []ops.Def {
 	}
 }
 
-// limitOrDefault applies a list limit's default and rejects negatives.
-func limitOrDefault(limit, fallback int) (int, error) {
+// Every list has a default and a hard maximum, applied before the client
+// is asked for one more to learn whether there are more.
+const (
+	maxRepoLimit   = 1000
+	maxBranchLimit = 1000
+	maxCommitLimit = 1000
+	maxUserLimit   = 100
+	// maxMembersScanned bounds the members user_search reads while matching
+	// names client-side.
+	maxMembersScanned = 2000
+)
+
+// limitOrDefault applies a list limit's default and rejects values outside
+// 1..maximum.
+func limitOrDefault(limit, fallback, maximum int) (int, error) {
 	switch {
 	case limit == 0:
 		return fallback, nil
 	case limit < 0:
 		return 0, ops.Errorf(ops.Invalid, "limit must be greater than 0")
+	case limit > maximum:
+		return 0, ops.Errorf(ops.Invalid, "limit %d is over the maximum of %d", limit, maximum)
 	}
 	return limit, nil
 }

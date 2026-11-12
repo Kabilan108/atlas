@@ -17,7 +17,7 @@ const defaultBranchLimit = 30
 type BranchListInput struct {
 	ops.RepoRef
 	Filter string `json:"filter,omitempty" jsonschema:"case-insensitive substring of the branch name"`
-	Limit  int    `json:"limit,omitempty" jsonschema:"default 30"`
+	Limit  int    `json:"limit,omitempty" jsonschema:"default 30, max 1000"`
 }
 
 // BranchListResult is the branches found, most recent commit first.
@@ -45,7 +45,7 @@ func listBranches(ctx context.Context, env ops.Env, in BranchListInput) (*Branch
 	if err != nil {
 		return nil, err
 	}
-	limit, err := limitOrDefault(in.Limit, defaultBranchLimit)
+	limit, err := limitOrDefault(in.Limit, defaultBranchLimit, maxBranchLimit)
 	if err != nil {
 		return nil, err
 	}

@@ -1,6 +1,8 @@
 $ atlas snippet list --workspace acme --private -L 1
 ID      Title         Files  Visibility  Updated
 abc123  Deploy notes  2      private     Mar 4, 2024
+
+Showing the first 1; raise limit (max 100) for more.
 --- error ---
 --- requests ---
-GET /2.0/snippets/acme
+GET /2.0/snippets/acme?pagelen=100

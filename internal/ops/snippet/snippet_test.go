@@ -32,17 +32,18 @@ func TestListFiltersVisibilityBeforeLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result) != 1 || result[0].ID != "abc123" {
+	if len(result.Snippets) != 1 || result.Snippets[0].ID != "abc123" {
 		t.Fatalf("result = %+v, want only abc123", result)
 	}
-	if got := requests(fixture); len(got) != 1 || got[0] != "GET /2.0/snippets/acme" {
-		t.Fatalf("requests = %v, want one unpaged list", got)
+	if got := requests(fixture); len(got) != 1 || got[0] != "GET /2.0/snippets/acme?pagelen=100" {
+		t.Fatalf("requests = %v, want one full page", got)
 	}
 	text, err := snippet.List.Text(result)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "| ID | Title | Files | Visibility | Updated |\n| --- | --- | --- | --- | --- |\n| abc123 | Deploy notes | 2 | private | 2024-03-04 |\n"
+	want := "| ID | Title | Files | Visibility | Updated |\n| --- | --- | --- | --- | --- |\n| abc123 | Deploy notes | 2 | private | 2024-03-04 |\n" +
+		"\nShowing the first 1; raise limit (max 100) for more.\n"
 	if text != want {
 		t.Fatalf("markdown = %q, want %q", text, want)
 	}

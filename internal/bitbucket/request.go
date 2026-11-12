@@ -49,6 +49,18 @@ func (c *Client) send(ctx context.Context, method, path string, body any) (*http
 	return resp, data, nil
 }
 
+// getCachedJSON is getJSON through the response cache.
+func (c *Client) getCachedJSON(ctx context.Context, path string, out any, what string) error {
+	data, err := c.get(ctx, path)
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal(data, out); err != nil {
+		return fmt.Errorf("failed to parse %s response: %w", what, err)
+	}
+	return nil
+}
+
 func (c *Client) getJSON(ctx context.Context, path string, out any, what string) error {
 	_, data, err := c.send(ctx, http.MethodGet, path, nil)
 	if err != nil {
@@ -60,36 +72,128 @@ func (c *Client) getJSON(ctx context.Context, path string, out any, what string)
 	return nil
 }
 
-// collectPages follows Bitbucket's next links until the last page or until
-// limit values are collected. A limit of zero or less collects every page.
-func collectPages[T any](ctx context.Context, c *Client, path string, limit int, what string) ([]T, error) {
+// MaxListItems bounds every list the client collects, whatever the caller
+// asks for, and maxListPages the pages one list reads however short the
+// pages a server sends. Ops apply smaller maxima of their own; these are
+// the backstop for any caller that asks for more, or for everything.
+const (
+	MaxListItems = 2000
+	maxListPages = 100
+)
+
+// Scan says where a bounded walk over a paginated list stopped.
+type Scan struct {
+	// Scanned counts the values read, before any filter.
+	Scanned int
+	// More is true when values past those returned exist or may exist: a
+	// match past the limit was read, or the walk stopped with a next page
+	// unread.
+	More bool
+	// Capped is true when the walk stopped at its scan maximum or the page
+	// maximum before collecting limit values, so matches it never read may
+	// exist.
+	Capped bool
+}
+
+// clampList maps a limit outside (0, MaxListItems] to MaxListItems.
+func clampList(n int) int {
+	if n <= 0 || n > MaxListItems {
+		return MaxListItems
+	}
+	return n
+}
+
+// collectPages follows Bitbucket's next links until limit values are
+// collected or the last page, reading at most maxListPages pages. A limit
+// outside (0, MaxListItems] means MaxListItems.
+func collectPages[T any](ctx context.Context, c *Client, path string, limit int, what string) ([]T, Scan, error) {
+	return scanPages[T](ctx, c.pages(), path, nil, limit, 0, what)
+}
+
+// collectCachedPages is collectPages through the response cache, for the
+// lists the CLI has always cached.
+func collectCachedPages[T any](ctx context.Context, c *Client, path string, limit int, what string) ([]T, Scan, error) {
+	return scanPages[T](ctx, pageFetcher{c.getCachedJSON, c.apiPath}, path, nil, limit, 0, what)
+}
+
+// pages fetches uncached pages.
+func (c *Client) pages() pageFetcher {
+	return pageFetcher{c.getJSON, c.apiPath}
+}
+
+// collectAll is collectPages for a list a caller needs whole, such as the
+// statuses behind a merge decision: it fails rather than return part of a
+// list longer than maximum.
+func collectAll[T any](ctx context.Context, c *Client, path string, maximum int, what string) ([]T, error) {
+	values, scan, err := collectPages[T](ctx, c, path, maximum, what)
+	if err != nil {
+		return nil, err
+	}
+	if scan.More {
+		return nil, fmt.Errorf("more than %d %s; atlas reads at most %d", maximum, what, maximum)
+	}
+	return values, nil
+}
+
+// pageFetcher reads one page into out and resolves the next link, which
+// must stay under the client's base URL.
+type pageFetcher struct {
+	get  func(ctx context.Context, path string, out any, what string) error
+	next func(raw string) (string, error)
+}
+
+// scanPages is collectPages keeping only the values keep accepts (all of
+// them when keep is nil) and reading at most maxScanned values, for filters
+// Bitbucket cannot apply itself. maxScanned outside (0, MaxListItems] means
+// MaxListItems.
+func scanPages[T any](ctx context.Context, fetch pageFetcher, path string, keep func(T) bool, limit, maxScanned int, what string) ([]T, Scan, error) {
+	limit, maxScanned = clampList(limit), clampList(maxScanned)
 	var values []T
+	var scan Scan
 	visited := map[string]bool{}
-	for path != "" {
+	for pages := 0; path != ""; pages++ {
+		if pages == maxListPages {
+			scan.More, scan.Capped = true, len(values) < limit
+			break
+		}
 		if visited[path] {
-			return nil, fmt.Errorf("%s pagination did not advance: %s", what, path)
+			return nil, scan, fmt.Errorf("%s pagination did not advance: %s", what, path)
 		}
 		visited[path] = true
 
 		var page PaginatedResponse[T]
-		if err := c.getJSON(ctx, path, &page, what); err != nil {
-			return nil, err
+		if err := fetch.get(ctx, path, &page, what); err != nil {
+			return nil, scan, err
 		}
-
-		values = append(values, page.Values...)
-		if limit > 0 && len(values) >= limit {
-			return values[:limit], nil
+		for _, value := range page.Values {
+			if scan.Scanned == maxScanned {
+				scan.More, scan.Capped = true, len(values) < limit
+				return values, scan, nil
+			}
+			scan.Scanned++
+			if keep != nil && !keep(value) {
+				continue
+			}
+			if len(values) == limit {
+				scan.More = true
+				return values, scan, nil
+			}
+			values = append(values, value)
 		}
 		if len(page.Values) == 0 || page.Next == "" {
 			break
 		}
-		next, err := c.apiPath(page.Next)
+		if len(values) == limit || scan.Scanned == maxScanned {
+			scan.More, scan.Capped = true, len(values) < limit
+			break
+		}
+		next, err := fetch.next(page.Next)
 		if err != nil {
-			return nil, fmt.Errorf("%s next page: %w", what, err)
+			return nil, scan, fmt.Errorf("%s next page: %w", what, err)
 		}
 		path = next
 	}
-	return values, nil
+	return values, scan, nil
 }
 
 // apiPath turns a server-supplied URL, absolute or relative to the base URL,

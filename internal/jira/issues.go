@@ -31,7 +31,8 @@ func (c *Client) GetIssue(ctx context.Context, issueKey string, opts GetIssueOpt
 	return &issue, nil
 }
 
-// ListChangelog returns the issue's complete change history, oldest first.
+// ListChangelog returns the issue's change history, oldest first, at most
+// maxCollectItems entries.
 func (c *Client) ListChangelog(ctx context.Context, issueKey string) ([]ChangelogHistory, error) {
 	return collectOffset(0, defaultPageSize, func(startAt, maxResults int) ([]ChangelogHistory, pageInfo, error) {
 		var page struct {
@@ -88,16 +89,22 @@ func (c *Client) SearchPage(ctx context.Context, req SearchRequest) (*SearchResu
 }
 
 // Search follows nextPageToken until isLast, including across empty pages.
-// limit <= 0 returns every match; req.NextPageToken is a starting point and
-// req.MaxResults the page size.
+// A limit outside (0, maxCollectItems] means maxCollectItems;
+// req.NextPageToken is a starting point and req.MaxResults the page size.
 func (c *Client) Search(ctx context.Context, req SearchRequest, limit int) ([]Issue, error) {
 	if req.MaxResults <= 0 {
 		req.MaxResults = defaultPageSize
 	}
+	if limit <= 0 || limit > maxCollectItems {
+		limit = maxCollectItems
+	}
 	seen := map[string]bool{}
 	var issues []Issue
-	for {
-		if limit > 0 && limit-len(issues) < req.MaxResults {
+	for pages := 0; ; pages++ {
+		if pages == maxCollectPages {
+			return issues, fmt.Errorf("jira: search stopped after %d pages", maxCollectPages)
+		}
+		if limit-len(issues) < req.MaxResults {
 			req.MaxResults = limit - len(issues)
 		}
 		page, err := c.SearchPage(ctx, req)
@@ -105,7 +112,7 @@ func (c *Client) Search(ctx context.Context, req SearchRequest, limit int) ([]Is
 			return issues, err
 		}
 		issues = append(issues, page.Issues...)
-		if limit > 0 && len(issues) >= limit {
+		if len(issues) >= limit {
 			return issues[:limit], nil
 		}
 		if page.IsLast {

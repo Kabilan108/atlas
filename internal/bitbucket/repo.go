@@ -15,7 +15,7 @@ type RepositoryListOptions struct {
 	// Name filters with a case-insensitive substring match (q=name ~ "...").
 	Name string
 	Sort string
-	// Limit caps the repositories returned. Zero returns every page.
+	// Limit caps the repositories returned. Zero means MaxListItems.
 	Limit int
 }
 
@@ -23,7 +23,7 @@ type BranchListOptions struct {
 	// Name filters with a case-insensitive substring match (q=name ~ "...").
 	Name string
 	Sort string
-	// Limit caps the branches returned. Zero returns every page.
+	// Limit caps the branches returned. Zero means MaxListItems.
 	Limit int
 }
 
@@ -74,7 +74,8 @@ func (c *Client) SearchRepositories(ctx context.Context, workspace string, opts 
 	}
 	values.Set("pagelen", strconv.Itoa(fullPageLen(limit)))
 	path := withQuery("/repositories/"+url.PathEscape(workspace), values)
-	return collectPages[Repository](ctx, c, path, limit, "repositories")
+	repos, _, err := collectPages[Repository](ctx, c, path, limit, "repositories")
+	return repos, err
 }
 
 func (c *Client) ListBranches(ctx context.Context, workspace, repo string, opts *BranchListOptions) ([]RepositoryBranch, error) {
@@ -91,7 +92,8 @@ func (c *Client) ListBranches(ctx context.Context, workspace, repo string, opts 
 	}
 	values.Set("pagelen", strconv.Itoa(fullPageLen(limit)))
 	path := withQuery(repoPath(workspace, repo)+"/refs/branches", values)
-	return collectPages[RepositoryBranch](ctx, c, path, limit, "branches")
+	branches, _, err := collectPages[RepositoryBranch](ctx, c, path, limit, "branches")
+	return branches, err
 }
 
 func (c *Client) GetBranch(ctx context.Context, workspace, repo, name string) (*RepositoryBranch, error) {
@@ -149,7 +151,8 @@ func (c *Client) ListCommits(ctx context.Context, workspace, repo, revision stri
 		}
 		return page.Values, nil
 	}
-	return collectPages[CommitInfo](ctx, c, path, limit, "commits")
+	commits, _, err := collectPages[CommitInfo](ctx, c, path, limit, "commits")
+	return commits, err
 }
 
 // GetFileContent returns the raw bytes of path at ref (a branch, tag, or hash).

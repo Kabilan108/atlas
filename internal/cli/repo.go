@@ -28,7 +28,7 @@ func newRepoListCmd() *cobra.Command {
 	}
 	cmd.Flags().String("workspace", "", "Target workspace")
 	cmd.Flags().String("name", "", "Only repositories whose name contains this")
-	cmd.Flags().IntP("limit", "L", 100, "Maximum number of repositories to list")
+	cmd.Flags().IntP("limit", "L", 100, "Maximum number of repositories to list (max 1000)")
 	return bind(cmd, binding[repo.ListInput, *repo.ListResult]{
 		op: repo.List,
 		input: func(cmd *cobra.Command, _ []string, _ *cliEnv) (repo.ListInput, error) {
@@ -59,7 +59,7 @@ func newBranchListCmd() *cobra.Command {
 	}
 	addPRRepoFlag(cmd)
 	cmd.Flags().String("filter", "", "Only branches whose name contains this")
-	cmd.Flags().IntP("limit", "L", 30, "Maximum number of branches to list")
+	cmd.Flags().IntP("limit", "L", 30, "Maximum number of branches to list (max 1000)")
 	return bind(cmd, binding[repo.BranchListInput, *repo.BranchListResult]{
 		op: repo.BranchList,
 		input: func(cmd *cobra.Command, _ []string, env *cliEnv) (repo.BranchListInput, error) {
@@ -115,7 +115,7 @@ func newCommitListCmd() *cobra.Command {
 	addPRRepoFlag(cmd)
 	cmd.Flags().String("base", "", "Only commits not reachable from this ref")
 	cmd.Flags().String("path", "", "Only commits touching this path")
-	cmd.Flags().IntP("limit", "L", 30, "Maximum number of commits to list")
+	cmd.Flags().IntP("limit", "L", 30, "Maximum number of commits to list (max 1000)")
 	return bind(cmd, binding[repo.CommitListInput, *repo.CommitListResult]{
 		op: repo.CommitList,
 		input: func(cmd *cobra.Command, args []string, env *cliEnv) (repo.CommitListInput, error) {
@@ -220,7 +220,7 @@ func newUserSearchCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 	}
 	cmd.Flags().String("workspace", "", "Target workspace")
-	cmd.Flags().IntP("limit", "L", 20, "Maximum number of members to list")
+	cmd.Flags().IntP("limit", "L", 20, "Maximum number of members to list (max 100)")
 	return bind(cmd, binding[repo.UserSearchInput, *repo.UserSearchResult]{
 		op: repo.UserSearch,
 		input: func(cmd *cobra.Command, args []string, _ *cliEnv) (repo.UserSearchInput, error) {

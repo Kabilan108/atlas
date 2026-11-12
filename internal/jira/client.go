@@ -24,6 +24,11 @@ const (
 	maxErrorBody     = 4096
 	// maxErrorRead bounds how much of a failed response is read.
 	maxErrorRead = 64 << 10
+	// maxCollectItems bounds a list asked for with no limit, and
+	// maxCollectPages the pages any list reads however short its pages, so
+	// no helper walks an unbounded list. Ops apply smaller maxima.
+	maxCollectItems = 10000
+	maxCollectPages = 200
 	// maxResponseBytes bounds every response body the client reads; no
 	// single Jira response atlas asks for comes close.
 	maxResponseBytes = 32 << 20
@@ -238,14 +243,20 @@ type pageInfo struct {
 	IsLast     *bool
 }
 
-// collectOffset pages through an offset-paginated endpoint. limit <= 0 means
-// every item.
+// collectOffset pages through an offset-paginated endpoint. A limit outside
+// (0, maxCollectItems] means maxCollectItems.
 func collectOffset[T any](limit, pageSize int, fetch func(startAt, maxResults int) ([]T, pageInfo, error)) ([]T, error) {
+	if limit <= 0 || limit > maxCollectItems {
+		limit = maxCollectItems
+	}
 	var all []T
 	startAt := 0
-	for {
+	for pages := 0; ; pages++ {
+		if pages == maxCollectPages {
+			return all, fmt.Errorf("jira: stopped paging after %d pages", maxCollectPages)
+		}
 		size := pageSize
-		if limit > 0 && limit-len(all) < size {
+		if limit-len(all) < size {
 			size = limit - len(all)
 		}
 		items, info, err := fetch(startAt, size)
@@ -253,7 +264,7 @@ func collectOffset[T any](limit, pageSize int, fetch func(startAt, maxResults in
 			return all, err
 		}
 		all = append(all, items...)
-		if limit > 0 && len(all) >= limit {
+		if len(all) >= limit {
 			return all[:limit], nil
 		}
 		if len(items) == 0 {

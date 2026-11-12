@@ -17,7 +17,7 @@ type CommitListInput struct {
 	Ref   string `json:"ref,omitempty" jsonschema:"branch, tag, or commit; default: the main branch"`
 	Base  string `json:"base,omitempty" jsonschema:"only commits not reachable from this ref, e.g. main"`
 	Path  string `json:"path,omitempty" jsonschema:"only commits touching this path"`
-	Limit int    `json:"limit,omitempty" jsonschema:"default 30"`
+	Limit int    `json:"limit,omitempty" jsonschema:"default 30, max 1000"`
 }
 
 // CommitListResult is the commits found, newest first.
@@ -47,7 +47,7 @@ func listCommits(ctx context.Context, env ops.Env, in CommitListInput) (*CommitL
 	if err != nil {
 		return nil, err
 	}
-	limit, err := limitOrDefault(in.Limit, defaultCommitLimit)
+	limit, err := limitOrDefault(in.Limit, defaultCommitLimit, maxCommitLimit)
 	if err != nil {
 		return nil, err
 	}

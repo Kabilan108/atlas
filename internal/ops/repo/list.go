@@ -15,7 +15,7 @@ const defaultRepoLimit = 100
 type ListInput struct {
 	Workspace string `json:"workspace,omitempty" jsonschema:"default: the default workspace"`
 	Name      string `json:"name,omitempty" jsonschema:"case-insensitive substring of the repo name"`
-	Limit     int    `json:"limit,omitempty" jsonschema:"default 100"`
+	Limit     int    `json:"limit,omitempty" jsonschema:"default 100, max 1000"`
 }
 
 // ListResult is the repositories found, most recently updated first.
@@ -43,7 +43,7 @@ func listRepos(ctx context.Context, env ops.Env, in ListInput) (*ListResult, err
 	if err != nil {
 		return nil, err
 	}
-	limit, err := limitOrDefault(in.Limit, defaultRepoLimit)
+	limit, err := limitOrDefault(in.Limit, defaultRepoLimit, maxRepoLimit)
 	if err != nil {
 		return nil, err
 	}

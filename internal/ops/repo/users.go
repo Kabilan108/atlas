@@ -16,14 +16,20 @@ const defaultUserLimit = 20
 type UserSearchInput struct {
 	Workspace string `json:"workspace,omitempty" jsonschema:"default: the default workspace"`
 	Query     string `json:"query" jsonschema:"case-insensitive substring of display name, nickname, or username"`
-	Limit     int    `json:"limit,omitempty" jsonschema:"default 20"`
+	Limit     int    `json:"limit,omitempty" jsonschema:"default 20, max 100"`
 }
 
-// UserSearchResult is the matching workspace members.
+// UserSearchResult is the matching workspace members. More means more
+// members match; ScanCapped that the search stopped after reading
+// maxMembersScanned members, so matches past them were never seen.
 type UserSearchResult struct {
-	Workspace string           `json:"workspace"`
-	Query     string           `json:"query"`
-	Users     []bitbucket.User `json:"users"`
+	Workspace  string           `json:"workspace"`
+	Query      string           `json:"query"`
+	Users      []bitbucket.User `json:"users"`
+	More       bool             `json:"more,omitempty"`
+	ScanCapped bool             `json:"scan_capped,omitempty"`
+
+	limit int
 }
 
 var UserSearch = &ops.Op[UserSearchInput, *UserSearchResult]{
@@ -46,7 +52,7 @@ func searchUsers(ctx context.Context, env ops.Env, in UserSearchInput) (*UserSea
 	if query == "" {
 		return nil, ops.Errorf(ops.Invalid, "query is required")
 	}
-	limit, err := limitOrDefault(in.Limit, defaultUserLimit)
+	limit, err := limitOrDefault(in.Limit, defaultUserLimit, maxUserLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -54,23 +60,31 @@ func searchUsers(ctx context.Context, env ops.Env, in UserSearchInput) (*UserSea
 	if err != nil {
 		return nil, err
 	}
-	users, err := client.ListWorkspaceMembers(ctx, workspace, &bitbucket.MemberListOptions{Name: query, Limit: limit})
+	users, scan, err := client.ListWorkspaceMembers(ctx, workspace, &bitbucket.MemberListOptions{Name: query, Limit: limit + 1, MaxScan: maxMembersScanned})
 	if err != nil {
 		return nil, err
 	}
-	return &UserSearchResult{Workspace: workspace, Query: query, Users: users}, nil
+	result := &UserSearchResult{Workspace: workspace, Query: query, ScanCapped: scan.Capped, limit: limit}
+	result.Users, result.More = trimMore(users, limit)
+	return result, nil
 }
 
 // Markdown renders the members as a table.
 func (r *UserSearchResult) Markdown() (string, error) {
+	var text string
 	if len(r.Users) == 0 {
-		return fmt.Sprintf("No members of %s match %q.\n", r.Workspace, r.Query), nil
+		text = fmt.Sprintf("No members of %s match %q.\n", r.Workspace, r.Query)
+	} else {
+		rows := make([][]string, 0, len(r.Users))
+		for _, user := range r.Users {
+			rows = append(rows, []string{user.DisplayName, user.Nickname, user.AccountID, user.UUID})
+		}
+		text = output.MarkdownTable([]string{"Name", "Nickname", "Account ID", "UUID"}, rows) + moreNote(r.More, r.limit)
 	}
-	rows := make([][]string, 0, len(r.Users))
-	for _, user := range r.Users {
-		rows = append(rows, []string{user.DisplayName, user.Nickname, user.AccountID, user.UUID})
+	if r.ScanCapped {
+		text += fmt.Sprintf("\nSearched only the first %d members of %s; use a more specific query.\n", maxMembersScanned, r.Workspace)
 	}
-	return output.MarkdownTable([]string{"Name", "Nickname", "Account ID", "UUID"}, rows), nil
+	return text, nil
 }
 
 // WhoamiInput is the input to whoami, which takes none.

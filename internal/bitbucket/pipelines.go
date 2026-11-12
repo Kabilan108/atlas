@@ -21,6 +21,10 @@ const (
 
 	defaultPipelineSort  = "-created_on"
 	storageClientTimeout = 60 * time.Second
+	// maxPipelineSteps is the most steps read for one run; Bitbucket allows
+	// 100. A longer list is an error rather than cut, so a failed step is
+	// never missed.
+	maxPipelineSteps = 1000
 )
 
 type Pipeline struct {
@@ -206,7 +210,8 @@ func (c *Client) ListPipelines(ctx context.Context, workspace, repo string, opts
 		}
 		return page.Values, nil
 	}
-	return collectPages[Pipeline](ctx, c, path, opts.Limit, "pipelines")
+	pipelines, _, err := collectPages[Pipeline](ctx, c, path, opts.Limit, "pipelines")
+	return pipelines, err
 }
 
 func isBuildNumber(ref string) bool {
@@ -288,7 +293,7 @@ func (c *Client) ListPipelineSteps(ctx context.Context, workspace, repo, pipelin
 		return nil, err
 	}
 	path := fmt.Sprintf("%s/pipelines/%s/steps?pagelen=%d", repoPath(workspace, repo), uuid, maxPageLen)
-	return collectPages[PipelineStep](ctx, c, path, 0, "pipeline steps")
+	return collectAll[PipelineStep](ctx, c, path, maxPipelineSteps, "pipeline steps")
 }
 
 func (c *Client) GetPipelineStep(ctx context.Context, workspace, repo, pipeline, step string) (*PipelineStep, error) {

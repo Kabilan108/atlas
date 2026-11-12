@@ -2,8 +2,10 @@ package pr_test
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -63,5 +65,51 @@ func TestViewReadsAtMostTheDiffDownloadCap(t *testing.T) {
 	}
 	if got := read.Load(); got == 0 || got > 16<<20+1 {
 		t.Fatalf("pr_view read %d bytes of a 64 MiB diff, want at most %d", got, 16<<20+1)
+	}
+}
+
+// A pull request with a huge comment history is read up to MaxViewComments,
+// and the markdown says so.
+func TestViewStopsReadingCommentsAtItsMaximum(t *testing.T) {
+	fixture := prtest.New()
+	var requests atomic.Int64
+	transport := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if !strings.HasSuffix(r.URL.Path, "/comments") {
+			return fixture.RoundTrip(r)
+		}
+		requests.Add(1)
+		query := r.URL.Query()
+		page, _ := strconv.Atoi(query.Get("page"))
+		page = max(page, 1)
+		var values []string
+		for i := (page - 1) * 10; i < page*10; i++ {
+			values = append(values, `{"id":`+strconv.Itoa(i+1)+`,"content":{"raw":"c"},"user":{"display_name":"Ada"}}`)
+		}
+		next := *r.URL
+		query.Set("page", strconv.Itoa(page+1))
+		next.RawQuery = query.Encode()
+		body := `{"values":[` + strings.Join(values, ",") + `],"next":"` + next.String() + `"}`
+		if page == 3000 {
+			body = `{"values":[]}`
+		}
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/json"}},
+			Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
+	})
+	client, err := bitbucket.NewClientWithCredentials(opstest.Email, opstest.Token,
+		bitbucket.WithBaseURL("https://api.bitbucket.org/2.0"), bitbucket.WithHTTPClient(&http.Client{Transport: transport}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := opstest.New("acme")
+	env.BitbucketClient = client
+	res, err := pr.View.Invoke(context.Background(), env, json.RawMessage(`{"repo":"acme/widgets","pr":"42","comments":true}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := requests.Load(); got > 100 {
+		t.Fatalf("read %d comment pages of 3000, want at most 100", got)
+	}
+	if !strings.Contains(res.Text, "Showing the first 1000 comments") {
+		t.Fatalf("markdown does not say comments were cut:\n%s", res.Text[max(0, len(res.Text)-300):])
 	}
 }

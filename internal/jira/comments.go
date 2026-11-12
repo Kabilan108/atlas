@@ -87,7 +87,7 @@ type WorklogListOptions struct {
 	StartedBefore int64
 }
 
-// ListWorklogs returns every worklog on the issue.
+// ListWorklogs returns the issue's worklogs, at most maxCollectItems.
 func (c *Client) ListWorklogs(ctx context.Context, issueKey string, opts WorklogListOptions) ([]Worklog, error) {
 	return collectOffset(0, 1000, func(startAt, maxResults int) ([]Worklog, pageInfo, error) {
 		q := pageQuery(startAt, maxResults)

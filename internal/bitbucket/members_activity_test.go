@@ -20,7 +20,7 @@ func TestListWorkspaceMembersFiltersByName(t *testing.T) {
 	})
 	serverURL = server.URL
 
-	users, err := client.ListWorkspaceMembers(context.Background(), "ws", &MemberListOptions{Name: "JAN"})
+	users, _, err := client.ListWorkspaceMembers(context.Background(), "ws", &MemberListOptions{Name: "JAN"})
 	if err != nil {
 		t.Fatalf("ListWorkspaceMembers() error = %v", err)
 	}
@@ -28,7 +28,7 @@ func TestListWorkspaceMembersFiltersByName(t *testing.T) {
 		t.Fatalf("users = %#v", users)
 	}
 
-	byNickname, err := client.ListWorkspaceMembers(context.Background(), "ws", &MemberListOptions{Name: "bjon"})
+	byNickname, _, err := client.ListWorkspaceMembers(context.Background(), "ws", &MemberListOptions{Name: "bjon"})
 	if err != nil {
 		t.Fatalf("ListWorkspaceMembers(nickname) error = %v", err)
 	}
@@ -50,7 +50,7 @@ func TestListWorkspaceMembersLimitWithoutFilter(t *testing.T) {
 		writeJSON(w, http.StatusOK, `{"next":"https://not-followed","values":[{"user":{"account_id":"a"}},{"user":{"account_id":"b"}}]}`)
 	})
 
-	users, err := client.ListWorkspaceMembers(context.Background(), "ws", &MemberListOptions{Limit: 1})
+	users, _, err := client.ListWorkspaceMembers(context.Background(), "ws", &MemberListOptions{Limit: 1})
 	if err != nil {
 		t.Fatalf("ListWorkspaceMembers() error = %v", err)
 	}

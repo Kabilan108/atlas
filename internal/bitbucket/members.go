@@ -12,43 +12,42 @@ type MemberListOptions struct {
 	// ignoring case. Bitbucket's members endpoint only filters by email (and only
 	// for admins), so this match runs client-side.
 	Name string
-	// Limit caps the members returned after filtering. Zero returns all.
+	// Limit caps the members returned after filtering. Zero means
+	// MaxListItems.
 	Limit int
+	// MaxScan caps the members read while filtering by Name. Zero means
+	// MaxListItems.
+	MaxScan int
 }
 
 type workspaceMembership struct {
 	User User `json:"user"`
 }
 
-func (c *Client) ListWorkspaceMembers(ctx context.Context, workspace string, opts *MemberListOptions) ([]User, error) {
+// ListWorkspaceMembers stops paging once it has Limit matches or has read
+// MaxScan members, and says which in the Scan.
+func (c *Client) ListWorkspaceMembers(ctx context.Context, workspace string, opts *MemberListOptions) ([]User, Scan, error) {
 	path := fmt.Sprintf("/workspaces/%s/members?pagelen=%d", url.PathEscape(workspace), maxPageLen)
 	needle := ""
-	limit := 0
+	limit, maxScan := 0, 0
 	if opts != nil {
 		needle = strings.ToLower(strings.TrimSpace(opts.Name))
-		limit = opts.Limit
+		limit, maxScan = opts.Limit, opts.MaxScan
+	}
+	var keep func(workspaceMembership) bool
+	if needle != "" {
+		keep = func(membership workspaceMembership) bool { return userNameContains(membership.User, needle) }
 	}
 
-	pageLimit := 0
-	if needle == "" {
-		pageLimit = limit
-	}
-	memberships, err := collectPages[workspaceMembership](ctx, c, path, pageLimit, "workspace members")
+	memberships, scan, err := scanPages(ctx, c.pages(), path, keep, limit, maxScan, "workspace members")
 	if err != nil {
-		return nil, err
+		return nil, scan, err
 	}
-
 	users := make([]User, 0, len(memberships))
 	for _, membership := range memberships {
-		if needle != "" && !userNameContains(membership.User, needle) {
-			continue
-		}
 		users = append(users, membership.User)
-		if limit > 0 && len(users) >= limit {
-			break
-		}
 	}
-	return users, nil
+	return users, scan, nil
 }
 
 func userNameContains(user User, lowerNeedle string) bool {

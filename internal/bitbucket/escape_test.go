@@ -33,7 +33,7 @@ func TestRepositoryPathSegmentsAreEscaped(t *testing.T) {
 			return err
 		}, "/repositories/acme%3Fx=1"},
 		{"comments", func() error {
-			_, err := client.ListPullRequestComments(ctx, "acme", "a#b", 2)
+			_, _, err := client.ListPullRequestComments(ctx, "acme", "a#b", 2, 0)
 			return err
 		}, "/repositories/acme/a%23b/pullrequests/2/comments"},
 	}

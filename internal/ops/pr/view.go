@@ -10,6 +10,13 @@ import (
 	"github.com/kabilan108/atlas/internal/output"
 )
 
+// MaxViewComments and MaxViewTasks are the most comments and tasks pr_view
+// reads; the markdown says when a pull request has more.
+const (
+	MaxViewComments = 1000
+	MaxViewTasks    = 1000
+)
+
 // ViewInput is the input to pr_view.
 type ViewInput struct {
 	Ref
@@ -28,12 +35,16 @@ type ViewResult struct {
 	*bitbucket.PullRequest
 	Comments []bitbucket.Comment             `json:"comments,omitempty"`
 	Activity []bitbucket.PullRequestActivity `json:"activity,omitempty"`
+	// CommentsTruncated is set when the pull request has more than
+	// MaxViewComments comments.
+	CommentsTruncated bool `json:"comments_truncated,omitempty"`
 
 	workspace       string
 	repo            string
 	showComments    bool
 	includeResolved bool
 	tasks           []bitbucket.Task
+	tasksTruncated  bool
 	diff            []byte
 	users           map[string]bitbucket.User
 }
@@ -67,10 +78,12 @@ func view(ctx context.Context, env ops.Env, in ViewInput) (*ViewResult, error) {
 	}
 	id := target.PR.ID
 	if in.Comments || in.JSON {
-		result.Comments, err = client.ListPullRequestComments(ctx, target.Workspace, target.Repo, id)
+		var scan bitbucket.Scan
+		result.Comments, scan, err = client.ListPullRequestComments(ctx, target.Workspace, target.Repo, id, MaxViewComments)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch comments: %w", err)
 		}
+		result.CommentsTruncated = scan.More
 	}
 	if in.Activity {
 		result.Activity, err = client.ListPullRequestActivity(ctx, target.Workspace, target.Repo, id, ActivityLimit)
@@ -82,10 +95,12 @@ func view(ctx context.Context, env ops.Env, in ViewInput) (*ViewResult, error) {
 		return result, nil
 	}
 	if result.showComments {
-		result.tasks, err = client.ListPullRequestTasks(ctx, target.Workspace, target.Repo, id)
+		var scan bitbucket.Scan
+		result.tasks, scan, err = client.ListPullRequestTasks(ctx, target.Workspace, target.Repo, id, MaxViewTasks)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch tasks: %w", err)
 		}
+		result.tasksTruncated = scan.More
 		// The diff only adds code context to inline threads; without it the
 		// threads still render. It is read with pr_diff's download cap, so a
 		// huge diff only leaves threads on its later files without context.
@@ -172,12 +187,18 @@ func (r *ViewResult) render(resolve func(string) (bitbucket.User, bool)) (string
 	if err := commentWriter.WriteComments(r.Comments, r.includeResolved); err != nil {
 		return "", err
 	}
+	if r.CommentsTruncated {
+		fmt.Fprintf(&buf, "\n[Showing the first %d comments; open the pull request on bitbucket.org for the rest.]\n", MaxViewComments)
+	}
 	if len(r.tasks) > 0 {
 		fmt.Fprintln(&buf)
 		taskWriter := output.NewTaskWriter(&buf)
 		taskWriter.SetUserResolver(resolve)
 		if err := taskWriter.WriteTasks(r.tasks); err != nil {
 			return "", err
+		}
+		if r.tasksTruncated {
+			fmt.Fprintf(&buf, "\n[Showing the first %d tasks; open the pull request on bitbucket.org for the rest.]\n", MaxViewTasks)
 		}
 	}
 	writeActivity(&buf, r.Activity)
