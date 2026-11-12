@@ -39,12 +39,6 @@ var legacyCommands = map[string]bool{
 	"atlas pr review":               true,
 	"atlas pr status":               true,
 	"atlas pr unapprove":            true,
-	"atlas snippet create":          true,
-	"atlas snippet delete":          true,
-	"atlas snippet edit":            true,
-	"atlas snippet list":            true,
-	"atlas snippet rename":          true,
-	"atlas snippet view":            true,
 }
 
 func leafCommands(cmd *cobra.Command) []*cobra.Command {

@@ -145,12 +145,14 @@ atlas snippet create
   flag --workspace string default=""
 atlas snippet delete
   use: delete [<snippet>]
+  flag --json bool default="false"
   flag --workspace string default=""
   flag --yes bool default="false"
 atlas snippet edit
   use: edit <snippet> [<filename>]
   flag --add -a string default=""
   flag --filename -f string default=""
+  flag --json bool default="false"
   flag --remove -r string default=""
   flag --title string default=""
   flag --workspace string default=""
@@ -165,6 +167,7 @@ atlas snippet list
   flag --workspace string default=""
 atlas snippet rename
   use: rename <snippet> <old-filename> <new-filename>
+  flag --json bool default="false"
   flag --workspace string default=""
 atlas snippet view
   use: view [<snippet>]

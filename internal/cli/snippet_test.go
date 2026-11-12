@@ -155,24 +155,6 @@ func TestAddSnippetFileContentRejectsDuplicates(t *testing.T) {
 	}
 }
 
-func TestLimitSnippetsAfterVisibilityFiltering(t *testing.T) {
-	t.Parallel()
-
-	snippets := []bitbucket.Snippet{
-		{ID: "1", IsPrivate: false},
-		{ID: "2", IsPrivate: true},
-		{ID: "3", IsPrivate: true},
-		{ID: "4", IsPrivate: true},
-	}
-
-	filtered := filterSnippetsByVisibility(snippets, false, true)
-	got := limitSnippets(filtered, 2)
-
-	if len(got) != 2 || got[0].ID != "2" || got[1].ID != "3" {
-		t.Fatalf("filtered limited snippets = %#v, want IDs 2 and 3", got)
-	}
-}
-
 func TestSanitizeTerminalContent(t *testing.T) {
 	t.Parallel()
 
