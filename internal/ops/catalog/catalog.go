@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"github.com/kabilan108/atlas/internal/ops"
+	"github.com/kabilan108/atlas/internal/ops/pipeline"
 	"github.com/kabilan108/atlas/internal/ops/pr"
 )
 
@@ -13,5 +14,6 @@ import (
 func All() []ops.Def {
 	return slices.Concat(
 		pr.Ops(),
+		pipeline.Ops(),
 	)
 }
