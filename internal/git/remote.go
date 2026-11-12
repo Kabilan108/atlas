@@ -54,6 +54,10 @@ func ParseRemoteURL(url string) (workspace string, repo string, err error) {
 	return "", "", ErrNotBitbucketRemote
 }
 
+// findGitDir returns the directory holding the repository's config for the
+// working directory. In a linked worktree or a submodule .git is a file
+// naming the real git directory, and a worktree's config lives in the common
+// directory that git directory points to.
 func findGitDir() (string, error) {
 	dir, err := os.Getwd()
 	if err != nil {
@@ -66,6 +70,9 @@ func findGitDir() (string, error) {
 		if err == nil && info.IsDir() {
 			return gitPath, nil
 		}
+		if err == nil && info.Mode().IsRegular() {
+			return gitDirFromFile(gitPath)
+		}
 
 		parent := filepath.Dir(dir)
 		if parent == dir {
@@ -73,6 +80,36 @@ func findGitDir() (string, error) {
 		}
 		dir = parent
 	}
+}
+
+// gitDirFromFile follows a "gitdir: <path>" file, then the git directory's
+// commondir file when it has one.
+func gitDirFromFile(gitFile string) (string, error) {
+	data, err := os.ReadFile(gitFile)
+	if err != nil {
+		return "", fmt.Errorf("failed to read %s: %w", gitFile, err)
+	}
+	target, ok := strings.CutPrefix(strings.TrimSpace(string(data)), "gitdir:")
+	if !ok {
+		return "", fmt.Errorf("%s is not a gitdir file", gitFile)
+	}
+	gitDir := resolveFrom(filepath.Dir(gitFile), strings.TrimSpace(target))
+
+	common, err := os.ReadFile(filepath.Join(gitDir, "commondir"))
+	if errors.Is(err, os.ErrNotExist) {
+		return gitDir, nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("failed to read %s: %w", filepath.Join(gitDir, "commondir"), err)
+	}
+	return resolveFrom(gitDir, strings.TrimSpace(string(common))), nil
+}
+
+func resolveFrom(base, path string) string {
+	if filepath.IsAbs(path) {
+		return filepath.Clean(path)
+	}
+	return filepath.Join(base, path)
 }
 
 func getOriginURL(gitDir string) (string, error) {
