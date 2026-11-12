@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"unicode"
 
@@ -55,24 +57,28 @@ func attach(ctx context.Context, env ops.Env, in AttachInput) (*Attached, error)
 	if len(in.Files) == 0 || len(in.Files) > MaxAttachFiles {
 		return nil, ops.Errorf(ops.Invalid, "files must hold 1 to %d files", MaxAttachFiles)
 	}
+	sizes := make([]int, len(in.Files))
 	total := 0
-	files := make([]jiraapi.AttachmentFile, len(in.Files))
 	for i, f := range in.Files {
 		if err := validFilename(f.Filename); err != nil {
 			return nil, ops.Errorf(ops.Invalid, "files[%d]: %w", i, err)
 		}
-		if base64.StdEncoding.DecodedLen(len(f.Content)) > MaxAttachBytes+2 {
-			return nil, ops.Errorf(ops.Invalid, "files[%d] %s is over the %d-byte limit per call", i, f.Filename, MaxAttachBytes)
-		}
-		content, err := base64.StdEncoding.DecodeString(strings.Join(strings.Fields(f.Content), ""))
+		size, err := decodedSize(f.Content)
 		if err != nil {
 			return nil, ops.Errorf(ops.Invalid, "files[%d] %s: content is not base64: %w", i, f.Filename, err)
 		}
-		total += len(content)
-		files[i] = jiraapi.AttachmentFile{Name: f.Filename, Content: bytes.NewReader(content)}
+		sizes[i] = size
+		if total += size; total > MaxAttachBytes {
+			return nil, ops.Errorf(ops.Invalid, "files[%d] %s brings the files to %d bytes, over the %d-byte limit per call", i, f.Filename, total, MaxAttachBytes)
+		}
 	}
-	if total > MaxAttachBytes {
-		return nil, ops.Errorf(ops.Invalid, "files total %d bytes, over the %d-byte limit per call", total, MaxAttachBytes)
+	files := make([]jiraapi.AttachmentFile, len(in.Files))
+	for i, f := range in.Files {
+		content, err := decodeBase64(f.Content, sizes[i])
+		if err != nil {
+			return nil, ops.Errorf(ops.Invalid, "files[%d] %s: content is not base64: %w", i, f.Filename, err)
+		}
+		files[i] = jiraapi.AttachmentFile{Name: f.Filename, Content: bytes.NewReader(content)}
 	}
 	client, err := env.Jira(ctx)
 	if err != nil {
@@ -91,6 +97,71 @@ func attach(ctx context.Context, env ops.Env, in AttachInput) (*Attached, error)
 		receipt.Attachments = append(receipt.Attachments, AttachedFile{ID: a.ID, Filename: a.Filename, Size: a.Size, URL: jiraapi.AttachmentURL(site, a.ID)})
 	}
 	return receipt, nil
+}
+
+func isBase64Space(b byte) bool {
+	return b == ' ' || b == '\t' || b == '\n' || b == '\r' || b == '\f' || b == '\v'
+}
+
+// decodedSize is the byte count padded standard base64 decodes to, from
+// its length alone (whitespace ignored), so a size limit applies before
+// anything is decoded.
+func decodedSize(content string) (int, error) {
+	n, pad := 0, 0
+	for i := 0; i < len(content); i++ {
+		switch b := content[i]; {
+		case isBase64Space(b):
+		case b == '=':
+			n++
+			pad++
+		default:
+			if pad > 0 {
+				return 0, errors.New("data after padding")
+			}
+			n++
+		}
+	}
+	if n%4 != 0 || pad > 2 {
+		return 0, fmt.Errorf("length %d is not a multiple of 4", n)
+	}
+	return n/4*3 - pad, nil
+}
+
+// decodeBase64 decodes content into exactly size bytes, streaming past
+// whitespace instead of copying it out first.
+func decodeBase64(content string, size int) ([]byte, error) {
+	out := make([]byte, size)
+	dec := base64.NewDecoder(base64.StdEncoding, spaceSkipper{strings.NewReader(content)})
+	if _, err := io.ReadFull(dec, out); err != nil {
+		return nil, err
+	}
+	if n, err := dec.Read(make([]byte, 1)); n > 0 || (err != nil && err != io.EOF) {
+		if err == nil {
+			err = errors.New("more data than its length says")
+		}
+		return nil, err
+	}
+	return out, nil
+}
+
+// spaceSkipper drops ASCII whitespace, which base64.StdEncoding rejects
+// apart from newlines.
+type spaceSkipper struct{ r io.Reader }
+
+func (s spaceSkipper) Read(p []byte) (int, error) {
+	for {
+		n, err := s.r.Read(p)
+		kept := 0
+		for _, b := range p[:n] {
+			if !isBase64Space(b) {
+				p[kept] = b
+				kept++
+			}
+		}
+		if kept > 0 || err != nil {
+			return kept, err
+		}
+	}
 }
 
 func validFilename(name string) error {
