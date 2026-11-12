@@ -1,0 +1,5 @@
+$ atlas pr close "  " -R acme/widgets -c bye
+--- stdout
+--- requests
+--- error
+pull request selector is required

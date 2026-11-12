@@ -21,7 +21,7 @@ func newPRCloseCmd() *cobra.Command {
 		op: pr.Close,
 		input: func(cmd *cobra.Command, args []string, env *cliEnv) (pr.CloseInput, error) {
 			comment, _ := cmd.Flags().GetString("comment")
-			ref, err := env.prRef(cmd, args[0])
+			ref, err := env.requiredPRRef(cmd, args[0])
 			return pr.CloseInput{Ref: ref, Comment: comment}, err
 		},
 		human: func(w io.Writer, closed *bitbucket.PullRequest) error {
