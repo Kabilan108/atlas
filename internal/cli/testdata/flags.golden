@@ -2,6 +2,29 @@ atlas
   use: atlas
   persistent --no-cache bool default="false"
   persistent --verbose -v bool default="false"
+atlas branch
+  use: branch
+atlas branch list
+  use: list
+  aliases: ls
+  flag --filter string default=""
+  flag --json bool default="false"
+  flag --limit -L int default="30"
+  flag --repo -R string default=""
+atlas branch view
+  use: view <branch>
+  flag --json bool default="false"
+  flag --repo -R string default=""
+atlas commit
+  use: commit
+atlas commit list
+  use: list [<ref>]
+  aliases: ls
+  flag --base string default=""
+  flag --json bool default="false"
+  flag --limit -L int default="30"
+  flag --path string default=""
+  flag --repo -R string default=""
 atlas config
   use: config
 atlas config get
@@ -10,6 +33,15 @@ atlas config set
   use: set <key> [value]
 atlas config verify
   use: verify
+atlas file
+  use: file
+atlas file read
+  use: read <path>
+  flag --json bool default="false"
+  flag --max-bytes int default="0"
+  flag --ref string default=""
+  flag --repo -R string default=""
+  flag --repos stringSlice default="[]"
 atlas login
   use: login
 atlas mcp
@@ -129,6 +161,15 @@ atlas pr view
   flag --raw -r bool default="false"
   flag --repo -R string default=""
   flag --web -w bool default="false"
+atlas repo
+  use: repo
+atlas repo list
+  use: list
+  aliases: ls
+  flag --json bool default="false"
+  flag --limit -L int default="100"
+  flag --name string default=""
+  flag --workspace string default=""
 atlas snippet
   use: snippet
 atlas snippet clone
@@ -179,3 +220,13 @@ atlas snippet view
   flag --workspace string default=""
 atlas update
   use: update
+atlas user
+  use: user
+atlas user search
+  use: search <query>
+  flag --json bool default="false"
+  flag --limit -L int default="20"
+  flag --workspace string default=""
+atlas whoami
+  use: whoami
+  flag --json bool default="false"

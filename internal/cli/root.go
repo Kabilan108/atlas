@@ -86,6 +86,12 @@ func NewRootCmd(version string, opts ...Option) *cobra.Command {
 	rootCmd.AddCommand(newPRCmd())
 	rootCmd.AddCommand(newSnippetCmd())
 	rootCmd.AddCommand(newUpdateCmd(version))
+	rootCmd.AddCommand(newBranchCmd())
+	rootCmd.AddCommand(newCommitCmd())
+	rootCmd.AddCommand(newFileCmd())
+	rootCmd.AddCommand(newRepoCmd())
+	rootCmd.AddCommand(newUserCmd())
+	rootCmd.AddCommand(newWhoamiCmd())
 	wrapRunE(rootCmd, options)
 
 	return rootCmd
