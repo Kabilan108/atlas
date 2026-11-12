@@ -35,6 +35,7 @@ var Comment = &ops.Op[CommentInput, *CommentResult]{
 		Name:        "pr_comment",
 		Description: "Post one comment on a Bitbucket pull request: top level, a reply, or inline on a file or line. With edit, replace a comment's body. For several comments or a verdict use pr_review.",
 		Surfaces:    ops.Both,
+		Destructive: true,
 	},
 	Run: comment,
 	Markdown: func(r *CommentResult) (string, error) {

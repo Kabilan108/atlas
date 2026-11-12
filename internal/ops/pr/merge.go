@@ -56,6 +56,7 @@ var Merge = &ops.Op[MergeInput, *MergeReceipt]{
 		Name:        "pr_merge",
 		Description: "Merge an open PR and return the merge commit. A refusal carries Bitbucket's reason; check pr_checks and approvals. PENDING means accepted but unfinished: do not retry. Pass head so a push after the checks cannot merge unchecked code.",
 		Surfaces:    ops.Both,
+		Destructive: true,
 	},
 	Run:      merge,
 	Markdown: (*MergeReceipt).Markdown,

@@ -31,6 +31,7 @@ var Edit = &ops.Op[EditInput, *EditResult]{
 		Name:        "pr_edit",
 		Description: "Edit a Bitbucket pull request: title, description, destination branch, draft state, or reviewers.",
 		Surfaces:    ops.Both,
+		Destructive: true,
 	},
 	Run: edit,
 	Markdown: func(r *EditResult) (string, error) {

@@ -73,6 +73,7 @@ var Edit = &ops.Op[EditInput, Receipt]{
 		Name:        "snippet_edit",
 		Description: "Change a Bitbucket snippet: new title, add or replace files (name to content), remove files.",
 		Surfaces:    ops.Both,
+		Destructive: true,
 	},
 	Run: edit,
 	Markdown: func(r Receipt) (string, error) {
@@ -117,8 +118,9 @@ type RenameInput struct {
 var Rename = &ops.Op[RenameInput, Receipt]{
 	Meta: ops.Meta{
 		Name:        "snippet_rename",
-		Description: "Rename a file in a Bitbucket snippet, keeping its content.",
+		Description: "Rename a file in a Bitbucket snippet, keeping its content. A file already named to is replaced.",
 		Surfaces:    ops.Both,
+		Destructive: true,
 	},
 	Run: rename,
 	Markdown: func(r Receipt) (string, error) {

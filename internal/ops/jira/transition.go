@@ -88,7 +88,8 @@ var Transition = &ops.Op[TransitionInput, *Transitioned]{
 		Name: "jira_transition",
 		Description: "Move a Jira issue to a new status by transition name or target status, e.g. Resolved. Call it directly: " +
 			"if the name matches nothing or a required field is missing, the error lists the valid names and fields.",
-		Surfaces: ops.Both,
+		Surfaces:    ops.Both,
+		Destructive: true,
 	},
 	Run: transition,
 }
