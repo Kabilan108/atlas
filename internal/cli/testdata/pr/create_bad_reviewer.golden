@@ -2,7 +2,6 @@ $ atlas pr create -R acme/widgets -t x -r nobody
 --- stdout
 --- requests
 GET /2.0/repositories/acme/widgets
-GET /2.0/users/nobody
+GET /2.0/workspaces/acme/members?pagelen=100
 --- error
-failed to resolve reviewer "nobody": resource: resource '/2.0/users/nobody' not found
-Hint: Check that the resource exists and you have access to it
+no workspace member of acme is named "nobody"

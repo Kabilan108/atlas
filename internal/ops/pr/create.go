@@ -2,7 +2,6 @@ package pr
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"github.com/kabilan108/atlas/internal/bitbucket"
@@ -16,7 +15,7 @@ type CreateInput struct {
 	Head      string   `json:"head" jsonschema:"source branch; must already be pushed"`
 	Base      string   `json:"base,omitempty" jsonschema:"destination branch; default the repo's main branch"`
 	Body      string   `json:"body,omitempty" jsonschema:"markdown description"`
-	Reviewers []string `json:"reviewers,omitempty" jsonschema:"reviewer account IDs or UUIDs"`
+	Reviewers []string `json:"reviewers,omitempty" jsonschema:"account IDs, UUIDs, or exact display names; an ambiguous name fails with the candidates"`
 	Draft     bool     `json:"draft,omitempty"`
 }
 
@@ -67,7 +66,7 @@ func PrepareCreate(ctx context.Context, env ops.Env, in CreateInput) (ops.Reposi
 			return repo, payload, err
 		}
 	}
-	reviewers, err := resolveReviewers(ctx, client, in.Reviewers)
+	reviewers, err := resolveReviewers(ctx, client, repo.Workspace, in.Reviewers)
 	if err != nil {
 		return repo, payload, err
 	}
@@ -93,18 +92,4 @@ func DefaultBase(ctx context.Context, client *bitbucket.Client, repo ops.Reposit
 		return repository.MainBranch.Name, nil
 	}
 	return "main", nil
-}
-
-// resolveReviewers looks up each stable identifier (account ID, UUID, or
-// username; a leading @ is ignored).
-func resolveReviewers(ctx context.Context, client *bitbucket.Client, ids []string) ([]bitbucket.User, error) {
-	reviewers := make([]bitbucket.User, 0, len(ids))
-	for _, id := range ids {
-		user, err := client.GetUser(ctx, strings.TrimPrefix(id, "@"))
-		if err != nil {
-			return nil, fmt.Errorf("failed to resolve reviewer %q: %w", id, err)
-		}
-		reviewers = append(reviewers, *user)
-	}
-	return reviewers, nil
 }

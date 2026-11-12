@@ -86,6 +86,12 @@ func (f *Fixture) serveMore(w http.ResponseWriter, r *http.Request, path, body s
 		writeJSON(w, grace)
 	case get && strings.HasPrefix(path, "/users/") && userByID[strings.TrimPrefix(path, "/users/")] != "":
 		writeJSON(w, userByID[strings.TrimPrefix(path, "/users/")])
+	case get && path == "/workspaces/"+Workspace+"/members":
+		var members []string
+		for _, user := range []string{ada, grace, linus, ken, mentionedUserJSON, samA, samB} {
+			members = append(members, `{"user":`+user+`}`)
+		}
+		writeJSON(w, `{"values":[`+strings.Join(members, ",")+`]}`)
 	case get && path == "/repositories/"+Workspace:
 		writeJSON(w, `{"values":[{"name":"widgets","full_name":"acme/widgets"},{"name":"Gadgets","full_name":"acme/gadgets"}]}`)
 	case get && path == repoPath:
@@ -127,6 +133,12 @@ func (f *Fixture) serveMore(w http.ResponseWriter, r *http.Request, path, body s
 	}
 	return true
 }
+
+// Two workspace members share the display name Sam Lee.
+const (
+	samA = `{"display_name":"Sam Lee","nickname":"slee","account_id":"557058:sam-a","uuid":"{sam-a}"}`
+	samB = `{"display_name":"Sam  lee","nickname":"samlee","account_id":"557058:sam-b","uuid":"{sam-b}"}`
+)
 
 var userByID = map[string]string{
 	AdaID:              ada,

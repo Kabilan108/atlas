@@ -46,8 +46,8 @@ func TestCreateRejects(t *testing.T) {
 		wantInvalid(t, err, fixture, tc.want)
 	}
 	env, fixture := newTestEnv(t, "")
-	if _, err := invoke(t, pr.Create, env, `{"repo":"acme/widgets","title":"x","head":"y","base":"main","reviewers":["nobody"]}`); err == nil {
+	if _, err := invoke(t, pr.Create, env, `{"repo":"acme/widgets","title":"x","head":"y","base":"main","reviewers":["557058:nobody"]}`); err == nil {
 		t.Fatal("unknown reviewer accepted")
 	}
-	wantCalls(t, fixture, "GET /2.0/users/nobody")
+	wantCalls(t, fixture, "GET /2.0/users/557058:nobody")
 }

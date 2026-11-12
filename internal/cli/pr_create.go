@@ -27,7 +27,7 @@ func newPRCreateCmd() *cobra.Command {
 	cmd.Flags().StringP("body-file", "F", "", "Read body text from file (use - to read from stdin)")
 	cmd.Flags().BoolP("editor", "e", false, "Open the editor to write the pull request body")
 	cmd.Flags().BoolP("fill", "f", false, "Use commit info for title and body")
-	cmd.Flags().StringP("reviewer", "r", "", "Request reviews from people by identifier")
+	cmd.Flags().StringP("reviewer", "r", "", "Request reviews by account ID, UUID, or exact display name (comma-separated)")
 	cmd.Flags().Bool("push", false, "Push the head branch before creating the PR")
 	cmd.Flags().Bool("dry-run", false, "Print details instead of creating the PR")
 	cmd.Flags().Bool("draft", false, "Create the pull request as draft")
