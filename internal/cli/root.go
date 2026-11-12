@@ -44,9 +44,9 @@ func optionsFrom(cmd *cobra.Command) *rootOptions {
 	return &rootOptions{}
 }
 
-// attachOptions makes options visible to every command's RunE through its
-// context, whichever Execute variant runs the tree.
-func attachOptions(cmd *cobra.Command, options *rootOptions) {
+// wrapRunE gives every command's RunE the root options through its context,
+// whichever Execute variant runs the tree, and adds CLI hints to its errors.
+func wrapRunE(cmd *cobra.Command, options *rootOptions) {
 	if run := cmd.RunE; run != nil {
 		cmd.RunE = func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -54,11 +54,11 @@ func attachOptions(cmd *cobra.Command, options *rootOptions) {
 				ctx = context.Background()
 			}
 			cmd.SetContext(context.WithValue(ctx, rootOptionsKey{}, options))
-			return run(cmd, args)
+			return withCLIHint(run(cmd, args))
 		}
 	}
 	for _, child := range cmd.Commands() {
-		attachOptions(child, options)
+		wrapRunE(child, options)
 	}
 }
 
@@ -86,7 +86,7 @@ func NewRootCmd(version string, opts ...Option) *cobra.Command {
 	rootCmd.AddCommand(newPRCmd())
 	rootCmd.AddCommand(newSnippetCmd())
 	rootCmd.AddCommand(newUpdateCmd(version))
-	attachOptions(rootCmd, options)
+	wrapRunE(rootCmd, options)
 
 	return rootCmd
 }

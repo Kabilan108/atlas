@@ -22,11 +22,19 @@ const (
 	ExitRateLimited   = 6
 )
 
+// APIError is a failed Bitbucket API call. Hint is neutral advice that holds
+// for any front end; the CLI and the MCP server add their own.
 type APIError struct {
 	StatusCode int
 	Message    string
 	Resource   string
 	Hint       string
+}
+
+// HTTPStatus reports the response status, so callers can classify the error
+// without depending on this type.
+func (e *APIError) HTTPStatus() int {
+	return e.StatusCode
 }
 
 func (e *APIError) Error() string {
@@ -67,13 +75,19 @@ func (e *APIError) ExitCode() int {
 	}
 }
 
+// ScopeHint is the hint on 403 errors.
+const ScopeHint = "Check that the API token has the scopes this request needs"
+
 func NewAuthError(statusCode int, message string) *APIError {
-	return &APIError{
+	err := &APIError{
 		StatusCode: statusCode,
 		Message:    message,
 		Resource:   "authentication",
-		Hint:       "Run 'atlas config verify' to check your credentials, or 'atlas login' to set them up",
 	}
+	if statusCode == 403 {
+		err.Hint = ScopeHint
+	}
+	return err
 }
 
 func NewNotFoundError(resource, identifier string) *APIError {
@@ -87,9 +101,9 @@ func NewNotFoundError(resource, identifier string) *APIError {
 
 func NewRateLimitError(resetTime time.Time) *APIError {
 	waitDuration := time.Until(resetTime).Round(time.Second)
-	hint := fmt.Sprintf("Rate limit resets in %s. Use --retry to automatically wait and retry", waitDuration)
+	hint := fmt.Sprintf("Rate limit resets in %s", waitDuration)
 	if waitDuration <= 0 {
-		hint = "Rate limit should reset soon. Use --retry to automatically retry"
+		hint = "Rate limit should reset soon"
 	}
 
 	return &APIError{
