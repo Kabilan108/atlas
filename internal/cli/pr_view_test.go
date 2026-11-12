@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/kabilan108/atlas/internal/ops/pr/prtest"
@@ -93,5 +94,30 @@ func TestPRViewMatchesGolden(t *testing.T) {
 				t.Fatalf("atlas pr %v output differs from %s\n--- got ---\n%s\n--- want ---\n%s", tc.args, tc.golden, got, want)
 			}
 		})
+	}
+}
+
+// A URL names its repository, so view must not need -R or a git checkout, and
+// must not let -R redirect calls to another repository.
+func TestPRViewURLNeedsNoGitAndKeepsItsRepository(t *testing.T) {
+	for _, args := range [][]string{
+		{"pr", "view", prtest.URL, "--raw", "-c"},
+		{"pr", "view", prtest.URL, "-R", "other/elsewhere", "--raw", "-c"},
+	} {
+		fixture := prtest.New()
+		setupCLIFixture(t, fixture)
+		t.Chdir(t.TempDir())
+		got, err := runAtlas(t, append([]string{"--no-cache"}, args...)...)
+		if err != nil {
+			t.Fatalf("atlas %v: %v", args, err)
+		}
+		if want := prtest.Golden("view_comments.md"); got != want {
+			t.Fatalf("atlas %v output differs from view_comments.md\n--- got ---\n%s", args, got)
+		}
+		for _, req := range fixture.Requests() {
+			if strings.HasPrefix(req.Path, "/2.0/repositories/") && !strings.HasPrefix(req.Path, "/2.0/repositories/acme/widgets/") {
+				t.Fatalf("atlas %v requested %s", args, req.Path)
+			}
+		}
 	}
 }

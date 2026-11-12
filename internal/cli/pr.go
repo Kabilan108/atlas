@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -31,11 +30,6 @@ type prRef struct {
 	repo      string
 	id        int
 	branch    string
-}
-
-type PRViewJSON struct {
-	*bitbucket.PullRequest
-	Comments []bitbucket.Comment `json:"comments,omitempty"`
 }
 
 func newPRCmd() *cobra.Command {
@@ -284,136 +278,6 @@ func normalizePRState(state string) (string, error) {
 		return "SUPERSEDED", nil
 	default:
 		return "", fmt.Errorf("invalid PR state %q: expected open, merged, declined, closed, or superseded", state)
-	}
-}
-
-func newPRViewCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "view [number|url|branch]",
-		Short: "View a pull request",
-		Args:  cobra.MaximumNArgs(1),
-		RunE:  runPRView,
-	}
-	addPRRepoFlag(cmd)
-	cmd.Flags().BoolP("comments", "c", false, "Include comments")
-	cmd.Flags().Bool("all", false, "Include resolved comments (only with --comments)")
-	cmd.Flags().Bool("json", false, "Output as JSON")
-	cmd.Flags().BoolP("raw", "r", false, "Print raw markdown to stdout")
-	cmd.Flags().BoolP("web", "w", false, "Open the pull request in the browser")
-	return cmd
-}
-
-func runPRView(cmd *cobra.Command, args []string) error {
-	showComments, _ := cmd.Flags().GetBool("comments")
-	includeResolved, _ := cmd.Flags().GetBool("all")
-	jsonOutput, _ := cmd.Flags().GetBool("json")
-	rawOutput, _ := cmd.Flags().GetBool("raw")
-	webOutput, _ := cmd.Flags().GetBool("web")
-	ctx, pr, err := resolvePR(cmd, optionalArg(args), true)
-	if err != nil {
-		return err
-	}
-	if webOutput {
-		return openBrowser(pr.Links.HTML.Href)
-	}
-	if jsonOutput {
-		result := PRViewJSON{PullRequest: pr}
-		comments, err := ctx.client.ListPullRequestComments(ctx.workspace, ctx.repo, pr.ID)
-		if err != nil {
-			return fmt.Errorf("failed to fetch comments: %w", err)
-		}
-		result.Comments = comments
-		return output.WriteJSON(os.Stdout, result)
-	}
-
-	markdown, err := renderPRMarkdown(ctx, pr, showComments, includeResolved)
-	if err != nil {
-		return err
-	}
-	if !rawOutput && term.IsTerminal(int(os.Stdout.Fd())) {
-		return pageMarkdown(markdown, fmt.Sprintf("pr-%d.md", pr.ID))
-	}
-	_, err = os.Stdout.Write(markdown)
-	return err
-}
-
-func renderPRMarkdown(ctx *prContext, pr *bitbucket.PullRequest, showComments, includeResolved bool) ([]byte, error) {
-	var buf bytes.Buffer
-	var comments []bitbucket.Comment
-	var tasks []bitbucket.Task
-	var diff []byte
-	commentsLoaded := false
-	tasksLoaded := false
-	if showComments {
-		var err error
-		comments, err = ctx.client.ListPullRequestComments(ctx.workspace, ctx.repo, pr.ID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to fetch comments: %w", err)
-		}
-		commentsLoaded = true
-		tasks, err = ctx.client.ListPullRequestTasks(ctx.workspace, ctx.repo, pr.ID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to fetch tasks: %w", err)
-		}
-		tasksLoaded = true
-		diff, _ = ctx.client.GetPullRequestDiff(ctx.workspace, ctx.repo, pr.ID)
-	}
-	mdWriter := output.NewPRMarkdownWriter(&buf)
-	knownUsers := append([]bitbucket.User{pr.Author}, pr.Reviewers...)
-	for _, participant := range pr.Participants {
-		knownUsers = append(knownUsers, participant.User)
-	}
-	for _, comment := range comments {
-		knownUsers = append(knownUsers, comment.User)
-	}
-	for _, task := range tasks {
-		knownUsers = append(knownUsers, task.Comment.User)
-	}
-	resolveUser := newUserResolver(ctx.client, knownUsers...)
-	mdWriter.SetUserResolver(resolveUser)
-	mdWriter.SetContext(ctx.workspace, ctx.repo, comments, commentsLoaded, tasks, tasksLoaded)
-	if err := mdWriter.WritePR(pr); err != nil {
-		return nil, err
-	}
-	if showComments {
-		fmt.Fprintln(&buf)
-		commentWriter := output.NewCommentWriter(&buf, pr.Author)
-		commentWriter.SetUserResolver(resolveUser)
-		if len(diff) > 0 {
-			commentWriter.SetDiff(diff)
-		}
-		if err := commentWriter.WriteComments(comments, includeResolved); err != nil {
-			return nil, err
-		}
-		if len(tasks) > 0 {
-			fmt.Fprintln(&buf)
-			taskWriter := output.NewTaskWriter(&buf)
-			taskWriter.SetUserResolver(resolveUser)
-			if err := taskWriter.WriteTasks(tasks); err != nil {
-				return nil, err
-			}
-		}
-	}
-	return buf.Bytes(), nil
-}
-
-func newUserResolver(client *bitbucket.Client, users ...bitbucket.User) func(string) (bitbucket.User, bool) {
-	cache := make(map[string]bitbucket.User)
-	for _, user := range users {
-		if user.AccountID != "" {
-			cache[user.AccountID] = user
-		}
-	}
-	return func(accountID string) (bitbucket.User, bool) {
-		if user, ok := cache[accountID]; ok {
-			return user, true
-		}
-		user, err := client.GetUser(accountID)
-		if err != nil {
-			return bitbucket.User{}, false
-		}
-		cache[accountID] = *user
-		return *user, true
 	}
 }
 
