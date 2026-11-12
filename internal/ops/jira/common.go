@@ -189,6 +189,11 @@ func shapeFields(ctx context.Context, client *jiraapi.Client, s screen, fields m
 			return ops.Errorf(ops.Invalid, "field %s (%s) is set twice", meta.Name, id)
 		}
 		value := fields[name]
+		if jiraapi.IsRichText(meta.Schema) {
+			if value, err = richTextValue(meta, value); err != nil {
+				return err
+			}
+		}
 		if isUserField(meta) {
 			if value, err = userValues(ctx, client, value, scope); err != nil {
 				return err
@@ -201,6 +206,27 @@ func shapeFields(ctx context.Context, client *jiraapi.Client, s screen, fields m
 		set[id] = shaped
 	}
 	return nil
+}
+
+// richTextValue converts markdown for a rich-text field under the body size
+// limit. An ADF document passes through under the same limit; null clears.
+func richTextValue(meta jiraapi.FieldMeta, value any) (any, error) {
+	switch v := value.(type) {
+	case nil:
+		return nil, nil
+	case string:
+		return markdownBody(meta.Name, v)
+	case map[string]any:
+		data, err := json.Marshal(v)
+		if err != nil {
+			return nil, ops.Errorf(ops.Invalid, "%s: %w", meta.Name, err)
+		}
+		if len(data) > MaxBodyBytes {
+			return nil, ops.Errorf(ops.Invalid, "%s is %d bytes of ADF, over the %d-byte limit", meta.Name, len(data), MaxBodyBytes)
+		}
+		return json.RawMessage(data), nil
+	}
+	return nil, ops.Errorf(ops.Invalid, "%s takes markdown text, an ADF document, or null", meta.Name)
 }
 
 func isUserField(meta jiraapi.FieldMeta) bool {

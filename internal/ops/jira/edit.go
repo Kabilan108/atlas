@@ -61,8 +61,11 @@ func edit(ctx context.Context, env ops.Env, in EditInput) (*Edited, error) {
 	if in.Summary == "" && in.Body == "" && len(in.Labels) == 0 && in.Assignee == "" && len(in.Fields) == 0 {
 		return nil, ops.Errorf(ops.Invalid, "nothing to change: set summary, body, labels, assignee or fields")
 	}
-	if in.Body == "" && (in.BodyMode != "" || in.Force) {
-		return nil, ops.Errorf(ops.Invalid, "body_mode and force apply only with body")
+	if in.Body == "" && in.BodyMode != "" {
+		return nil, ops.Errorf(ops.Invalid, "body_mode applies only with body")
+	}
+	if in.Force && in.Body == "" && len(in.Fields) == 0 {
+		return nil, ops.Errorf(ops.Invalid, errForceScope)
 	}
 	client, err := env.Jira(ctx)
 	if err != nil {
@@ -110,6 +113,7 @@ func edit(ctx context.Context, env ops.Env, in EditInput) (*Edited, error) {
 		changed = append(changed, "assignee")
 	}
 	var metas []jiraapi.FieldMeta
+	var richText []jiraapi.FieldMeta
 	if len(in.Fields) > 0 {
 		if metas, err = client.EditMeta(ctx, key); err != nil {
 			return nil, fmt.Errorf("fetch edit fields for %s: %w", key, err)
@@ -119,9 +123,22 @@ func edit(ctx context.Context, env ops.Env, in EditInput) (*Edited, error) {
 			return nil, err
 		}
 		for _, id := range slices.Sorted(maps.Keys(input.Fields)) {
-			if _, ok := before[id]; !ok {
-				changed = append(changed, fieldName(metas, id))
+			if _, ok := before[id]; ok {
+				continue
 			}
+			meta := fieldMeta(metas, id)
+			changed = append(changed, meta.Name)
+			if jiraapi.IsRichText(meta.Schema) {
+				richText = append(richText, meta)
+			}
+		}
+	}
+	if in.Force && in.Body == "" && len(richText) == 0 {
+		return nil, ops.Errorf(ops.Invalid, errForceScope)
+	}
+	if !in.Force {
+		if err := guardRichText(ctx, client, key, richText, input.Fields); err != nil {
+			return nil, err
 		}
 	}
 	site, err := siteURL(ctx, client)
@@ -167,11 +184,49 @@ func editedDescription(ctx context.Context, client *jiraapi.Client, key string, 
 	return body, "description", nil
 }
 
-func fieldName(metas []jiraapi.FieldMeta, id string) string {
+const errForceScope = "force applies only with body or a rich-text field"
+
+// guardRichText refuses to clear a rich-text field, or to replace one whose
+// current content markdown can't hold, the same way body replace does.
+// force skips it.
+func guardRichText(ctx context.Context, client *jiraapi.Client, key string, fields []jiraapi.FieldMeta, values map[string]any) error {
+	if len(fields) == 0 {
+		return nil
+	}
+	ids := make([]string, len(fields))
+	for i, meta := range fields {
+		if values[meta.ID()] == nil {
+			return ops.Errorf(ops.Invalid, "clearing %s on %s deletes its content; set force to clear it", meta.Name, key)
+		}
+		ids[i] = meta.ID()
+	}
+	issue, err := client.GetIssue(ctx, key, jiraapi.GetIssueOptions{Fields: ids})
+	if err != nil {
+		return err
+	}
+	for _, meta := range fields {
+		lossy, err := adf.Approximate(issue.RawFields[meta.ID()])
+		if err != nil {
+			return fmt.Errorf("read %s's %s: %w", key, meta.Name, err)
+		}
+		if lossy.Total() == 0 {
+			continue
+		}
+		hint := "Set force to replace it anyway"
+		if meta.Schema.System == "description" {
+			hint = "Use body with body_mode append, or force to replace it anyway"
+		}
+		return ops.Errorf(ops.Invalid, "%s's %s has content markdown can't hold (%s); replacing it would lose that. %s", key, meta.Name, lossy, hint)
+	}
+	return nil
+}
+
+// fieldMeta finds id in metas, or a meta named by the bare id.
+func fieldMeta(metas []jiraapi.FieldMeta, id string) jiraapi.FieldMeta {
 	for _, meta := range metas {
 		if meta.ID() == id {
-			return meta.Name
+			return meta
 		}
 	}
-	return id
+	return jiraapi.FieldMeta{FieldID: id, Name: id}
 }
