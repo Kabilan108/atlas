@@ -49,6 +49,9 @@ func bind[In, Out any](cmd *cobra.Command, b binding[In, Out]) *cobra.Command {
 	}
 	cmd.Annotations[opAnnotation] = b.op.Name
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		// Flag and argument errors are reported before RunE with usage; an
+		// error from here on is about the request, so usage would be noise.
+		cmd.SilenceUsage = true
 		env, err := newCLIEnv(cmd)
 		if err != nil {
 			return err

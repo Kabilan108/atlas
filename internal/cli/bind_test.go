@@ -143,3 +143,18 @@ func TestBindAfterRunsOnSuccessAndItsErrorFails(t *testing.T) {
 		t.Fatalf("err = %v, want partial", err)
 	}
 }
+
+func TestBindSilencesUsageForRunErrors(t *testing.T) {
+	setupCLIEnv(t)
+	cmd := bind(&cobra.Command{Use: "fake"}, binding[fakeIn, fakeOut]{op: fakeOp(false), input: itemsInput})
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"fail"})
+	if err := cmd.ExecuteContext(context.Background()); err == nil {
+		t.Fatal("expected an error")
+	}
+	if strings.Contains(out.String(), "Usage:") {
+		t.Fatalf("usage printed after a run error:\n%s", out.String())
+	}
+}
