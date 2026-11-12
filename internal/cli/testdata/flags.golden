@@ -281,6 +281,7 @@ atlas pr merge
   use: merge [number|url|branch]
   flag --close-source-branch bool default="false"
   flag --json bool default="false"
+  flag --match-head-commit string default=""
   flag --message string default=""
   flag --repo -R string default=""
   flag --strategy string default=""

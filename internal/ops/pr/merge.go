@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -30,6 +31,7 @@ type MergeInput struct {
 	Strategy          MergeStrategy `json:"strategy,omitempty" jsonschema:"default: the destination branch's"`
 	Message           string        `json:"message,omitempty" jsonschema:"merge commit message"`
 	CloseSourceBranch *bool         `json:"close_source_branch,omitempty" jsonschema:"default: the PR's setting"`
+	Head              string        `json:"head,omitempty" jsonschema:"merge only if the PR head is still this commit (from pr_checks); refuses if it moved"`
 	WaitSeconds       int           `json:"wait_seconds,omitempty" jsonschema:"wait for a queued merge, default 120, max 600"`
 }
 
@@ -52,7 +54,7 @@ const MergePending = "PENDING"
 var Merge = &ops.Op[MergeInput, *MergeReceipt]{
 	Meta: ops.Meta{
 		Name:        "pr_merge",
-		Description: "Merge an open PR and return the merge commit. A refusal carries Bitbucket's reason; check pr_checks and approvals. PENDING means accepted but unfinished: do not retry.",
+		Description: "Merge an open PR and return the merge commit. A refusal carries Bitbucket's reason; check pr_checks and approvals. PENDING means accepted but unfinished: do not retry. Pass head so a push after the checks cannot merge unchecked code.",
 		Surfaces:    ops.Both,
 	},
 	Run:      merge,
@@ -64,6 +66,10 @@ func merge(ctx context.Context, env ops.Env, in MergeInput) (*MergeReceipt, erro
 	if err != nil {
 		return nil, err
 	}
+	head := strings.TrimSpace(in.Head)
+	if head != "" && !commitPattern.MatchString(head) {
+		return nil, ops.Errorf(ops.Invalid, "invalid head %q: expected a commit SHA", in.Head)
+	}
 	target, err := in.ResolveCurrent(ctx, env)
 	if err != nil {
 		return nil, err
@@ -71,6 +77,9 @@ func merge(ctx context.Context, env ops.Env, in MergeInput) (*MergeReceipt, erro
 	id := target.PR.ID
 	if target.PR.State != "OPEN" {
 		return nil, ops.Errorf(ops.Conflict, "PR #%d is %s, not OPEN; nothing to merge", id, target.PR.State)
+	}
+	if current := target.PR.Source.Commit.Hash; head != "" && !sameCommit(head, current) {
+		return nil, ops.Errorf(ops.Conflict, "PR #%d's head is now %s, not %s: someone pushed since; read pr_checks for the new head before merging", id, current, head)
 	}
 	client, err := env.Bitbucket(ctx)
 	if err != nil {
@@ -118,6 +127,18 @@ func merge(ctx context.Context, env ops.Env, in MergeInput) (*MergeReceipt, erro
 		receipt.MergeCommit = merged.MergeCommit.Hash
 	}
 	return receipt, nil
+}
+
+var commitPattern = regexp.MustCompile(`^[0-9a-fA-F]{7,40}$`)
+
+// sameCommit compares commit hashes of any length, since Bitbucket gives PR
+// heads as short hashes.
+func sameCommit(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	a, b = strings.ToLower(a), strings.ToLower(b)
+	return strings.HasPrefix(a, b) || strings.HasPrefix(b, a)
 }
 
 func waitDuration(seconds int) (time.Duration, error) {

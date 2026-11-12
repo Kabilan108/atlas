@@ -28,6 +28,8 @@ var toolBudgetExceptions = map[string]int{
 	"pr_comment": 1152,
 	// pr_edit's two reviewer lists say how names resolve.
 	"pr_edit": 1152,
+	// pr_merge's strategy enum and the head guard.
+	"pr_merge": 1248,
 }
 
 func TestToolsListBudget(t *testing.T) {
