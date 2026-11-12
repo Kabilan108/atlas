@@ -32,9 +32,10 @@ func newMCPServeCmd(version string) *cobra.Command {
 		Short: "Serve Atlas tools over stateless Streamable HTTP",
 		Long: fmt.Sprintf(`Serve Atlas tools at /mcp over stateless Streamable HTTP.
 
-Each request carries its own credentials in the %s and %s headers.
-The server stores no credentials, keeps no sessions, and never uses the disk
-cache. Request logs go to stderr and never include headers.`, mcpserver.HeaderEmail, mcpserver.HeaderBitbucketToken),
+Each request carries its own credentials in the %s and
+%s headers. The server stores no credentials, keeps no
+sessions, and never uses the disk cache. Request logs go to stderr and never
+include headers.`, mcpserver.HeaderEmail, mcpserver.HeaderBitbucketToken),
 		Args: cobra.NoArgs,
 		RunE: runMCPServe(version),
 	}
