@@ -1,0 +1,176 @@
+atlas
+  use: atlas
+  persistent --no-cache bool default="false"
+  persistent --verbose -v bool default="false"
+atlas config
+  use: config
+atlas config get
+  use: get <key>
+atlas config set
+  use: set <key> [value]
+atlas config verify
+  use: verify
+atlas login
+  use: login
+atlas mcp
+  use: mcp
+atlas mcp serve
+  use: serve
+  flag --addr string default="127.0.0.1:8080"
+  flag --workspace string default=""
+atlas pr
+  use: pr
+atlas pr approve
+  use: approve [number|url|branch]
+  flag --body -b string default=""
+  flag --body-file -F string default=""
+  flag --editor -e bool default="false"
+  flag --json bool default="false"
+  flag --repo -R string default=""
+atlas pr checkout
+  use: checkout <number|url|branch>
+  flag --branch -b string default=""
+  flag --detach bool default="false"
+  flag --force -f bool default="false"
+  flag --recurse-submodules bool default="false"
+  flag --repo -R string default=""
+atlas pr clear-change-request
+  use: clear-change-request [number|url|branch]
+  flag --json bool default="false"
+  flag --repo -R string default=""
+atlas pr close
+  use: close <number|url|branch>
+  flag --comment -c string default=""
+  flag --repo -R string default=""
+atlas pr comment
+  use: comment [number|url|branch]
+  flag --body -b string default=""
+  flag --body-file -F string default=""
+  flag --editor -e bool default="false"
+  flag --json bool default="false"
+  flag --line int default="0"
+  flag --path string default=""
+  flag --reply-to int default="0"
+  flag --repo -R string default=""
+  flag --side string default="new"
+atlas pr create
+  use: create
+  flag --base -B string default=""
+  flag --body -b string default=""
+  flag --body-file -F string default=""
+  flag --draft bool default="false"
+  flag --dry-run bool default="false"
+  flag --editor -e bool default="false"
+  flag --fill -f bool default="false"
+  flag --head -H string default=""
+  flag --push bool default="false"
+  flag --repo -R string default=""
+  flag --reviewer -r string default=""
+  flag --title -t string default=""
+  flag --web -w bool default="false"
+atlas pr diff
+  use: diff [number|url|branch]
+  flag --color string default="auto"
+  flag --name-only bool default="false"
+  flag --patch bool default="false"
+  flag --repo -R string default=""
+  flag --structured -s bool default="false"
+atlas pr edit
+  use: edit [number|url|branch]
+  flag --add-reviewer string default=""
+  flag --body -b string default=""
+  flag --body-file -F string default=""
+  flag --draft bool default="false" cobra_annotation_mutually_exclusive=draft ready
+  flag --ready bool default="false" cobra_annotation_mutually_exclusive=draft ready
+  flag --remove-reviewer string default=""
+  flag --repo -R string default=""
+  flag --title -t string default=""
+atlas pr list
+  use: list
+  flag --all bool default="false"
+  flag --author string default=""
+  flag --json bool default="false"
+  flag --repo -R string default=""
+  flag --reviewer string default=""
+  flag --state string default="open"
+atlas pr request-changes
+  use: request-changes [number|url|branch]
+  flag --body -b string default=""
+  flag --body-file -F string default=""
+  flag --editor -e bool default="false"
+  flag --json bool default="false"
+  flag --repo -R string default=""
+atlas pr review
+  use: review [number|url|branch]
+  flag --approve bool default="false"
+  flag --body -b string default=""
+  flag --body-file -F string default=""
+  flag --comment bool default="false"
+  flag --comment-spec string default=""
+  flag --editor -e bool default="false"
+  flag --json bool default="false"
+  flag --repo -R string default=""
+  flag --request-changes bool default="false"
+atlas pr status
+  use: status
+  flag --json bool default="false"
+  flag --repo -R string default=""
+atlas pr unapprove
+  use: unapprove [number|url|branch]
+  flag --json bool default="false"
+  flag --repo -R string default=""
+atlas pr view
+  use: view [number|url|branch]
+  flag --all bool default="false"
+  flag --comments -c bool default="false"
+  flag --json bool default="false"
+  flag --raw -r bool default="false"
+  flag --repo -R string default=""
+  flag --web -w bool default="false"
+atlas snippet
+  use: snippet
+atlas snippet clone
+  use: clone <snippet> [<directory>] [-- <gitflags>...]
+  flag --protocol string default="ssh"
+  flag --workspace string default=""
+atlas snippet create
+  use: create [<filename>... | -]
+  aliases: new
+  flag --filename -f string default=""
+  flag --json bool default="false"
+  flag --public -p bool default="false"
+  flag --title string default="" cobra_annotation_bash_completion_one_required_flag=true
+  flag --workspace string default=""
+atlas snippet delete
+  use: delete [<snippet>]
+  flag --workspace string default=""
+  flag --yes bool default="false"
+atlas snippet edit
+  use: edit <snippet> [<filename>]
+  flag --add -a string default=""
+  flag --filename -f string default=""
+  flag --remove -r string default=""
+  flag --title string default=""
+  flag --workspace string default=""
+atlas snippet list
+  use: list
+  aliases: ls
+  flag --json bool default="false"
+  flag --limit -L int default="10"
+  flag --private bool default="false"
+  flag --public bool default="false"
+  flag --role string default=""
+  flag --workspace string default=""
+atlas snippet rename
+  use: rename <snippet> <old-filename> <new-filename>
+  flag --workspace string default=""
+atlas snippet view
+  use: view [<snippet>]
+  flag --filename -f string default=""
+  flag --files bool default="false"
+  flag --json bool default="false"
+  flag --raw -r bool default="false"
+  flag --web -w bool default="false"
+  flag --workspace string default=""
+atlas update
+  use: update
