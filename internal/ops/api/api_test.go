@@ -108,6 +108,16 @@ func TestTemplate(t *testing.T) {
 		"/2.0/workspaces/acme/members":                                                      "/2.0/workspaces/{workspace}/members",
 		"/2.0/repositories/acme":                                                            "/2.0/repositories/{workspace}",
 		"/rest/api/3/issue/CSM-756/comment":                                                 "/rest/api/3/issue/{issue}/comment",
+		"/rest/api/3/user/properties/alice%40example.invalid?accountId=557058:abc":          "/rest/api/3/user/properties/{value}",
+		"/rest/api/3/issue/CSM-1/properties/sd.public.comment":                              "/rest/api/3/issue/{issue}/properties/{value}",
+		"/rest/api/3/issue/createmeta/CSM/issuetypes":                                       "/rest/api/3/issue/createmeta/{value}/issuetypes",
+		"/rest/api/3/users/search?query=alice":                                              "/rest/api/3/users/search",
+		"/rest/api/3/mystery/alice@example.invalid/Secret_Name":                             "/rest/api/3/{value}/{value}/{value}",
+		"/rest/api/9/issue":                                                         "/rest/api/{value}/issue",
+		"/rest/servicedeskapi/request/CSM-1/comment":                                "/rest/servicedeskapi/request/{key}/comment",
+		"/2.0/users/alice@example.invalid":                                          "/2.0/users/{user}",
+		"/2.0/repositories/acme/app/pullrequests/42/comments/7/acme-internal-label": "/2.0/repositories/{workspace}/{repo}/pullrequests/{id}/comments/{id}/{value}",
+		"/wiki/rest/api/content/123":                                                "/{path}",
 	} {
 		if got := api.Template(path); got != want {
 			t.Errorf("Template(%q) = %q, want %q", path, got, want)
