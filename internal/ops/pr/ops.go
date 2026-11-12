@@ -6,5 +6,7 @@ import "github.com/kabilan108/atlas/internal/ops"
 func Ops() []ops.Def {
 	return []ops.Def{
 		View,
+		Checks,
+		Merge,
 	}
 }
