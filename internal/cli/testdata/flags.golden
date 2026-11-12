@@ -2,6 +2,10 @@ atlas
   use: atlas
   persistent --no-cache bool default="false"
   persistent --verbose -v bool default="false"
+atlas api
+  use: api <path>
+  flag --json bool default="false"
+  flag --max-bytes int default="0"
 atlas branch
   use: branch
 atlas branch list
