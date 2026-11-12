@@ -1,0 +1,52 @@
+---
+pr: 42
+workspace: 'acme'
+repo: 'widgets'
+title: 'Fix login: handle ''empty'' users'
+state: 'OPEN'
+draft: false
+author:
+  name: 'ada'
+  mention: '@ada'
+source_branch: 'feature/login'
+destination_branch: 'main'
+updated_at: '2025-03-05T16:30:00Z'
+bitbucket_url: 'https://bitbucket.org/acme/widgets/pull-requests/42'
+comment_count: 5
+task_count: 2
+reviewers:
+  -
+    name: 'grace'
+    mention: '@grace'
+    status: 'approved'
+  -
+    name: 'ken'
+    mention: '@ken'
+    status: 'pending'
+  -
+    name: 'linus'
+    mention: '@linus'
+    status: 'changes_requested'
+---
+
+# PR #42: Fix login: handle 'empty' users
+
+## Review Summary
+
+- Reviewers: 1 approved, 1 changes requested, 1 pending
+- Comments: 5 total
+- Tasks: 2 total
+
+## Description
+
+Fixes login for @margaret and @grace.
+
+- returns errEmpty
+- keeps the session
+
+```
+@{557058:in-fence}
+```
+
+See `@{557058:inline-code}` for details.
+

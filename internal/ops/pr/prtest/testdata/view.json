@@ -1,0 +1,516 @@
+{
+  "id": 42,
+  "title": "Fix login: handle 'empty' users",
+  "description": "Fixes login for @{557058:mentioned} and @{557058:grace}.\n\n- returns errEmpty\n- keeps the session\n\n```\n@{557058:in-fence}\n```\n\nSee `@{557058:inline-code}` for details.",
+  "state": "OPEN",
+  "draft": false,
+  "author": {
+    "uuid": "{ada-uuid}",
+    "username": "",
+    "nickname": "ada",
+    "display_name": "Ada Lovelace",
+    "account_id": "557058:ada",
+    "links": {
+      "self": {
+        "href": ""
+      },
+      "html": {
+        "href": ""
+      },
+      "avatar": {
+        "href": ""
+      }
+    }
+  },
+  "source": {
+    "branch": {
+      "name": "feature/login"
+    },
+    "commit": {
+      "hash": "abc1234"
+    },
+    "repository": {
+      "uuid": "",
+      "name": "",
+      "full_name": "acme/widgets",
+      "description": "",
+      "is_private": false,
+      "owner": {
+        "uuid": "",
+        "username": "",
+        "nickname": "",
+        "display_name": "",
+        "account_id": "",
+        "links": {
+          "self": {
+            "href": ""
+          },
+          "html": {
+            "href": ""
+          },
+          "avatar": {
+            "href": ""
+          }
+        }
+      },
+      "mainbranch": {
+        "name": ""
+      },
+      "created_on": "0001-01-01T00:00:00Z",
+      "updated_on": "0001-01-01T00:00:00Z",
+      "links": {
+        "self": {
+          "href": ""
+        },
+        "html": {
+          "href": ""
+        },
+        "avatar": {
+          "href": ""
+        }
+      }
+    }
+  },
+  "destination": {
+    "branch": {
+      "name": "main"
+    },
+    "commit": {
+      "hash": "def5678"
+    },
+    "repository": {
+      "uuid": "",
+      "name": "",
+      "full_name": "acme/widgets",
+      "description": "",
+      "is_private": false,
+      "owner": {
+        "uuid": "",
+        "username": "",
+        "nickname": "",
+        "display_name": "",
+        "account_id": "",
+        "links": {
+          "self": {
+            "href": ""
+          },
+          "html": {
+            "href": ""
+          },
+          "avatar": {
+            "href": ""
+          }
+        }
+      },
+      "mainbranch": {
+        "name": ""
+      },
+      "created_on": "0001-01-01T00:00:00Z",
+      "updated_on": "0001-01-01T00:00:00Z",
+      "links": {
+        "self": {
+          "href": ""
+        },
+        "html": {
+          "href": ""
+        },
+        "avatar": {
+          "href": ""
+        }
+      }
+    }
+  },
+  "reviewers": [
+    {
+      "uuid": "{grace-uuid}",
+      "username": "",
+      "nickname": "grace",
+      "display_name": "Grace Hopper",
+      "account_id": "557058:grace",
+      "links": {
+        "self": {
+          "href": ""
+        },
+        "html": {
+          "href": ""
+        },
+        "avatar": {
+          "href": ""
+        }
+      }
+    },
+    {
+      "uuid": "{linus-uuid}",
+      "username": "",
+      "nickname": "linus",
+      "display_name": "Linus Torvalds",
+      "account_id": "557058:linus",
+      "links": {
+        "self": {
+          "href": ""
+        },
+        "html": {
+          "href": ""
+        },
+        "avatar": {
+          "href": ""
+        }
+      }
+    },
+    {
+      "uuid": "{ken-uuid}",
+      "username": "",
+      "nickname": "ken",
+      "display_name": "Ken Thompson",
+      "account_id": "557058:ken",
+      "links": {
+        "self": {
+          "href": ""
+        },
+        "html": {
+          "href": ""
+        },
+        "avatar": {
+          "href": ""
+        }
+      }
+    }
+  ],
+  "participants": [
+    {
+      "user": {
+        "uuid": "{grace-uuid}",
+        "username": "",
+        "nickname": "grace",
+        "display_name": "Grace Hopper",
+        "account_id": "557058:grace",
+        "links": {
+          "self": {
+            "href": ""
+          },
+          "html": {
+            "href": ""
+          },
+          "avatar": {
+            "href": ""
+          }
+        }
+      },
+      "role": "REVIEWER",
+      "approved": true,
+      "state": "approved"
+    },
+    {
+      "user": {
+        "uuid": "{linus-uuid}",
+        "username": "",
+        "nickname": "linus",
+        "display_name": "Linus Torvalds",
+        "account_id": "557058:linus",
+        "links": {
+          "self": {
+            "href": ""
+          },
+          "html": {
+            "href": ""
+          },
+          "avatar": {
+            "href": ""
+          }
+        }
+      },
+      "role": "REVIEWER",
+      "approved": false,
+      "state": "changes_requested"
+    },
+    {
+      "user": {
+        "uuid": "{ada-uuid}",
+        "username": "",
+        "nickname": "ada",
+        "display_name": "Ada Lovelace",
+        "account_id": "557058:ada",
+        "links": {
+          "self": {
+            "href": ""
+          },
+          "html": {
+            "href": ""
+          },
+          "avatar": {
+            "href": ""
+          }
+        }
+      },
+      "role": "PARTICIPANT",
+      "approved": false,
+      "state": ""
+    }
+  ],
+  "created_on": "2025-03-01T09:00:00Z",
+  "updated_on": "2025-03-05T16:30:00Z",
+  "links": {
+    "self": {
+      "href": ""
+    },
+    "html": {
+      "href": "https://bitbucket.org/acme/widgets/pull-requests/42"
+    },
+    "commits": {
+      "href": ""
+    },
+    "approve": {
+      "href": ""
+    },
+    "diff": {
+      "href": ""
+    },
+    "comments": {
+      "href": ""
+    }
+  },
+  "comment_count": 5,
+  "task_count": 2,
+  "comments": [
+    {
+      "id": 101,
+      "content": {
+        "raw": "Handle the error here. Also loop in @{557058:mentioned}.",
+        "markup": "markdown",
+        "html": "\u003cp\u003eHandle the error here. Also loop in \u003ca href=\"https://bitbucket.org/margaret\"\u003e@Margaret Hamilton\u003c/a\u003e.\u003c/p\u003e"
+      },
+      "user": {
+        "uuid": "{grace-uuid}",
+        "username": "",
+        "nickname": "grace",
+        "display_name": "Grace Hopper",
+        "account_id": "557058:grace",
+        "links": {
+          "self": {
+            "href": ""
+          },
+          "html": {
+            "href": ""
+          },
+          "avatar": {
+            "href": ""
+          }
+        }
+      },
+      "created_on": "2025-03-02T10:00:00Z",
+      "updated_on": "2025-03-02T10:00:00Z",
+      "inline": {
+        "path": "src/login.go",
+        "to": 12
+      },
+      "deleted": false,
+      "pending": false,
+      "links": {
+        "self": {
+          "href": ""
+        },
+        "html": {
+          "href": ""
+        },
+        "avatar": {
+          "href": ""
+        }
+      }
+    },
+    {
+      "id": 102,
+      "content": {
+        "raw": "Done, thanks.",
+        "markup": "markdown",
+        "html": ""
+      },
+      "user": {
+        "uuid": "{ada-uuid}",
+        "username": "",
+        "nickname": "ada",
+        "display_name": "Ada Lovelace",
+        "account_id": "557058:ada",
+        "links": {
+          "self": {
+            "href": ""
+          },
+          "html": {
+            "href": ""
+          },
+          "avatar": {
+            "href": ""
+          }
+        }
+      },
+      "created_on": "2025-03-02T11:00:00Z",
+      "updated_on": "2025-03-02T11:00:00Z",
+      "inline": {
+        "path": "src/login.go",
+        "to": 12
+      },
+      "parent": {
+        "id": 101
+      },
+      "deleted": false,
+      "pending": false,
+      "links": {
+        "self": {
+          "href": ""
+        },
+        "html": {
+          "href": ""
+        },
+        "avatar": {
+          "href": ""
+        }
+      }
+    },
+    {
+      "id": 103,
+      "content": {
+        "raw": "Please add tests for @{557058:ghost} before merging. Otherwise fine.",
+        "markup": "markdown",
+        "html": ""
+      },
+      "user": {
+        "uuid": "{linus-uuid}",
+        "username": "",
+        "nickname": "linus",
+        "display_name": "Linus Torvalds",
+        "account_id": "557058:linus",
+        "links": {
+          "self": {
+            "href": ""
+          },
+          "html": {
+            "href": ""
+          },
+          "avatar": {
+            "href": ""
+          }
+        }
+      },
+      "created_on": "2025-03-03T08:00:00Z",
+      "updated_on": "2025-03-03T08:00:00Z",
+      "deleted": false,
+      "pending": false,
+      "links": {
+        "self": {
+          "href": ""
+        },
+        "html": {
+          "href": ""
+        },
+        "avatar": {
+          "href": ""
+        }
+      }
+    },
+    {
+      "id": 104,
+      "content": {
+        "raw": "Typo in the heading.",
+        "markup": "markdown",
+        "html": ""
+      },
+      "user": {
+        "uuid": "{grace-uuid}",
+        "username": "",
+        "nickname": "grace",
+        "display_name": "Grace Hopper",
+        "account_id": "557058:grace",
+        "links": {
+          "self": {
+            "href": ""
+          },
+          "html": {
+            "href": ""
+          },
+          "avatar": {
+            "href": ""
+          }
+        }
+      },
+      "created_on": "2025-03-03T09:00:00Z",
+      "updated_on": "2025-03-03T09:00:00Z",
+      "inline": {
+        "path": "README.md"
+      },
+      "deleted": false,
+      "pending": false,
+      "resolution": {
+        "user": {
+          "uuid": "{ada-uuid}",
+          "username": "",
+          "nickname": "ada",
+          "display_name": "Ada Lovelace",
+          "account_id": "557058:ada",
+          "links": {
+            "self": {
+              "href": ""
+            },
+            "html": {
+              "href": ""
+            },
+            "avatar": {
+              "href": ""
+            }
+          }
+        },
+        "date": "2025-03-04T09:00:00Z"
+      },
+      "links": {
+        "self": {
+          "href": ""
+        },
+        "html": {
+          "href": ""
+        },
+        "avatar": {
+          "href": ""
+        }
+      }
+    },
+    {
+      "id": 105,
+      "content": {
+        "raw": "",
+        "markup": "markdown",
+        "html": ""
+      },
+      "user": {
+        "uuid": "{ken-uuid}",
+        "username": "",
+        "nickname": "ken",
+        "display_name": "Ken Thompson",
+        "account_id": "557058:ken",
+        "links": {
+          "self": {
+            "href": ""
+          },
+          "html": {
+            "href": ""
+          },
+          "avatar": {
+            "href": ""
+          }
+        }
+      },
+      "created_on": "2025-03-03T10:00:00Z",
+      "updated_on": "2025-03-03T10:00:00Z",
+      "deleted": true,
+      "pending": false,
+      "links": {
+        "self": {
+          "href": ""
+        },
+        "html": {
+          "href": ""
+        },
+        "avatar": {
+          "href": ""
+        }
+      }
+    }
+  ]
+}
