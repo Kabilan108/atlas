@@ -451,6 +451,10 @@ func runPRDiff(cmd *cobra.Command, args []string) error {
 		}
 		return nil
 	}
+	if structured && !localCheckoutMatches(ctx) {
+		fmt.Fprintf(os.Stderr, "Structured diff needs a local checkout of %s/%s; showing the API patch instead\n", ctx.workspace, ctx.repo)
+		structured = false
+	}
 	if structured {
 		if err := runStructuredDiff(pr, color); err != nil {
 			if _, lookErr := exec.LookPath("difft"); lookErr == nil {
@@ -1232,9 +1236,12 @@ func runPRCheckout(cmd *cobra.Command, args []string) error {
 	detach, _ := cmd.Flags().GetBool("detach")
 	force, _ := cmd.Flags().GetBool("force")
 	recurse, _ := cmd.Flags().GetBool("recurse-submodules")
-	_, pr, err := resolvePR(cmd, args[0], false)
+	ctx, pr, err := resolvePR(cmd, args[0], false)
 	if err != nil {
 		return err
+	}
+	if !localCheckoutMatches(ctx) {
+		return fmt.Errorf("pull request #%d belongs to %s/%s, but the current directory is not a checkout of it; run checkout from a clone of %s/%s", pr.ID, ctx.workspace, ctx.repo, ctx.workspace, ctx.repo)
 	}
 	remote := "origin"
 	if pr.Source.Repository.FullName != "" && pr.Source.Repository.FullName != pr.Destination.Repository.FullName {
@@ -1272,6 +1279,14 @@ func runPRCheckout(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Switched to branch '%s' for pull request #%d\n", localBranch, pr.ID)
 	}
 	return nil
+}
+
+func localCheckoutMatches(ctx *prContext) bool {
+	workspace, repo, err := git.InferRepository()
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(workspace, ctx.workspace) && strings.EqualFold(repo, ctx.repo)
 }
 
 func optionalArg(args []string) string {

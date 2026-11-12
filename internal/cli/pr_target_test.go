@@ -172,3 +172,29 @@ func TestPRURLSelectorWorksOutsideGitRepository(t *testing.T) {
 		t.Fatalf("number selector outside a git repo: err = %v", err)
 	}
 }
+
+func TestPRCheckoutRefusesURLFromAnotherRepository(t *testing.T) {
+	requests := installOtherRepoTransport(t)
+	initGitRepoWithOrigin(t, "git@bitbucket.org:ws/repo.git")
+	err := runPRCommand(t, "checkout", otherPRURL)
+	if err == nil || !strings.Contains(err.Error(), "not a checkout of it") {
+		t.Fatalf("checkout of a foreign PR URL: err = %v", err)
+	}
+	assertRequests(t, *requests, "GET "+otherPRPath)
+}
+
+func TestLocalCheckoutMatches(t *testing.T) {
+	target := &prContext{workspace: "WS", repo: "Other"}
+	initGitRepoWithOrigin(t, "git@bitbucket.org:ws/other.git")
+	if !localCheckoutMatches(target) {
+		t.Error("checkout of ws/other should match WS/Other")
+	}
+	initGitRepoWithOrigin(t, "git@bitbucket.org:ws/repo.git")
+	if localCheckoutMatches(target) {
+		t.Error("checkout of ws/repo should not match ws/other")
+	}
+	t.Chdir(t.TempDir())
+	if localCheckoutMatches(target) {
+		t.Error("a directory outside git should not match")
+	}
+}
