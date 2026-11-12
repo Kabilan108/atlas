@@ -15,7 +15,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const mcpWorkspaceEnv = "ATLAS_MCP_WORKSPACE"
+const (
+	mcpWorkspaceEnv   = "ATLAS_MCP_WORKSPACE"
+	mcpJiraCloudIDEnv = "ATLAS_MCP_JIRA_CLOUD_ID"
+)
 
 func newMCPCmd(version string) *cobra.Command {
 	cmd := &cobra.Command{
@@ -32,15 +35,16 @@ func newMCPServeCmd(version string) *cobra.Command {
 		Short: "Serve Atlas tools over stateless Streamable HTTP",
 		Long: fmt.Sprintf(`Serve Atlas tools at /mcp over stateless Streamable HTTP.
 
-Each request carries its own credentials in the %s and
-%s headers. The server stores no credentials, keeps no
-sessions, and never uses the disk cache. Request logs go to stderr and never
-include headers.`, mcpserver.HeaderEmail, mcpserver.HeaderBitbucketToken),
+Each request carries its own credentials in headers: %s, plus
+%s for Bitbucket tools and %s for Jira tools.
+The server stores no credentials, keeps no sessions, and never uses the disk
+cache. Request logs go to stderr and never include headers.`, mcpserver.HeaderEmail, mcpserver.HeaderBitbucketToken, mcpserver.HeaderJiraToken),
 		Args: cobra.NoArgs,
 		RunE: runMCPServe(version),
 	}
 	cmd.Flags().String("addr", "127.0.0.1:8080", "Address to listen on")
 	cmd.Flags().String("workspace", "", "Default Bitbucket workspace for repo arguments without one (env "+mcpWorkspaceEnv+")")
+	cmd.Flags().String("jira-cloud-id", "", "Jira cloud ID behind the Atlassian API gateway (env "+mcpJiraCloudIDEnv+", default "+mcpserver.DefaultJiraCloudID+")")
 	return cmd
 }
 
@@ -51,10 +55,12 @@ func runMCPServe(version string) func(*cobra.Command, []string) error {
 		if !cmd.Flags().Changed("workspace") {
 			workspace = os.Getenv(mcpWorkspaceEnv)
 		}
+		jiraCloudID := flagOrEnv(cmd, "jira-cloud-id", mcpJiraCloudIDEnv, mcpserver.DefaultJiraCloudID)
 		logger := slog.New(slog.NewJSONHandler(cmd.ErrOrStderr(), nil))
 		handler, err := mcpserver.Handler(mcpserver.Options{
 			Version:          version,
 			DefaultWorkspace: workspace,
+			JiraCloudID:      jiraCloudID,
 			Logger:           logger,
 		})
 		if err != nil {
@@ -69,7 +75,7 @@ func runMCPServe(version string) func(*cobra.Command, []string) error {
 		defer stop()
 		served := make(chan error, 1)
 		go func() { served <- server.Serve(listener) }()
-		logger.Info("listening", "url", "http://"+listener.Addr().String()+"/mcp", "default_workspace", workspace)
+		logger.Info("listening", "url", "http://"+listener.Addr().String()+"/mcp", "default_workspace", workspace, "jira_cloud_id", jiraCloudID)
 		select {
 		case err := <-served:
 			return err
@@ -79,4 +85,17 @@ func runMCPServe(version string) func(*cobra.Command, []string) error {
 		defer cancel()
 		return server.Shutdown(shutdownCtx)
 	}
+}
+
+// flagOrEnv returns the flag's value when it was set, else the environment
+// variable, else fallback.
+func flagOrEnv(cmd *cobra.Command, flag, env, fallback string) string {
+	if cmd.Flags().Changed(flag) {
+		value, _ := cmd.Flags().GetString(flag)
+		return value
+	}
+	if value := os.Getenv(env); value != "" {
+		return value
+	}
+	return fallback
 }

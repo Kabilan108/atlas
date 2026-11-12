@@ -1,20 +1,12 @@
 package ops_test
 
 import (
-	"context"
 	"strings"
 	"testing"
 
-	"github.com/kabilan108/atlas/internal/bitbucket"
-	"github.com/kabilan108/atlas/internal/jira"
 	"github.com/kabilan108/atlas/internal/ops"
+	"github.com/kabilan108/atlas/internal/ops/opstest"
 )
-
-type workspaceEnv string
-
-func (workspaceEnv) Bitbucket(context.Context) (*bitbucket.Client, error) { return nil, nil }
-func (workspaceEnv) Jira(context.Context) (*jira.Client, error)           { return nil, nil }
-func (w workspaceEnv) DefaultWorkspace() string                           { return string(w) }
 
 func TestRepoRefResolve(t *testing.T) {
 	tests := []struct {
@@ -44,7 +36,7 @@ func TestRepoRefResolve(t *testing.T) {
 		{"acme/*", "", ops.Repository{}, "names every repository"},
 	}
 	for _, tc := range tests {
-		got, err := ops.RepoRef{Repo: tc.repo}.Resolve(workspaceEnv(tc.defaultWorkspace))
+		got, err := ops.RepoRef{Repo: tc.repo}.Resolve(opstest.New(tc.defaultWorkspace))
 		if tc.err != "" {
 			if err == nil || !strings.Contains(err.Error(), tc.err) || ops.KindOf(err) != ops.Invalid {
 				t.Errorf("Resolve(%q) error = %v, want invalid %q", tc.repo, err, tc.err)
@@ -63,7 +55,7 @@ func TestRepoRefResolveScopeCoversWorkspace(t *testing.T) {
 		"*":            {Workspace: "dflt"},
 		"acme/widgets": {Workspace: "acme", Repo: "widgets"},
 	} {
-		got, err := ops.RepoRef{Repo: repo}.ResolveScope(workspaceEnv("dflt"))
+		got, err := ops.RepoRef{Repo: repo}.ResolveScope(opstest.New("dflt"))
 		if err != nil || got != want {
 			t.Errorf("ResolveScope(%q) = %+v, %v; want %+v", repo, got, err, want)
 		}
@@ -77,16 +69,16 @@ func TestRepoRefResolveScopeCoversWorkspace(t *testing.T) {
 }
 
 func TestWorkspace(t *testing.T) {
-	if got, err := ops.Workspace("", workspaceEnv("dflt")); err != nil || got != "dflt" {
+	if got, err := ops.Workspace("", opstest.New("dflt")); err != nil || got != "dflt" {
 		t.Errorf("default: %q, %v", got, err)
 	}
-	if got, err := ops.Workspace("acme", workspaceEnv("")); err != nil || got != "acme" {
+	if got, err := ops.Workspace("acme", opstest.New("")); err != nil || got != "acme" {
 		t.Errorf("explicit: %q, %v", got, err)
 	}
-	if _, err := ops.Workspace("", workspaceEnv("")); ops.KindOf(err) != ops.Invalid {
+	if _, err := ops.Workspace("", opstest.New("")); ops.KindOf(err) != ops.Invalid {
 		t.Errorf("missing: %v", err)
 	}
-	if _, err := ops.Workspace("ac/me", workspaceEnv("")); ops.KindOf(err) != ops.Invalid {
+	if _, err := ops.Workspace("ac/me", opstest.New("")); ops.KindOf(err) != ops.Invalid {
 		t.Errorf("slash: %v", err)
 	}
 }

@@ -4,36 +4,20 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"github.com/kabilan108/atlas/internal/bitbucket"
 	"github.com/kabilan108/atlas/internal/ops"
+	"github.com/kabilan108/atlas/internal/ops/opstest"
 	"github.com/kabilan108/atlas/internal/ops/pr"
 	"github.com/kabilan108/atlas/internal/ops/pr/prtest"
 	"github.com/kabilan108/atlas/internal/output"
 )
 
-type testEnv struct {
-	client    *bitbucket.Client
-	workspace string
-}
-
-func (e testEnv) Bitbucket(context.Context) (*bitbucket.Client, error) { return e.client, nil }
-func (e testEnv) DefaultWorkspace() string                             { return e.workspace }
-
-func newTestEnv(t *testing.T, workspace string) (testEnv, *prtest.Fixture) {
+func newTestEnv(t *testing.T, workspace string) (*opstest.Env, *prtest.Fixture) {
 	t.Helper()
 	fixture := prtest.New()
-	server := httptest.NewServer(fixture)
-	t.Cleanup(server.Close)
-	client, err := bitbucket.NewClientWithCredentials("user", "token",
-		bitbucket.WithBaseURL(server.URL+"/2.0"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return testEnv{client: client, workspace: workspace}, fixture
+	return opstest.New(workspace).WithBitbucket(t, fixture), fixture
 }
 
 func TestViewMarkdownMatchesGolden(t *testing.T) {
@@ -109,7 +93,7 @@ func TestViewInvokeDecodesArguments(t *testing.T) {
 	if want := prtest.Golden("view_comments.md"); result.Text != want {
 		t.Fatalf("Invoke text differs from view_comments.md\n--- got ---\n%s", result.Text)
 	}
-	if req := fixture.Requests()[0]; req.Username != "user" || req.Password != "token" {
+	if req := fixture.Requests()[0]; req.Username != opstest.Email || req.Password != opstest.Token {
 		t.Fatalf("request credentials = %q/%q", req.Username, req.Password)
 	}
 }

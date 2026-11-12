@@ -10,17 +10,23 @@ import (
 	"log/slog"
 	"net/http"
 	"runtime/debug"
-	"strings"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/kabilan108/atlas/internal/bitbucket"
+	"github.com/kabilan108/atlas/internal/jira"
 	"github.com/kabilan108/atlas/internal/ops"
 	"github.com/kabilan108/atlas/internal/ops/catalog"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// DefaultMaxBodyBytes caps request bodies when Options.MaxBodyBytes is zero.
-const DefaultMaxBodyBytes = 1 << 20
+const (
+	// DefaultMaxBodyBytes caps request bodies when Options.MaxBodyBytes is zero.
+	DefaultMaxBodyBytes = 1 << 20
+	// DefaultWorkspace and DefaultJiraCloudID are what `atlas mcp serve`
+	// uses when neither a flag nor its environment variable is set.
+	DefaultWorkspace   = "moberg-analytics"
+	DefaultJiraCloudID = "2a0c794c-e073-4209-873f-ba6c1c4bcd9b"
+)
 
 // Options configures the server.
 type Options struct {
@@ -32,9 +38,13 @@ type Options struct {
 	Logger *slog.Logger
 	// MaxBodyBytes caps each request body; zero means DefaultMaxBodyBytes.
 	MaxBodyBytes int64
+	// JiraCloudID selects the Jira site behind the Atlassian API gateway.
+	JiraCloudID string
 	// BitbucketOptions are applied to every Bitbucket client. Never pass
 	// WithCache: the server keeps nothing between calls.
 	BitbucketOptions []bitbucket.ClientOption
+	// JiraOptions are applied to every Jira client.
+	JiraOptions []jira.Option
 }
 
 func (o Options) logger() *slog.Logger {
@@ -120,8 +130,7 @@ func toolHandler(def ops.Def, schema *jsonschema.Resolved, opts Options) mcp.Too
 		if req.Extra != nil {
 			header = req.Extra.Header
 		}
-		env := &headerEnv{header: header, defaultWorkspace: opts.DefaultWorkspace, clientOptions: opts.BitbucketOptions}
-		res, err := def.Invoke(ctx, env, args)
+		res, err := def.Invoke(ctx, newHeaderEnv(header, opts), args)
 		if err != nil {
 			return errorResult(err, res.Text), nil
 		}
@@ -152,16 +161,36 @@ func errorResult(err error, partial string) *mcp.CallToolResult {
 	return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: text}}}
 }
 
-// errorText drops the CLI hints the Bitbucket client attaches, which name
-// CLI commands, and points auth failures at the credential headers.
+// errorText leads with the error kind ("auth: ...") so agents can branch on
+// it, and points API auth failures at the header for that product.
 func errorText(err error) string {
-	text := err.Error()
-	var apiErr *bitbucket.APIError
-	if errors.As(err, &apiErr) && apiErr.Hint != "" {
-		text = strings.Replace(text, apiErr.Error(), apiErr.Resource+": "+apiErr.Message, 1)
+	kind := ops.KindOf(err)
+	label := kind.String()
+	if kind == ops.Unknown {
+		label = "error"
 	}
-	if ops.KindOf(err) == ops.Auth && apiErr != nil {
-		text += fmt.Sprintf(" (check the %s and %s headers)", HeaderEmail, HeaderBitbucketToken)
+	var bitbucketErr *bitbucket.APIError
+	if errors.As(err, &bitbucketErr) {
+		if hint := authHint(bitbucketErr.StatusCode, HeaderBitbucketToken); hint != "" {
+			bitbucketErr.Hint = hint
+		}
+		return label + ": " + err.Error()
 	}
-	return text
+	var jiraErr *jira.APIError
+	if errors.As(err, &jiraErr) {
+		if hint := authHint(jiraErr.StatusCode, HeaderJiraToken); hint != "" {
+			return label + ": " + err.Error() + "\nHint: " + hint
+		}
+	}
+	return label + ": " + err.Error()
+}
+
+func authHint(status int, tokenHeader string) string {
+	switch status {
+	case http.StatusUnauthorized:
+		return fmt.Sprintf("check the %s and %s headers", HeaderEmail, tokenHeader)
+	case http.StatusForbidden:
+		return fmt.Sprintf("the token in %s may lack a scope this tool needs, or the account lacks access", tokenHeader)
+	}
+	return ""
 }

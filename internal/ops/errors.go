@@ -1,10 +1,10 @@
 package ops
 
 import (
+	"context"
 	"errors"
 	"fmt"
-
-	"github.com/kabilan108/atlas/internal/bitbucket"
+	"os"
 )
 
 // Kind classifies an error so each front end can choose its own exit code,
@@ -16,8 +16,11 @@ const (
 	Invalid
 	Auth
 	NotFound
+	Conflict
 	RateLimited
+	Timeout
 	Upstream
+	// Partial means the op's output is usable but incomplete; see Op.
 	Partial
 )
 
@@ -29,8 +32,12 @@ func (k Kind) String() string {
 		return "auth"
 	case NotFound:
 		return "not_found"
+	case Conflict:
+		return "conflict"
 	case RateLimited:
 		return "rate_limited"
+	case Timeout:
+		return "timeout"
 	case Upstream:
 		return "upstream"
 	case Partial:
@@ -59,8 +66,16 @@ func Errorf(kind Kind, format string, args ...any) error {
 	return &Error{Kind: kind, Err: fmt.Errorf(format, args...)}
 }
 
-// KindOf returns the kind of the outermost classified error in err's chain.
-// Bitbucket API errors are classified by HTTP status.
+// HTTPStatusError is implemented by API errors from both clients
+// (bitbucket.APIError, jira.APIError), so classifying them needs neither.
+type HTTPStatusError interface {
+	error
+	HTTPStatus() int
+}
+
+// KindOf returns the kind of the outermost classified error in err's chain:
+// an *Error's kind, Timeout for a deadline, or the kind an HTTP status maps
+// to.
 func KindOf(err error) Kind {
 	if err == nil {
 		return Unknown
@@ -69,11 +84,22 @@ func KindOf(err error) Kind {
 	if errors.As(err, &opErr) {
 		return opErr.Kind
 	}
-	var apiErr *bitbucket.APIError
-	if errors.As(err, &apiErr) {
-		return kindForStatus(apiErr.StatusCode)
+	if isTimeout(err) {
+		return Timeout
+	}
+	var statusErr HTTPStatusError
+	if errors.As(err, &statusErr) {
+		return kindForStatus(statusErr.HTTPStatus())
 	}
 	return Unknown
+}
+
+func isTimeout(err error) bool {
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, os.ErrDeadlineExceeded) {
+		return true
+	}
+	var timeout interface{ Timeout() bool }
+	return errors.As(err, &timeout) && timeout.Timeout()
 }
 
 func kindForStatus(status int) Kind {
@@ -82,6 +108,10 @@ func kindForStatus(status int) Kind {
 		return Auth
 	case status == 404:
 		return NotFound
+	case status == 408:
+		return Timeout
+	case status == 409:
+		return Conflict
 	case status == 429:
 		return RateLimited
 	case status >= 500:

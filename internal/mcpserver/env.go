@@ -4,8 +4,10 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/kabilan108/atlas/internal/bitbucket"
+	"github.com/kabilan108/atlas/internal/jira"
 	"github.com/kabilan108/atlas/internal/ops"
 )
 
@@ -14,17 +16,36 @@ import (
 const (
 	HeaderEmail          = "X-Atlas-Email"
 	HeaderBitbucketToken = "X-Atlas-Bitbucket-Token"
-	// HeaderJiraToken is reserved for the Jira ops; nothing reads it yet.
-	HeaderJiraToken = "X-Atlas-Jira-Token"
+	HeaderJiraToken      = "X-Atlas-Jira-Token"
 )
 
-// headerEnv is the ops.Env for one tool call. It builds clients from the
-// call's headers and never uses the disk cache.
+// headerEnv is the ops.Env for one tool call. It builds each client from the
+// call's headers the first time an op asks for it, so a Bitbucket tool never
+// needs the Jira header, and never uses the disk cache.
 type headerEnv struct {
 	header           http.Header
 	defaultWorkspace string
-	clientOptions    []bitbucket.ClientOption
-	bitbucket        *bitbucket.Client
+	bitbucket        func() (*bitbucket.Client, error)
+	jira             func() (*jira.Client, error)
+}
+
+func newHeaderEnv(header http.Header, opts Options) *headerEnv {
+	e := &headerEnv{header: header, defaultWorkspace: opts.DefaultWorkspace}
+	e.bitbucket = sync.OnceValues(func() (*bitbucket.Client, error) {
+		values, err := e.require(HeaderEmail, HeaderBitbucketToken)
+		if err != nil {
+			return nil, err
+		}
+		return bitbucket.NewClientWithCredentials(values[0], values[1], opts.BitbucketOptions...)
+	})
+	e.jira = sync.OnceValues(func() (*jira.Client, error) {
+		values, err := e.require(HeaderEmail, HeaderJiraToken)
+		if err != nil {
+			return nil, err
+		}
+		return jira.NewClientWithCredentials(values[0], values[1], opts.JiraCloudID, opts.JiraOptions...)
+	})
+	return e
 }
 
 func (e *headerEnv) DefaultWorkspace() string {
@@ -32,19 +53,11 @@ func (e *headerEnv) DefaultWorkspace() string {
 }
 
 func (e *headerEnv) Bitbucket(context.Context) (*bitbucket.Client, error) {
-	if e.bitbucket != nil {
-		return e.bitbucket, nil
-	}
-	values, err := e.require(HeaderEmail, HeaderBitbucketToken)
-	if err != nil {
-		return nil, err
-	}
-	client, err := bitbucket.NewClientWithCredentials(values[0], values[1], e.clientOptions...)
-	if err != nil {
-		return nil, err
-	}
-	e.bitbucket = client
-	return client, nil
+	return e.bitbucket()
+}
+
+func (e *headerEnv) Jira(context.Context) (*jira.Client, error) {
+	return e.jira()
 }
 
 // require returns the named header values, or an Auth error naming every

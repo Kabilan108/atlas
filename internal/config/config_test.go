@@ -135,3 +135,56 @@ func TestLoadCredentialsIgnoresLegacyAppPassword(t *testing.T) {
 		t.Fatalf("APIToken = %q, want empty", creds.APIToken)
 	}
 }
+
+func TestLoadCredentialsReadsJiraTokenAndCloudID(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("ATLAS_API_TOKEN", "")
+	t.Setenv("ATLAS_JIRA_TOKEN", "")
+	t.Setenv("ATLAS_USERNAME", "")
+	t.Setenv("ATLAS_WORKSPACE", "")
+	t.Setenv("ATLAS_JIRA_CLOUD_ID", "")
+
+	path, err := CredentialsPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("api_token = \"bb\"\njira_token = \"jt\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := Set("jira_cloud_id", "cloud-1"); err != nil {
+		t.Fatal(err)
+	}
+
+	creds, err := LoadCredentials()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if creds.APIToken != "bb" || creds.JiraToken != "jt" {
+		t.Fatalf("creds = %+v", creds)
+	}
+	cfg, err := Load()
+	if err != nil || cfg.JiraCloudID != "cloud-1" {
+		t.Fatalf("cfg = %+v, %v", cfg, err)
+	}
+
+	t.Setenv("ATLAS_JIRA_TOKEN", "env-jt")
+	t.Setenv("ATLAS_JIRA_CLOUD_ID", "env-cloud")
+	if creds, _ := LoadCredentials(); creds.JiraToken != "env-jt" || creds.APIToken != "bb" {
+		t.Fatalf("env override: %+v", creds)
+	}
+	if cfg, _ := Load(); cfg.JiraCloudID != "env-cloud" {
+		t.Fatalf("env cloud ID: %+v", cfg)
+	}
+
+	// Logging in again replaces the Bitbucket token but keeps Jira's.
+	if err := SaveAPIToken("bb2"); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ATLAS_JIRA_TOKEN", "")
+	if creds, _ := LoadCredentials(); creds.APIToken != "bb2" || creds.JiraToken != "jt" {
+		t.Fatalf("after SaveAPIToken: %+v", creds)
+	}
+}

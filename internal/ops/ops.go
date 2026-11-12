@@ -13,6 +13,7 @@ import (
 	"reflect"
 
 	"github.com/kabilan108/atlas/internal/bitbucket"
+	"github.com/kabilan108/atlas/internal/jira"
 )
 
 // Surface says which front ends expose an op.
@@ -39,9 +40,13 @@ type Meta struct {
 }
 
 // Env carries per-call credentials and defaults. A CLI run or an MCP call
-// builds a fresh Env, and nothing in it outlives the call.
+// builds a fresh Env, and nothing in it outlives the call. Clients are built
+// on first use and reused for the rest of the call, so a Bitbucket op never
+// needs Jira credentials and the reverse. Both methods are safe to call from
+// several goroutines.
 type Env interface {
 	Bitbucket(ctx context.Context) (*bitbucket.Client, error)
+	Jira(ctx context.Context) (*jira.Client, error)
 	DefaultWorkspace() string
 }
 
@@ -62,6 +67,13 @@ type Def interface {
 
 // Op is one operation. Markdown renders Out for agents; when it is nil the
 // text form is compact JSON.
+//
+// Run returns either a usable Out and a nil error, a zero Out and an error,
+// or, when part of the work failed (some entries of a batch, some
+// repositories of a listing), a usable Out together with an error of kind
+// Partial. Every error returned with a usable Out must be Partial: front ends
+// write Out only for nil and Partial errors, then report the error. Batch ops
+// put per-entry results in Out so the Partial error can stay a summary.
 type Op[In, Out any] struct {
 	Meta
 	Run      func(ctx context.Context, env Env, in In) (Out, error)

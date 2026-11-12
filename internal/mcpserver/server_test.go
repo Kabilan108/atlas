@@ -257,8 +257,8 @@ func TestLogsRecordCallsButNeverCredentials(t *testing.T) {
 	if text, isError := callText(t, session, "pr_view", map[string]any{"repo": "acme/widgets", "pr": "42"}); isError {
 		t.Fatal(text)
 	}
-	if _, isError := callText(t, session, "pr_view", map[string]any{"repo": "acme/widgets", "pr": "7"}); !isError {
-		t.Fatal("missing PR succeeded")
+	if text, isError := callText(t, session, "pr_view", map[string]any{"repo": "acme/widgets", "pr": "7"}); !isError || !strings.HasPrefix(text, "not_found: ") {
+		t.Fatalf("missing PR: isError=%v text=%q", isError, text)
 	}
 	anonymous := connect(t, srv.url, http.Header{mcpserver.HeaderBitbucketToken: {testToken}})
 	if _, isError := callText(t, anonymous, "pr_view", map[string]any{"repo": "acme/widgets", "pr": "42"}); !isError {

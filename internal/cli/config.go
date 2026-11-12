@@ -29,7 +29,7 @@ func newConfigSetCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "set <key> [value]",
 		Short: "Set a configuration value",
-		Long: `Set a configuration value. Valid keys: workspace, username.
+		Long: `Set a configuration value. Valid keys: workspace, username, jira_cloud_id.
 
 If no value is provided, you will be prompted to enter it interactively. You can also
 pipe the value via stdin.
@@ -101,7 +101,7 @@ func newConfigGetCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "get <key>",
 		Short: "Get a configuration value",
-		Long:  `Get a configuration value. Valid keys: workspace, username.`,
+		Long:  `Get a configuration value. Valid keys: workspace, username, jira_cloud_id.`,
 		Args:  cobra.ExactArgs(1),
 		RunE:  runConfigGet,
 	}

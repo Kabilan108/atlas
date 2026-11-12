@@ -6,20 +6,26 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/kabilan108/atlas/internal/bitbucket"
 	"github.com/kabilan108/atlas/internal/config"
 	"github.com/kabilan108/atlas/internal/git"
+	"github.com/kabilan108/atlas/internal/jira"
+	"github.com/kabilan108/atlas/internal/ops"
 	"github.com/kabilan108/atlas/internal/ops/pr"
 	"github.com/spf13/cobra"
 )
 
 // cliEnv is the ops.Env for one CLI run: config file and env vars, stored
-// credentials, the disk cache unless --no-cache, and git inference.
+// credentials, the disk cache unless --no-cache, and git inference. Each
+// client is built on first use, so Bitbucket commands never need Jira
+// credentials.
 type cliEnv struct {
-	cmd    *cobra.Command
-	cfg    *config.Config
-	client *bitbucket.Client
+	cmd       *cobra.Command
+	cfg       *config.Config
+	bitbucket func() (*bitbucket.Client, error)
+	jira      func() (*jira.Client, error)
 }
 
 func newCLIEnv(cmd *cobra.Command) (*cliEnv, error) {
@@ -27,7 +33,16 @@ func newCLIEnv(cmd *cobra.Command) (*cliEnv, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
-	return &cliEnv{cmd: cmd, cfg: cfg}, nil
+	return &cliEnv{
+		cmd: cmd,
+		cfg: cfg,
+		bitbucket: sync.OnceValues(func() (*bitbucket.Client, error) {
+			return newBitbucketClient(cmd, true)
+		}),
+		jira: sync.OnceValues(func() (*jira.Client, error) {
+			return newJiraClient(cmd, cfg)
+		}),
+	}, nil
 }
 
 func (e *cliEnv) DefaultWorkspace() string {
@@ -35,15 +50,33 @@ func (e *cliEnv) DefaultWorkspace() string {
 }
 
 func (e *cliEnv) Bitbucket(context.Context) (*bitbucket.Client, error) {
-	if e.client != nil {
-		return e.client, nil
-	}
-	client, err := newBitbucketClient(e.cmd, true)
+	return e.bitbucket()
+}
+
+func (e *cliEnv) Jira(context.Context) (*jira.Client, error) {
+	return e.jira()
+}
+
+// newJiraClient builds a Jira client from the configured username (the
+// Atlassian email), the Jira token, and jira_cloud_id.
+func newJiraClient(cmd *cobra.Command, cfg *config.Config) (*jira.Client, error) {
+	creds, err := config.LoadCredentials()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to load credentials: %w", err)
 	}
-	e.client = client
-	return client, nil
+	switch {
+	case creds.Username == "":
+		return nil, ops.Errorf(ops.Auth, "Jira needs your Atlassian email. Run 'atlas config set username <email>'")
+	case creds.JiraToken == "":
+		return nil, ops.Errorf(ops.Auth, "Jira API token not configured. Set ATLAS_JIRA_TOKEN, or jira_token in the credentials file")
+	case cfg.JiraCloudID == "":
+		return nil, ops.Errorf(ops.Invalid, "Jira cloud ID not configured. Run 'atlas config set jira_cloud_id <id>' or set ATLAS_JIRA_CLOUD_ID")
+	}
+	var opts []jira.Option
+	if httpClient := optionsFrom(cmd).httpClient; httpClient != nil {
+		opts = append(opts, jira.WithHTTPClient(httpClient))
+	}
+	return jira.NewClientWithCredentials(creds.Username, creds.JiraToken, cfg.JiraCloudID, opts...)
 }
 
 // newBitbucketClient builds a client from the stored credentials. Reads use

@@ -38,6 +38,7 @@ func setupCLIEnv(t *testing.T) {
 	t.Setenv("ATLAS_USERNAME", "cli-user")
 	t.Setenv("ATLAS_API_TOKEN", "cli-token")
 	t.Setenv("ATLAS_JIRA_TOKEN", "")
+	t.Setenv("ATLAS_JIRA_CLOUD_ID", "")
 }
 
 // runAtlas runs the root command in-process against fixture and returns what

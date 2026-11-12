@@ -17,6 +17,7 @@ atlas mcp
 atlas mcp serve
   use: serve
   flag --addr string default="127.0.0.1:8080"
+  flag --jira-cloud-id string default=""
   flag --workspace string default=""
 atlas pr
   use: pr
