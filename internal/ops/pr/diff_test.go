@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kabilan108/atlas/internal/ops"
 	"github.com/kabilan108/atlas/internal/ops/pr"
 )
 
@@ -43,8 +44,14 @@ func TestDiffCap(t *testing.T) {
 	if !strings.Contains(result.Text, "[diff truncated: showing "+itoa(len(out.Diff))+" of ") || !strings.HasSuffix(result.Text, "- src/login.go\n") {
 		t.Fatalf("text = %q", result.Text)
 	}
-	unlimited, err := pr.Diff.Call(t.Context(), env, pr.DiffInput{Ref: ref42(), MaxBytes: -1})
-	if err != nil || unlimited.Truncated {
-		t.Fatalf("max_bytes -1 truncated: %v", err)
+	for _, limit := range []int{-1, pr.MaxDiffBytes + 1} {
+		_, err := pr.Diff.Call(t.Context(), env, pr.DiffInput{Ref: ref42(), MaxBytes: limit})
+		if ops.KindOf(err) != ops.Invalid {
+			t.Fatalf("max_bytes %d: err = %v, want invalid", limit, err)
+		}
+	}
+	whole, err := pr.Diff.Call(t.Context(), env, pr.DiffInput{Ref: ref42(), MaxBytes: pr.MaxDiffBytes})
+	if err != nil || whole.Truncated {
+		t.Fatalf("max_bytes at the maximum: truncated=%v err=%v", whole.Truncated, err)
 	}
 }

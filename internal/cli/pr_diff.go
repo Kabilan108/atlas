@@ -29,7 +29,7 @@ func newPRDiffCmd() *cobra.Command {
 		op: pr.Diff,
 		input: func(cmd *cobra.Command, args []string, env *cliEnv) (pr.DiffInput, error) {
 			ref, err := env.prRef(cmd, optionalArg(args))
-			return pr.DiffInput{Ref: ref, MaxBytes: -1}, err
+			return pr.DiffInput{Ref: ref, MaxBytes: pr.MaxDiffBytes}, err
 		},
 		human: func(w io.Writer, result *pr.DiffResult) error { return writePRDiff(cmd, w, result) },
 	})

@@ -103,3 +103,10 @@ func (c *Client) getLimited(ctx context.Context, path string, maxBytes int64, ac
 	}
 	return body, nil
 }
+
+// GetPullRequestDiffLimit is GetPullRequestDiff reading at most maxBytes of
+// the diff.
+func (c *Client) GetPullRequestDiffLimit(ctx context.Context, workspace, repo string, id int, maxBytes int64) (*LimitedBody, error) {
+	path := fmt.Sprintf("%s/pullrequests/%d/diff", repoPath(workspace, repo), id)
+	return c.getLimited(ctx, path, maxBytes, false)
+}

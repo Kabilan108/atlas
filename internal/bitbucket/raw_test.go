@@ -48,3 +48,35 @@ func TestGetAPIRefusesPathsOutsideBase(t *testing.T) {
 		}
 	}
 }
+
+func TestGetPullRequestDiffLimitStopsReading(t *testing.T) {
+	const size = 64 << 20
+	var served int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/repositories/acme/widgets/pullrequests/42/diff" {
+			http.NotFound(w, r)
+			return
+		}
+		chunk := []byte(strings.Repeat("+line\n", 1024))
+		for served < size {
+			n, err := w.Write(chunk)
+			served += int64(n)
+			if err != nil {
+				return
+			}
+		}
+	}))
+	defer server.Close()
+	client := newClientForTest(server.URL, server.Client())
+
+	body, err := client.GetPullRequestDiffLimit(context.Background(), "acme", "widgets", 42, 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !body.Truncated || len(body.Data) != 1<<20 {
+		t.Fatalf("got %d bytes, truncated=%v", len(body.Data), body.Truncated)
+	}
+	if served >= size {
+		t.Fatalf("server wrote the whole %d-byte diff; the client should stop reading at the limit", size)
+	}
+}

@@ -12,11 +12,19 @@ import (
 // DefaultDiffBytes caps pr_diff output when DiffInput.MaxBytes is zero.
 const DefaultDiffBytes = 60000
 
+// MaxDiffBytes is the largest output cap a caller may ask for, and
+// MaxDiffDownload the most of a diff pr_diff ever reads. The download cap is
+// larger because a path filter and the changed-file list need the whole diff.
+const (
+	MaxDiffBytes    = 8 << 20
+	MaxDiffDownload = 16 << 20
+)
+
 // DiffInput is the input to pr_diff.
 type DiffInput struct {
 	Ref
 	Path     string `json:"path,omitempty" jsonschema:"only this file, or the files under this directory"`
-	MaxBytes int    `json:"max_bytes,omitempty" jsonschema:"cap on diff bytes; default 60000"`
+	MaxBytes int    `json:"max_bytes,omitempty" jsonschema:"cap on diff bytes; default 60000, max 8388608"`
 }
 
 // DiffResult is a pull request's unified diff.
@@ -25,6 +33,8 @@ type DiffResult struct {
 	Files       []string `json:"files"`
 	Diff        string   `json:"diff"`
 	Truncated   bool     `json:"truncated,omitempty"`
+	// DownloadTruncated is set when the diff exceeded MaxDiffDownload.
+	DownloadTruncated bool `json:"download_truncated,omitempty"`
 
 	target    *Target
 	path      string
@@ -56,12 +66,19 @@ func diff(ctx context.Context, env ops.Env, in DiffInput) (*DiffResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	raw, err := client.GetPullRequestDiff(ctx, target.Workspace, target.Repo, target.PR.ID)
+	if in.MaxBytes < 0 || in.MaxBytes > MaxDiffBytes {
+		return nil, ops.Errorf(ops.Invalid, "max_bytes must be between 1 and %d (0 means %d)", MaxDiffBytes, DefaultDiffBytes)
+	}
+	body, err := client.GetPullRequestDiffLimit(ctx, target.Workspace, target.Repo, target.PR.ID, MaxDiffDownload)
 	if err != nil {
 		return nil, err
 	}
+	raw := body.Data
+	if body.Truncated {
+		raw = raw[:bytes.LastIndexByte(raw, '\n')+1]
+	}
 	path := strings.Trim(strings.TrimSpace(in.Path), "/")
-	result := &DiffResult{PullRequest: target.PR.ID, Files: DiffFiles(raw), target: target, path: path}
+	result := &DiffResult{PullRequest: target.PR.ID, Files: DiffFiles(raw), target: target, path: path, DownloadTruncated: body.Truncated}
 	if path != "" {
 		raw = filterDiff(raw, path)
 	}
@@ -70,7 +87,7 @@ func diff(ctx context.Context, env ops.Env, in DiffInput) (*DiffResult, error) {
 	if limit == 0 {
 		limit = DefaultDiffBytes
 	}
-	if limit > 0 && len(raw) > limit {
+	if len(raw) > limit {
 		cut := bytes.LastIndexByte(raw[:limit], '\n') + 1
 		raw, result.Truncated = raw[:cut], true
 	}
@@ -83,6 +100,13 @@ func diff(ctx context.Context, env ops.Env, in DiffInput) (*DiffResult, error) {
 func (r *DiffResult) Markdown() (string, error) {
 	if r.path != "" && r.fullBytes == 0 {
 		return fmt.Sprintf("No changes under %s. Changed files:\n%s", r.path, fileList(r.Files)), nil
+	}
+	if r.DownloadTruncated {
+		note := fmt.Sprintf("\n[the diff is larger than %d bytes; only its start was read, so the file list may be incomplete. Pass path for one file.]\n", MaxDiffDownload)
+		if !r.Truncated {
+			return r.Diff + note, nil
+		}
+		r.Diff += note
 	}
 	if !r.Truncated {
 		return r.Diff, nil
