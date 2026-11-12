@@ -147,22 +147,22 @@ func toolHandler(def ops.Def, schema *jsonschema.Resolved, opts Options) mcp.Too
 				// The panic value may hold request data, so only the tool
 				// name and the stack (frames and addresses) are logged.
 				opts.logger().Error("tool panicked", "tool", name, "stack", string(debug.Stack()))
-				result, err = errorResult(fmt.Errorf("%s failed with an internal error", name), ""), nil
+				result, err = errorResult(fmt.Errorf("%s failed with an internal error", name), "", opts.maxResultBytes()), nil
 			}
 		}()
 		args := req.Params.Arguments
 		if err := validateArgs(schema, args); err != nil {
-			return errorResult(err, ""), nil
+			return errorResult(err, "", opts.maxResultBytes()), nil
 		}
 		var header http.Header
 		if req.Extra != nil {
 			header = req.Extra.Header
 		}
 		res, err := def.Invoke(ctx, newHeaderEnv(header, opts), args)
-		text := capResult(res.Text, opts.maxResultBytes())
 		if err != nil {
-			return errorResult(err, text), nil
+			return errorResult(err, res.Text, opts.maxResultBytes()), nil
 		}
+		text := capResult(res.Text, opts.maxResultBytes())
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}, nil
 	}
 }
@@ -180,14 +180,20 @@ func validateArgs(schema *jsonschema.Resolved, args json.RawMessage) error {
 	return nil
 }
 
+// maxErrorTextBytes caps the error message in a tool error, so an upstream
+// that sends a huge one still leaves room for the partial output.
+const maxErrorTextBytes = 8 << 10
+
 // errorResult is a tool error: the model sees it and can retry, unlike a
 // JSON-RPC error. partial carries any output produced before the failure.
-func errorResult(err error, partial string) *mcp.CallToolResult {
-	text := errorText(err)
+// The whole text stays within limit: the error leads, so its kind always
+// survives, and is cut first at maxErrorTextBytes.
+func errorResult(err error, partial string, limit int) *mcp.CallToolResult {
+	text := capResult(errorText(err), min(limit, maxErrorTextBytes))
 	if partial != "" {
 		text += "\n\n" + partial
 	}
-	return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: text}}}
+	return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: capResult(text, limit)}}}
 }
 
 // errorText leads with the error kind ("auth: ...") so agents can branch on
