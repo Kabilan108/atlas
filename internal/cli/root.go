@@ -94,6 +94,7 @@ func NewRootCmd(version string, opts ...Option) *cobra.Command {
 	rootCmd.AddCommand(newRepoCmd())
 	rootCmd.AddCommand(newUserCmd())
 	rootCmd.AddCommand(newWhoamiCmd())
+	rootCmd.AddCommand(newJiraCmd())
 	wrapRunE(rootCmd, options)
 
 	return rootCmd

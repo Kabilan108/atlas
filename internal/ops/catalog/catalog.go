@@ -7,6 +7,7 @@ import (
 
 	"github.com/kabilan108/atlas/internal/ops"
 	"github.com/kabilan108/atlas/internal/ops/api"
+	"github.com/kabilan108/atlas/internal/ops/jira"
 	"github.com/kabilan108/atlas/internal/ops/pipeline"
 	"github.com/kabilan108/atlas/internal/ops/pr"
 	"github.com/kabilan108/atlas/internal/ops/repo"
@@ -21,5 +22,6 @@ func All() []ops.Def {
 		repo.Ops(),
 		api.Ops(),
 		pipeline.Ops(),
+		jira.Ops(),
 	)
 }
