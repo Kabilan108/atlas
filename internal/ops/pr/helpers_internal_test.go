@@ -252,3 +252,56 @@ func TestFilterDiffKeepsMatchingFiles(t *testing.T) {
 		}
 	}
 }
+
+func TestFilterDiffMatchesExactPaths(t *testing.T) {
+	sections := []string{
+		"diff --git a/file.go b/file.go\n--- a/file.go\n+++ b/file.go\n@@ -1 +1 @@\n-old\n+new\n",
+		"diff --git a/b/file.go b/b/file.go\n--- a/b/file.go\n+++ b/b/file.go\n@@ -1 +1 @@\n--- a/file.go\n+new\n",
+		"diff --git a/pkg/file.go b/pkg/file.go\n--- a/pkg/file.go\n+++ b/pkg/file.go\n@@ -1 +1 @@\n-old\n+new\n",
+		"diff --git a/docs/a b.md b/docs/a b.md\nindex 1..2 100644\n--- a/docs/a b.md\t\n+++ b/docs/a b.md\t\n@@ -1 +1 @@\n-old\n+new\n",
+		"diff --git a/img/my pic.png b/img/my pic.png\nindex 1..2 100644\nBinary files a/img/my pic.png and b/img/my pic.png differ\n",
+		"diff --git \"a/tab\\there.go\" \"b/tab\\there.go\"\n--- \"a/tab\\there.go\"\n+++ \"b/tab\\there.go\"\n@@ -1 +1 @@\n-old\n+new\n",
+		"diff --git \"a/caf\\303\\251.md\" \"b/caf\\303\\251.md\"\nnew file mode 100644\n--- /dev/null\n+++ \"b/caf\\303\\251.md\"\n@@ -0,0 +1 @@\n+new\n",
+		"diff --git a/old name.go b/new name.go\nsimilarity index 90%\nrename from old name.go\nrename to new name.go\n",
+		"diff --git a/a b/c.go b/a b/d.go\nsimilarity index 100%\nrename from a b/c.go\nrename to a b/d.go\n",
+		"diff --git a/gone.go b/gone.go\ndeleted file mode 100644\n--- a/gone.go\n+++ /dev/null\n@@ -1 +0,0 @@\n-old\n",
+	}
+	diff := strings.Join(sections, "")
+	tests := map[string][]int{
+		"file.go":        {0},
+		"b/file.go":      {1},
+		"b":              {1},
+		"pkg":            {2},
+		"pkg/file.go":    {2},
+		"docs/a b.md":    {3},
+		"docs":           {3},
+		"b.md":           nil,
+		"img/my pic.png": {4},
+		"tab\there.go":   {5},
+		"café.md":        {6},
+		"old name.go":    {7},
+		"new name.go":    {7},
+		"name.go":        nil,
+		"a b":            {8},
+		"a b/c.go":       {8},
+		"a b/d.go":       {8},
+		"gone.go":        {9},
+		"a/file.go":      nil,
+		"doc":            nil,
+		"docs/a b.md/x":  nil,
+	}
+	for path, want := range tests {
+		var b strings.Builder
+		for _, i := range want {
+			b.WriteString(sections[i])
+		}
+		if got := string(filterDiff([]byte(diff), path)); got != b.String() {
+			t.Errorf("filterDiff(%q) = %q, want %q", path, got, b.String())
+		}
+	}
+
+	wantFiles := []string{"file.go", "b/file.go", "pkg/file.go", "docs/a b.md", "img/my pic.png", "tab\there.go", "café.md", "new name.go", "a b/d.go", "gone.go"}
+	if got := DiffFiles([]byte(diff)); !reflect.DeepEqual(got, wantFiles) {
+		t.Errorf("DiffFiles() = %#v, want %#v", got, wantFiles)
+	}
+}
