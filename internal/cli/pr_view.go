@@ -21,7 +21,7 @@ func newPRViewCmd() *cobra.Command {
 		op:        pr.View,
 		input:     prViewInput,
 		intercept: openPRInBrowser,
-		pagerName: func(result *pr.ViewResult) string { return fmt.Sprintf("pr-%d.md", result.ID) },
+		pager:     func(result *pr.ViewResult) string { return fmt.Sprintf("pr-%d.md", result.ID) },
 	})
 }
 
