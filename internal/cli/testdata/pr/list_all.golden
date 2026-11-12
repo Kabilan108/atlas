@@ -6,5 +6,5 @@ ID   Title                            Author          State         Updated     
 #7   Gadget fix                       Linus Torvalds  OPEN          Feb 2, 2025  1 comments
 --- requests
 GET /2.0/repositories/acme
-GET /2.0/repositories/acme/widgets/pullrequests?state=OPEN
-GET /2.0/repositories/acme/gadgets/pullrequests?state=OPEN
+GET /2.0/repositories/acme/widgets/pullrequests?pagelen=50&sort=-updated_on&state=OPEN
+GET /2.0/repositories/acme/gadgets/pullrequests?pagelen=50&sort=-updated_on&state=OPEN

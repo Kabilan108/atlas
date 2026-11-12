@@ -40,6 +40,8 @@ var prGoldenCases = []prGoldenCase{
 	{name: "list_all_repo_flag_json", args: []string{"list", "--all", "-R", "acme/ignored", "--json"}},
 	{name: "list_all_no_workspace", args: []string{"list", "--all"}},
 	{name: "list_inferred", args: []string{"list"}, git: true},
+	{name: "list_repos_since_limit", args: []string{"list", "--repos", "acme/gadgets,widgets", "--updated-since", "2025-03-01", "-L", "5", "--state", "all"}, env: map[string]string{"ATLAS_WORKSPACE": "acme"}},
+	{name: "list_repos_and_repo", args: []string{"list", "--repos", "acme/gadgets", "-R", "acme/widgets"}},
 
 	{name: "diff_patch", args: []string{"diff", "42", "-R", "acme/widgets", "--patch"}},
 	{name: "diff_pipe", args: []string{"diff", "42", "-R", "acme/widgets"}},

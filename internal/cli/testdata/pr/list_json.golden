@@ -445,4 +445,4 @@ $ atlas pr list -R acme/widgets --json
   }
 ]
 --- requests
-GET /2.0/repositories/acme/widgets/pullrequests?state=OPEN
+GET /2.0/repositories/acme/widgets/pullrequests?pagelen=50&sort=-updated_on&state=OPEN

@@ -22,6 +22,8 @@ var toolBudgetExceptions = map[string]int{
 	"pr_review":         1434,
 	"pr_create":         1434,
 	"jira_issue_create": 1434,
+	// pr_list's scope (repo, repos, workspace/*), filters, and limit.
+	"pr_list": 1152,
 }
 
 func TestToolsListBudget(t *testing.T) {

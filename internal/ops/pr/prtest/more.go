@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -89,8 +90,8 @@ func (f *Fixture) serveMore(w http.ResponseWriter, r *http.Request, path, body s
 		writeJSON(w, `{"values":[{"name":"widgets","full_name":"acme/widgets"},{"name":"Gadgets","full_name":"acme/gadgets"}]}`)
 	case get && path == repoPath:
 		writeJSON(w, `{"name":"widgets","full_name":"acme/widgets","mainbranch":{"name":"main"}}`)
-	case get && path == repoPath+"/pullrequests" && r.URL.Query().Get("q") == "":
-		if state := r.URL.Query().Get("state"); state != "" && state != "OPEN" {
+	case get && path == repoPath+"/pullrequests" && !strings.HasPrefix(r.URL.Query().Get("q"), "source.branch"):
+		if states := r.URL.Query()["state"]; len(states) > 0 && !slices.Contains(states, "OPEN") {
 			writeJSON(w, `{"values":[]}`)
 			return true
 		}

@@ -114,10 +114,18 @@ type PullRequest struct {
 	MergeCommit  *Commit          `json:"merge_commit,omitempty"`
 }
 
+// PRListOptions filters and bounds ListPullRequests.
 type PRListOptions struct {
-	State    string
+	// States lists OPEN, MERGED, DECLINED, or SUPERSEDED pull requests;
+	// empty means OPEN, Bitbucket's default.
+	States   []string
 	Author   string
 	Reviewer string
+	// UpdatedSince keeps pull requests updated at or after it.
+	UpdatedSince time.Time
+	// Limit caps the pull requests returned; zero or more than
+	// MaxPRListLimit means MaxPRListLimit.
+	Limit int
 }
 
 type PullRequestRef struct {

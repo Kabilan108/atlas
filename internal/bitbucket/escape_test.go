@@ -58,14 +58,14 @@ func TestBranchAndStateQueriesAreEncoded(t *testing.T) {
 	if _, err := client.FindPullRequestByBranch(ctx, "acme", "widgets", `fix/"quote"&state=MERGED`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.ListPullRequests(ctx, "acme", "widgets", &PRListOptions{State: "OPEN"}); err != nil {
+	if _, err := client.ListPullRequests(ctx, "acme", "widgets", &PRListOptions{States: []string{"OPEN"}}); err != nil {
 		t.Fatal(err)
 	}
 	requests := recorder.all()
 	if got := requests[0].Query; len(got) != 1 || got.Get("q") != `source.branch.name="fix/\"quote\"&state=MERGED"` {
 		t.Fatalf("branch query = %v", got)
 	}
-	if got := requests[1].Query; len(got) != 1 || got.Get("state") != "OPEN" {
+	if got := requests[1].Query; len(got) != 3 || got.Get("state") != "OPEN" || got.Get("sort") != "-updated_on" {
 		t.Fatalf("list query = %v", got)
 	}
 }

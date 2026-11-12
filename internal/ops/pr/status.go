@@ -25,6 +25,8 @@ type StatusResult struct {
 	repo   ops.Repository
 	branch string
 	user   bitbucket.User
+	// more is set when the repo has more open pull requests than were read.
+	more bool
 }
 
 var Status = &ops.Op[StatusInput, *StatusResult]{
@@ -51,12 +53,12 @@ func status(ctx context.Context, env ops.Env, in StatusInput) (*StatusResult, er
 	if err != nil {
 		return nil, err
 	}
-	prs, err := client.ListPullRequests(ctx, repo.Workspace, repo.Repo, &bitbucket.PRListOptions{State: "OPEN"})
+	listed, err := client.ListPullRequests(ctx, repo.Workspace, repo.Repo, &bitbucket.PRListOptions{States: []string{"OPEN"}, Limit: bitbucket.MaxPRListLimit})
 	if err != nil {
 		return nil, err
 	}
-	result := &StatusResult{repo: repo, branch: in.Branch, user: *user}
-	for _, pr := range prs {
+	result := &StatusResult{repo: repo, branch: in.Branch, user: *user, more: listed.More}
+	for _, pr := range listed.PullRequests {
 		if in.Branch != "" && pr.Source.Branch.Name == in.Branch {
 			current := pr
 			result.CurrentBranch = &current
@@ -94,6 +96,9 @@ func (r *StatusResult) Markdown() (string, error) {
 		for _, pr := range group.prs {
 			writeStatusLine(&b, pr)
 		}
+	}
+	if r.more {
+		fmt.Fprintf(&b, "\nOnly the %d most recently updated open pull requests were read.\n", bitbucket.MaxPRListLimit)
 	}
 	return b.String(), nil
 }

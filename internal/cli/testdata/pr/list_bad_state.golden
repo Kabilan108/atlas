@@ -2,4 +2,4 @@ $ atlas pr list -R acme/widgets --state done
 --- stdout
 --- requests
 --- error
-invalid PR state "done": expected open, merged, declined, closed, or superseded
+invalid PR state "done": expected open, merged, declined, closed, superseded, or all
