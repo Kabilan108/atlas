@@ -48,8 +48,11 @@ func (c *Client) ListIssueLinkTypes(ctx context.Context) ([]IssueLinkType, error
 	return res.IssueLinkTypes, nil
 }
 
-// LinkInput links two issues. For a type whose outward text is "blocks",
-// OutwardIssue blocks InwardIssue. Comment is an optional ADF document.
+// LinkInput links two issues. Jira reads the link as "InwardIssue
+// <outward> OutwardIssue": with type Blocks (outward "blocks"), InwardIssue
+// blocks OutwardIssue. Each issue then lists the other under the opposite
+// key: InwardIssue shows outwardIssue, OutwardIssue shows inwardIssue.
+// Comment is an optional ADF document.
 type LinkInput struct {
 	TypeName     string
 	InwardIssue  string

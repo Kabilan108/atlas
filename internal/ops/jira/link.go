@@ -76,13 +76,13 @@ func link(ctx context.Context, env ops.Env, in LinkInput) (*Linked, error) {
 	if err != nil {
 		return nil, invalid(err)
 	}
-	// Jira's create body names the issue the outward wording starts from
-	// outwardIssue: outwardIssue <outward> inwardIssue.
-	from, to, verb := key, target, linkType.Outward
+	// Jira's create body reads inwardIssue <outward> outwardIssue: "A blocks
+	// B" posts inwardIssue A, outwardIssue B.
+	subject, object, verb := key, target, linkType.Outward
 	if in.Direction == LinkInward {
-		from, to, verb = target, key, linkType.Inward
+		subject, object, verb = target, key, linkType.Inward
 	}
-	if err := client.CreateIssueLink(ctx, jiraapi.LinkInput{TypeName: linkType.Name, OutwardIssue: from, InwardIssue: to}); err != nil {
+	if err := client.CreateIssueLink(ctx, jiraapi.LinkInput{TypeName: linkType.Name, InwardIssue: subject, OutwardIssue: object}); err != nil {
 		return nil, err
 	}
 	receipt := &Linked{Issue: key, Target: target, Type: linkType.Name}
