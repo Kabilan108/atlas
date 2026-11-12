@@ -1,0 +1,48 @@
+{
+  "type": "doc",
+  "version": 1,
+  "content": [
+    {"type": "heading", "attrs": {"level": 2}, "content": [{"type": "text", "text": "Steps to reproduce"}]},
+    {"type": "paragraph", "content": [
+      {"type": "text", "text": "Run "},
+      {"type": "text", "text": "make test", "marks": [{"type": "code"}]},
+      {"type": "text", "text": " on "},
+      {"type": "text", "text": "main", "marks": [{"type": "strong"}]},
+      {"type": "text", "text": " and "},
+      {"type": "text", "text": "watch", "marks": [{"type": "em"}]},
+      {"type": "text", "text": " the "},
+      {"type": "text", "text": "build log", "marks": [{"type": "link", "attrs": {"href": "https://ci.example.com/build/42"}}]},
+      {"type": "text", "text": ". cc "},
+      {"type": "mention", "attrs": {"id": "5b10ac8d82e05b22cc7d4ef5", "text": "@Mia Krystof", "accessLevel": ""}},
+      {"type": "text", "text": " "}
+    ]},
+    {"type": "bulletList", "content": [
+      {"type": "listItem", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "first bullet"}]}]},
+      {"type": "listItem", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "second bullet"}]}]}
+    ]},
+    {"type": "orderedList", "attrs": {"order": 1}, "content": [
+      {"type": "listItem", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "step one"}]}]},
+      {"type": "listItem", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "step two"}]}]}
+    ]},
+    {"type": "taskList", "attrs": {"localId": "a1b2"}, "content": [
+      {"type": "taskItem", "attrs": {"localId": "t1", "state": "DONE"}, "content": [{"type": "text", "text": "write the fix"}]},
+      {"type": "taskItem", "attrs": {"localId": "t2", "state": "TODO"}, "content": [{"type": "text", "text": "ship it"}]}
+    ]},
+    {"type": "codeBlock", "attrs": {"language": "go"}, "content": [{"type": "text", "text": "func main() {\n\tfmt.Println(\"hi\")\n}"}]},
+    {"type": "table", "attrs": {"isNumberColumnEnabled": false, "layout": "default"}, "content": [
+      {"type": "tableRow", "content": [
+        {"type": "tableHeader", "attrs": {}, "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Env"}]}]},
+        {"type": "tableHeader", "attrs": {}, "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Result"}]}]}
+      ]},
+      {"type": "tableRow", "content": [
+        {"type": "tableCell", "attrs": {}, "content": [{"type": "paragraph", "content": [{"type": "text", "text": "staging"}]}]},
+        {"type": "tableCell", "attrs": {}, "content": [{"type": "paragraph", "content": [{"type": "text", "text": "fails"}]}]}
+      ]}
+    ]},
+    {"type": "mediaSingle", "attrs": {"layout": "center"}, "content": [
+      {"type": "media", "attrs": {"id": "6e7c7f2c-dd7a-499c-bceb-6f32bfbf30b5", "type": "file", "collection": "", "alt": "screenshot.png", "width": 1200, "height": 800}}
+    ]},
+    {"type": "extension", "attrs": {"extensionType": "com.atlassian.jira", "extensionKey": "roadmap"}},
+    {"type": "futureWidget", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "kept text"}]}]}
+  ]
+}
