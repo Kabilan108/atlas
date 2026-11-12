@@ -246,6 +246,7 @@ atlas pr diff
   use: diff [number|url|branch]
   flag --color string default="auto"
   flag --json bool default="false"
+  flag --line-numbers -n bool default="false"
   flag --name-only bool default="false"
   flag --patch bool default="false"
   flag --repo -R string default=""

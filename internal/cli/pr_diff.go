@@ -24,12 +24,14 @@ func newPRDiffCmd() *cobra.Command {
 	cmd.Flags().String("color", "auto", "Use color in diff output: auto, always, never")
 	cmd.Flags().Bool("name-only", false, "Display only names of changed files")
 	cmd.Flags().Bool("patch", false, "Display diff in patch format")
+	cmd.Flags().BoolP("line-numbers", "n", false, "Prefix each diff line with its old and new line numbers")
 	cmd.Flags().BoolP("structured", "s", false, "Use difftastic when available")
 	return bind(cmd, binding[pr.DiffInput, *pr.DiffResult]{
 		op: pr.Diff,
 		input: func(cmd *cobra.Command, args []string, env *cliEnv) (pr.DiffInput, error) {
 			ref, err := env.prRef(cmd, optionalArg(args))
-			return pr.DiffInput{Ref: ref, MaxBytes: pr.MaxDiffBytes}, err
+			lineNumbers, _ := cmd.Flags().GetBool("line-numbers")
+			return pr.DiffInput{Ref: ref, LineNumbers: lineNumbers, MaxBytes: pr.MaxDiffBytes}, err
 		},
 		human: func(w io.Writer, result *pr.DiffResult) error { return writePRDiff(cmd, w, result) },
 	})
@@ -41,6 +43,7 @@ func newPRDiffCmd() *cobra.Command {
 func writePRDiff(cmd *cobra.Command, w io.Writer, result *pr.DiffResult) error {
 	nameOnly, _ := cmd.Flags().GetBool("name-only")
 	patch, _ := cmd.Flags().GetBool("patch")
+	lineNumbers, _ := cmd.Flags().GetBool("line-numbers")
 	structured, _ := cmd.Flags().GetBool("structured")
 	color, _ := cmd.Flags().GetString("color")
 	target := result.Target()
@@ -52,6 +55,10 @@ func writePRDiff(cmd *cobra.Command, w io.Writer, result *pr.DiffResult) error {
 			}
 		}
 		return nil
+	}
+	if lineNumbers {
+		_, err := w.Write(diff)
+		return err
 	}
 	if structured && !localCheckoutMatches(target.Repository) {
 		fmt.Fprintf(cmd.ErrOrStderr(), "Structured diff needs a local checkout of %s; showing the API patch instead\n", target.Repository)

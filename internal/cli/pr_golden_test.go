@@ -48,6 +48,7 @@ var prGoldenCases = []prGoldenCase{
 	{name: "diff_name_only", args: []string{"diff", "42", "-R", "acme/widgets", "--name-only"}},
 	{name: "diff_structured_no_checkout", args: []string{"diff", "42", "-R", "acme/widgets", "-s"}},
 	{name: "diff_url", args: []string{"diff", prtest.URL, "--patch"}},
+	{name: "diff_line_numbers", args: []string{"diff", "42", "-R", "acme/widgets", "-n"}},
 
 	{name: "status", args: []string{"status", "-R", "acme/widgets"}, git: true},
 	{name: "status_json", args: []string{"status", "-R", "acme/widgets", "--json"}, git: true},

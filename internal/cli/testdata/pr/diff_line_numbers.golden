@@ -1,0 +1,17 @@
+$ atlas pr diff 42 -R acme/widgets -n
+--- stdout
+diff --git a/src/login.go b/src/login.go
+index 1111111..2222222 100644
+--- a/src/login.go
++++ b/src/login.go
+@@ -8,5 +8,7 @@ func Login(user string) error {
+ 8  8  	if user == "" {
+ 9  9  		return errEmpty
+10 10  	}
+   11 +	token, err := issue(user)
+   12 +	if err != nil { return err }
+11 13  	return save(token)
+12 14  }
+--- requests
+GET /2.0/repositories/acme/widgets/pullrequests/42
+GET /2.0/repositories/acme/widgets/pullrequests/42/diff

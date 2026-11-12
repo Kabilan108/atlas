@@ -23,7 +23,7 @@ type CommentSpec struct {
 	Body    string `json:"body" jsonschema:"markdown"`
 	ReplyTo int    `json:"reply_to,omitempty" jsonschema:"comment ID to reply to"`
 	Path    string `json:"path,omitempty" jsonschema:"file, for an inline comment"`
-	Line    int    `json:"line,omitempty" jsonschema:"line in path"`
+	Line    int    `json:"line,omitempty" jsonschema:"line number in the file's new version (old version with side old); take it from pr_diff with line_numbers"`
 	Side    Side   `json:"side,omitempty" jsonschema:"side of line; default new"`
 }
 
