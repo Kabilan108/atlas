@@ -42,8 +42,8 @@ type Meta struct {
 // Env carries per-call credentials and defaults. A CLI run or an MCP call
 // builds a fresh Env, and nothing in it outlives the call. Clients are built
 // on first use and reused for the rest of the call, so a Bitbucket op never
-// needs Jira credentials and the reverse. Both methods are safe to call from
-// several goroutines.
+// needs Jira credentials and the reverse. Bitbucket and Jira are safe to call
+// from several goroutines.
 type Env interface {
 	Bitbucket(ctx context.Context) (*bitbucket.Client, error)
 	Jira(ctx context.Context) (*jira.Client, error)
