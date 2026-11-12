@@ -11,8 +11,8 @@ Atlas enables fetching PR comments and review feedback from Bitbucket Cloud in a
 - **Method**: Bitbucket API token
 - **Config storage**: `~/.config/atlas/config.toml`
 - **Credential storage**: `~/.config/atlas/credentials.toml`
-- **Environment overrides**: `ATLAS_WORKSPACE`, `ATLAS_USERNAME`, `ATLAS_API_TOKEN`
-- **Credential precedence**: `ATLAS_API_TOKEN`, then saved credentials
+- **Environment overrides**: `ATLAS_WORKSPACE`, `ATLAS_USERNAME`, `ATLAS_BITBUCKET_TOKEN` (or `ATLAS_API_TOKEN`), `ATLAS_JIRA_TOKEN`, `ATLAS_JIRA_CLOUD_ID`, `ATLAS_CREDENTIALS_FILE`
+- **Credential precedence**: per product, the environment token, then the credentials file (`ATLAS_CREDENTIALS_FILE` or `~/.config/atlas/credentials.toml`)
 
 ## Configuration
 

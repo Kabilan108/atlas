@@ -242,3 +242,37 @@ func TestBrokenCredentialsFileBlocksOnlyProductsThatReadIt(t *testing.T) {
 		})
 	}
 }
+
+func TestCredentialsFileAndBitbucketTokenOverrides(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("ATLAS_API_TOKEN", "")
+	t.Setenv("ATLAS_BITBUCKET_TOKEN", "")
+	t.Setenv("ATLAS_JIRA_TOKEN", "")
+	secret := filepath.Join(t.TempDir(), "atlas-credentials.toml")
+	if err := os.WriteFile(secret, []byte("api_token = \"file-bb\"\njira_token = \"file-jira\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ATLAS_CREDENTIALS_FILE", secret)
+
+	if path, err := CredentialsPath(); err != nil || path != secret {
+		t.Fatalf("CredentialsPath = %q, %v", path, err)
+	}
+	bb, err := BitbucketCredentials()
+	if err != nil || bb.Token != "file-bb" {
+		t.Fatalf("bitbucket from file = %+v, %v", bb, err)
+	}
+	jira, err := JiraCredentials()
+	if err != nil || jira.Token != "file-jira" {
+		t.Fatalf("jira from file = %+v, %v", jira, err)
+	}
+
+	t.Setenv("ATLAS_API_TOKEN", "legacy-env")
+	if bb, _ := BitbucketCredentials(); bb.Token != "legacy-env" {
+		t.Fatalf("ATLAS_API_TOKEN: token = %q", bb.Token)
+	}
+	t.Setenv("ATLAS_BITBUCKET_TOKEN", "new-env")
+	if bb, _ := BitbucketCredentials(); bb.Token != "new-env" {
+		t.Fatalf("ATLAS_BITBUCKET_TOKEN should win: token = %q", bb.Token)
+	}
+}

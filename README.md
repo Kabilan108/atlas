@@ -76,26 +76,48 @@ shell tools when they are available:
 ## Configuration
 
 Run `atlas login` and follow the prompts to create and save a Bitbucket API token.
-Atlas always prefers `ATLAS_API_TOKEN` when it is set, then falls back to saved
-credentials from `~/.config/atlas/credentials.toml`.
+Atlas reads each product's token from the environment first, then from the
+credentials file:
 
-Create the token with these scopes:
+| Token | Environment | Credentials file key |
+|-------|-------------|----------------------|
+| Bitbucket | `ATLAS_BITBUCKET_TOKEN`, then `ATLAS_API_TOKEN` | `api_token` |
+| Jira | `ATLAS_JIRA_TOKEN` | `jira_token` |
+
+The credentials file is `~/.config/atlas/credentials.toml` (mode 600), or the path
+in `ATLAS_CREDENTIALS_FILE`, for example a file your secrets manager decrypts.
+Keeping tokens in that file keeps them out of the environment of every process an
+agent starts. Jira also needs `ATLAS_JIRA_CLOUD_ID` or `atlas config set jira_cloud_id <id>`.
+
+Create the Bitbucket token (app: Bitbucket) with these scopes:
 
 ```text
 read:user:bitbucket
+read:workspace:bitbucket
 read:repository:bitbucket
-write:repository:bitbucket
 read:pullrequest:bitbucket
 write:pullrequest:bitbucket
+read:pipeline:bitbucket
+write:pipeline:bitbucket
 read:snippet:bitbucket
 write:snippet:bitbucket
 delete:snippet:bitbucket
 ```
 
+Create the Jira token (app: Jira, classic scopes):
+
+```text
+read:jira-work
+write:jira-work
+read:jira-user
+read:servicedesk-request
+write:servicedesk-request
+```
+
 Configure manually or through environment variables:
 
 ```bash
-export ATLAS_API_TOKEN="your-token"
+export ATLAS_BITBUCKET_TOKEN="your-token"
 export ATLAS_USERNAME="user@example.com"
 
 atlas config set workspace my-workspace
