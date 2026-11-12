@@ -152,12 +152,12 @@ func TestPRViewToolSchema(t *testing.T) {
 	if err := json.Unmarshal(schema, &parsed); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"repo", "pr", "comments", "include_resolved"} {
+	for _, name := range []string{"repo", "pr", "comments", "include_resolved", "activity"} {
 		if _, ok := parsed.Properties[name]; !ok {
 			t.Errorf("schema lacks %q: %s", name, schema)
 		}
 	}
-	if len(parsed.Properties) != 4 {
+	if len(parsed.Properties) != 5 {
 		t.Errorf("schema exposes CLI-only fields: %s", schema)
 	}
 	if len(parsed.Required) != 1 || parsed.Required[0] != "pr" {

@@ -15,6 +15,7 @@ type ViewInput struct {
 	Ref
 	Comments        bool `json:"comments,omitempty" jsonschema:"include comment threads (with diff context) and tasks"`
 	IncludeResolved bool `json:"include_resolved,omitempty" jsonschema:"with comments, also show resolved threads"`
+	Activity        bool `json:"activity,omitempty" jsonschema:"add the activity feed: approvals, pushes, and updates with times"`
 
 	// JSON fetches only what `atlas pr view --json` prints: the pull request
 	// and all of its comments. Only the CLI sets it.
@@ -25,7 +26,8 @@ type ViewInput struct {
 // marshals to the JSON that `atlas pr view --json` prints.
 type ViewResult struct {
 	*bitbucket.PullRequest
-	Comments []bitbucket.Comment `json:"comments,omitempty"`
+	Comments []bitbucket.Comment             `json:"comments,omitempty"`
+	Activity []bitbucket.PullRequestActivity `json:"activity,omitempty"`
 
 	workspace       string
 	repo            string
@@ -68,6 +70,12 @@ func view(ctx context.Context, env ops.Env, in ViewInput) (*ViewResult, error) {
 		result.Comments, err = client.ListPullRequestComments(ctx, target.Workspace, target.Repo, id)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch comments: %w", err)
+		}
+	}
+	if in.Activity {
+		result.Activity, err = client.ListPullRequestActivity(ctx, target.Workspace, target.Repo, id, ActivityLimit)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch activity: %w", err)
 		}
 	}
 	if in.JSON {
@@ -150,6 +158,7 @@ func (r *ViewResult) render(resolve func(string) (bitbucket.User, bool)) (string
 		return "", err
 	}
 	if !r.showComments {
+		writeActivity(&buf, r.Activity)
 		return buf.String(), nil
 	}
 
@@ -170,5 +179,6 @@ func (r *ViewResult) render(resolve func(string) (bitbucket.User, bool)) (string
 			return "", err
 		}
 	}
+	writeActivity(&buf, r.Activity)
 	return buf.String(), nil
 }

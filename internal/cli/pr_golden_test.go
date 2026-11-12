@@ -114,6 +114,7 @@ var prGoldenCases = []prGoldenCase{
 	{name: "comment_delete_with_body", args: []string{"comment", "42", "-R", "acme/widgets", "--delete", "101", "-b", "x"}},
 	{name: "comment_edit_and_delete", args: []string{"comment", "42", "-R", "acme/widgets", "--edit", "1", "--delete", "2"}},
 	{name: "edit_base", args: []string{"edit", "42", "-R", "acme/widgets", "--base", "release"}},
+	{name: "view_activity", args: []string{"view", "42", "-R", "acme/widgets", "--raw", "--activity"}},
 	{name: "create_json", args: []string{"create", "-R", "acme/widgets", "-t", "Add login", "--json"}, git: true},
 
 	{name: "review_approve", args: []string{"review", "42", "-R", "acme/widgets", "--approve", "-b", "summary", "--comment-spec", "$SPEC"}},

@@ -16,6 +16,7 @@ func newPRViewCmd() *cobra.Command {
 	addPRRepoFlag(cmd)
 	cmd.Flags().BoolP("comments", "c", false, "Include comments")
 	cmd.Flags().Bool("all", false, "Include resolved comments (only with --comments)")
+	cmd.Flags().Bool("activity", false, "Include the activity feed: approvals, pushes, and updates")
 	cmd.Flags().BoolP("web", "w", false, "Open the pull request in the browser")
 	return bind(cmd, binding[pr.ViewInput, *pr.ViewResult]{
 		op:        pr.View,
@@ -32,8 +33,10 @@ func prViewInput(cmd *cobra.Command, args []string, env *cliEnv) (pr.ViewInput, 
 	}
 	showComments, _ := cmd.Flags().GetBool("comments")
 	includeResolved, _ := cmd.Flags().GetBool("all")
+	activity, _ := cmd.Flags().GetBool("activity")
 	jsonOutput, _ := cmd.Flags().GetBool("json")
 	return pr.ViewInput{
+		Activity:        activity,
 		Ref:             ref,
 		Comments:        showComments && !jsonOutput,
 		IncludeResolved: includeResolved,

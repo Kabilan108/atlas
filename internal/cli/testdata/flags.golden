@@ -130,6 +130,7 @@ atlas pr unapprove
   flag --repo -R string default=""
 atlas pr view
   use: view [number|url|branch]
+  flag --activity bool default="false"
   flag --all bool default="false"
   flag --comments -c bool default="false"
   flag --json bool default="false"
