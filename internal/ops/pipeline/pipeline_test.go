@@ -132,6 +132,43 @@ func TestViewValidatesBuilds(t *testing.T) {
 	}
 }
 
+func TestViewAndLogTakeResultURLs(t *testing.T) {
+	env, _ := newEnv(t)
+	view, err := pipeline.View.Call(context.Background(), env, pipeline.ViewInput{Builds: []string{
+		"https://bitbucket.org/acme/widgets/pipelines/results/2090",
+		"https://bitbucket.org/acme/widgets/addon/pipelines/home#!/results/2096/steps/{x}",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.Repo != repo || view.Results[0].Build != "2090" || view.Results[1].Build != "2096" {
+		t.Fatalf("view = %+v", view)
+	}
+	logs, err := pipeline.Log.Call(context.Background(), env, pipeline.LogInput{
+		RepoRef: ops.RepoRef{Repo: "widgets"}, Builds: []string{"https://bitbucket.org/acme/widgets/pipelines/results/2090"},
+	})
+	if err != nil || logs.Results[0].BuildNumber != 2090 {
+		t.Fatalf("logs = %+v, err = %v", logs, err)
+	}
+}
+
+func TestBuildURLsMustShareTheRepo(t *testing.T) {
+	env, fixture := newEnv(t)
+	for _, in := range []pipeline.ViewInput{
+		{Builds: []string{"https://bitbucket.org/acme/widgets/pipelines/results/1", "https://bitbucket.org/acme/gadgets/pipelines/results/2"}},
+		{RepoRef: ops.RepoRef{Repo: "acme/gadgets"}, Builds: []string{"https://bitbucket.org/acme/widgets/pipelines/results/1"}},
+		{Builds: []string{"https://bitbucket.org/acme/widgets/pipelines/results/1", "2090"}, RepoRef: ops.RepoRef{Repo: "acme/other"}},
+	} {
+		_, err := pipeline.View.Call(context.Background(), env, in)
+		if ops.KindOf(err) != ops.Invalid || !strings.Contains(err.Error(), "acme/") {
+			t.Errorf("%+v: err = %v, want invalid naming the repos", in, err)
+		}
+	}
+	if n := len(fixture.Requests()); n != 0 {
+		t.Fatalf("made %d requests", n)
+	}
+}
+
 func TestLogDefaultsToFailedStepsWithBoundedTail(t *testing.T) {
 	env, fixture := newEnv(t)
 	result, err := pipeline.Log.Call(context.Background(), env, pipeline.LogInput{RepoRef: ops.RepoRef{Repo: repo}, Builds: []string{"2090"}})

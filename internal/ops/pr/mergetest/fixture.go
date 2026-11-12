@@ -45,13 +45,15 @@ const RefusalMessage = "You can't merge until you have at least 1 approval."
 
 // Fixture is the fake API. HeadCommit is the PR's source commit, Head unless
 // a test force-pushes. Statuses maps a commit hash to its JSON status array;
-// a commit without an entry has none.
+// a commit without an entry has none. LaterStatuses holds the arrays a
+// commit's statuses change to, one per read, as checks finish.
 type Fixture struct {
-	State      string
-	HeadCommit string
-	Statuses   map[string]string
-	Merge      MergeMode
-	TaskPolls  int
+	State         string
+	HeadCommit    string
+	Statuses      map[string]string
+	LaterStatuses map[string][]string
+	Merge         MergeMode
+	TaskPolls     int
 
 	mu       sync.Mutex
 	requests []Request
@@ -66,12 +68,17 @@ type Request struct {
 }
 
 func New() *Fixture {
-	return &Fixture{State: "OPEN", HeadCommit: Head, Statuses: map[string]string{}}
+	return &Fixture{State: "OPEN", HeadCommit: Head, Statuses: map[string]string{}, LaterStatuses: map[string][]string{}}
 }
 
 // Status is one commit status as Bitbucket returns it.
 func Status(key, name, state string) string {
-	return fmt.Sprintf(`{"type":"build","key":%q,"name":%q,"state":%q,"url":"https://ci.example/%s","updated_on":"2026-11-10T12:00:00Z"}`, key, name, state, key)
+	return StatusAt(key, name, state, "https://ci.example/"+key)
+}
+
+// StatusAt is Status linking to url, such as a Pipelines result page.
+func StatusAt(key, name, state, url string) string {
+	return fmt.Sprintf(`{"type":"build","key":%q,"name":%q,"state":%q,"url":%q,"updated_on":"2026-11-10T12:00:00Z"}`, key, name, state, url)
 }
 
 func (f *Fixture) Requests() []Request {
@@ -126,7 +133,12 @@ func (f *Fixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, f.pr(f.State, f.State == "MERGED"))
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, statusPath) && strings.HasSuffix(r.URL.Path, "/statuses"):
 		commit := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, statusPath), "/statuses")
+		f.mu.Lock()
 		statuses := f.Statuses[commit]
+		if later := f.LaterStatuses[commit]; len(later) > 0 {
+			f.Statuses[commit], f.LaterStatuses[commit] = later[0], later[1:]
+		}
+		f.mu.Unlock()
 		if statuses == "" {
 			statuses = "[]"
 		}

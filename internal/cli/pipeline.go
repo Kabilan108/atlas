@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/kabilan108/atlas/internal/bitbucket"
 	"github.com/kabilan108/atlas/internal/ops"
 	"github.com/kabilan108/atlas/internal/ops/pipeline"
 	"github.com/spf13/cobra"
@@ -28,6 +29,24 @@ func pipelineRepo(cmd *cobra.Command, env *cliEnv) (ops.RepoRef, error) {
 		return ops.RepoRef{}, err
 	}
 	return ops.RepoRef{Repo: repo}, nil
+}
+
+// pipelineBuildsRepo is pipelineRepo for build arguments, except that
+// result URLs name their own repository, so git is not asked when every
+// build is one and -R is not set.
+func pipelineBuildsRepo(cmd *cobra.Command, env *cliEnv, builds []string) (ops.RepoRef, error) {
+	if repoFlag, _ := cmd.Flags().GetString("repo"); repoFlag == "" {
+		allURLs := len(builds) > 0
+		for _, build := range builds {
+			if _, ok := bitbucket.ParsePipelineResultURL(build); !ok {
+				allURLs = false
+			}
+		}
+		if allURLs {
+			return ops.RepoRef{}, nil
+		}
+	}
+	return pipelineRepo(cmd, env)
 }
 
 func newPipelineListCmd() *cobra.Command {
@@ -61,14 +80,14 @@ func newPipelineViewCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "view <build>...",
 		Short: "Show pipeline runs and their steps",
-		Long:  "Show pipeline runs and their steps. A build is a build number (2090 or #2090) or a pipeline UUID.",
+		Long:  "Show pipeline runs and their steps. A build is a build number (2090 or #2090), a pipeline UUID, or a result URL.",
 		Args:  cobra.RangeArgs(1, 10),
 	}
 	addPRRepoFlag(cmd)
 	return bind(cmd, binding[pipeline.ViewInput, *pipeline.ViewResult]{
 		op: pipeline.View,
 		input: func(cmd *cobra.Command, args []string, env *cliEnv) (pipeline.ViewInput, error) {
-			repo, err := pipelineRepo(cmd, env)
+			repo, err := pipelineBuildsRepo(cmd, env, args)
 			if err != nil {
 				return pipeline.ViewInput{}, err
 			}
@@ -94,7 +113,7 @@ func newPipelineLogCmd() *cobra.Command {
 	return bind(cmd, binding[pipeline.LogInput, *pipeline.LogResult]{
 		op: pipeline.Log,
 		input: func(cmd *cobra.Command, args []string, env *cliEnv) (pipeline.LogInput, error) {
-			repo, err := pipelineRepo(cmd, env)
+			repo, err := pipelineBuildsRepo(cmd, env, args)
 			if err != nil {
 				return pipeline.LogInput{}, err
 			}

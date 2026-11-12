@@ -204,6 +204,7 @@ atlas pr checks
   flag --commit string default=""
   flag --json bool default="false"
   flag --repo -R string default=""
+  flag --wait duration default="0s"
 atlas pr clear-change-request
   use: clear-change-request [number|url|branch]
   flag --json bool default="false"

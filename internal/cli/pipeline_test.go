@@ -118,3 +118,15 @@ func TestPipelineRunSecuredVarErrorsHideTheValue(t *testing.T) {
 		}
 	}
 }
+
+func TestPipelineViewResultURLNeedsNoGit(t *testing.T) {
+	setupCLIEnv(t)
+	t.Chdir(t.TempDir())
+	out, err := runAtlas(t, pipelinetest.New(), "--no-cache", "pipeline", "view", "https://bitbucket.org/acme/widgets/pipelines/results/2090")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "## #2090 FAILED") {
+		t.Fatalf("output:\n%s", out)
+	}
+}

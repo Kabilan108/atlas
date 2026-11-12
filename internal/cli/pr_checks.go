@@ -18,6 +18,7 @@ func newPRChecksCmd() *cobra.Command {
 	}
 	addPRRepoFlag(cmd)
 	cmd.Flags().String("commit", "", "Read this commit's statuses instead of the PR head")
+	cmd.Flags().Duration("wait", 0, "Wait up to this long until no check is pending (max 10m)")
 	return bind(cmd, binding[pr.ChecksInput, *pr.ChecksResult]{
 		op:    pr.Checks,
 		input: prChecksInput,
@@ -27,18 +28,23 @@ func newPRChecksCmd() *cobra.Command {
 
 func prChecksInput(cmd *cobra.Command, args []string, env *cliEnv) (pr.ChecksInput, error) {
 	commit, _ := cmd.Flags().GetString("commit")
+	wait, _ := cmd.Flags().GetDuration("wait")
+	seconds, err := waitSeconds(wait)
+	if err != nil {
+		return pr.ChecksInput{}, err
+	}
 	if commit != "" && len(args) == 0 {
 		repo, err := env.repository(cmd)
 		if err != nil {
 			return pr.ChecksInput{}, err
 		}
-		return pr.ChecksInput{RepoRef: ops.RepoRef{Repo: repo}, Commit: commit}, nil
+		return pr.ChecksInput{RepoRef: ops.RepoRef{Repo: repo}, Commit: commit, WaitSeconds: seconds}, nil
 	}
 	ref, err := env.prRef(cmd, optionalArg(args))
 	if err != nil {
 		return pr.ChecksInput{}, err
 	}
-	return pr.ChecksInput{RepoRef: ref.RepoRef, PR: ref.PR, CurrentBranch: ref.CurrentBranch, Commit: commit}, nil
+	return pr.ChecksInput{RepoRef: ref.RepoRef, PR: ref.PR, CurrentBranch: ref.CurrentBranch, Commit: commit, WaitSeconds: seconds}, nil
 }
 
 func failOnChecks(_ *cobra.Command, result *pr.ChecksResult) error {

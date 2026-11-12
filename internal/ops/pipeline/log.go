@@ -24,7 +24,7 @@ const (
 // LogInput is the input to pipeline_log.
 type LogInput struct {
 	ops.RepoRef
-	Builds    []string `json:"builds" jsonschema:"build numbers (2090 or #2090) or pipeline UUIDs, at most 10"`
+	Builds    []string `json:"builds" jsonschema:"build numbers (2090 or #2090), pipeline UUIDs, or result URLs (from pr_checks), at most 10"`
 	Steps     []string `json:"steps,omitempty" jsonschema:"step names (any case) or UUIDs; default: failed steps, else running ones"`
 	TailBytes int      `json:"tail_bytes,omitempty" jsonschema:"bytes from the end of each step log, default 12000, max 2097152"`
 	MaxBytes  int      `json:"max_bytes,omitempty" jsonschema:"cap across all logs in the call, default 48000, max 8388608"`
@@ -72,7 +72,7 @@ var Log = &ops.Op[LogInput, *LogResult]{
 }
 
 func readLogs(ctx context.Context, env ops.Env, in LogInput) (*LogResult, error) {
-	builds, err := parseBuilds(in.Builds)
+	builds, repo, err := resolveBuilds(env, in.RepoRef, in.Builds)
 	if err != nil {
 		return nil, err
 	}
@@ -81,10 +81,6 @@ func readLogs(ctx context.Context, env ops.Env, in LogInput) (*LogResult, error)
 		return nil, err
 	}
 	budget, err := byteCap("max_bytes", in.MaxBytes, defaultMaxBytes, MaxCallBytes)
-	if err != nil {
-		return nil, err
-	}
-	repo, err := in.RepoRef.Resolve(env)
 	if err != nil {
 		return nil, err
 	}

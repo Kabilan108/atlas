@@ -11,7 +11,7 @@ import (
 // ViewInput is the input to pipeline_view.
 type ViewInput struct {
 	ops.RepoRef
-	Builds []string `json:"builds" jsonschema:"build numbers (2090 or #2090) or pipeline UUIDs, at most 10"`
+	Builds []string `json:"builds" jsonschema:"build numbers (2090 or #2090), pipeline UUIDs, or result URLs (from pr_checks), at most 10"`
 }
 
 // ViewResult holds one entry per requested build, in order.
@@ -42,11 +42,7 @@ var View = &ops.Op[ViewInput, *ViewResult]{
 }
 
 func view(ctx context.Context, env ops.Env, in ViewInput) (*ViewResult, error) {
-	builds, err := parseBuilds(in.Builds)
-	if err != nil {
-		return nil, err
-	}
-	repo, err := in.RepoRef.Resolve(env)
+	builds, repo, err := resolveBuilds(env, in.RepoRef, in.Builds)
 	if err != nil {
 		return nil, err
 	}
