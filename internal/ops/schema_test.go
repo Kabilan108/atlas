@@ -119,4 +119,54 @@ func TestEnumsAreValidatedOnBothPaths(t *testing.T) {
 	}
 }
 
+type labeledAction string
+
+func (labeledAction) Enum() []string   { return []string{"approve", "comment"} }
+func (a labeledAction) String() string { return "action:" + string(a) }
+
+type labeledSide int
+
+func (labeledSide) Enum() []string { return []string{"0", "1"} }
+func (s labeledSide) String() string {
+	if s == 1 {
+		return "right"
+	}
+	return "left"
+}
+
+type labeledInput struct {
+	Action labeledAction `json:"action"`
+	Side   labeledSide   `json:"side,omitempty"`
+}
+
+// Enums are checked by their value, never by what String() displays.
+func TestEnumsWithStringMethodsValidateByValue(t *testing.T) {
+	op := &ops.Op[labeledInput, labeledInput]{
+		Meta: ops.Meta{Name: "labeled", Surfaces: ops.Both},
+		Run:  func(_ context.Context, _ ops.Env, in labeledInput) (labeledInput, error) { return in, nil },
+	}
+	valid := labeledInput{Action: "approve", Side: 1}
+	if _, err := op.Call(context.Background(), nil, valid); err != nil {
+		t.Fatalf("Call rejected a valid input: %v", err)
+	}
+	if _, err := op.Invoke(context.Background(), nil, json.RawMessage(`{"action":"approve","side":1}`)); err != nil {
+		t.Fatalf("Invoke rejected a valid input: %v", err)
+	}
+	tests := []struct {
+		name string
+		in   labeledInput
+		want string
+	}{
+		{"string", labeledInput{Action: "merge"}, `invalid action "merge"`},
+		{"integer", labeledInput{Action: "approve", Side: 7}, `invalid side "7"`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := op.Call(context.Background(), nil, tc.in); ops.KindOf(err) != ops.Invalid || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("Call error = %v, want invalid %q", err, tc.want)
+			}
+		})
+	}
+}
+
 func ptr[T any](v T) *T { return &v }

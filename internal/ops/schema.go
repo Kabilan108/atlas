@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -126,7 +127,7 @@ func validateEnums(v reflect.Value, path string) error {
 			return nil
 		}
 		values := v.Interface().(Enum).Enum()
-		value := fmt.Sprint(v.Interface())
+		value := enumValue(v)
 		if !slices.Contains(values, value) {
 			return Errorf(Invalid, "invalid %s %q: expected one of %s", path, value, strings.Join(values, ", "))
 		}
@@ -168,6 +169,21 @@ func validateEnums(v reflect.Value, path string) error {
 		}
 	}
 	return nil
+}
+
+// enumValue is the underlying value of a string or integer enum as Enum()
+// spells it, ignoring any String method.
+func enumValue(v reflect.Value) string {
+	switch v.Kind() {
+	case reflect.String:
+		return v.String()
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return strconv.FormatInt(v.Int(), 10)
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return strconv.FormatUint(v.Uint(), 10)
+	default:
+		return fmt.Sprint(v.Interface())
+	}
 }
 
 // jsonName is the field's JSON name, or "" for fields JSON skips. Fields
