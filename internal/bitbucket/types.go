@@ -145,10 +145,11 @@ type PullRequestCreate struct {
 }
 
 type PullRequestUpdate struct {
-	Draft       *bool   `json:"draft,omitempty"`
-	Title       *string `json:"title,omitempty"`
-	Description *string `json:"description,omitempty"`
-	Reviewers   *[]User `json:"reviewers,omitempty"`
+	Draft       *bool                `json:"draft,omitempty"`
+	Title       *string              `json:"title,omitempty"`
+	Description *string              `json:"description,omitempty"`
+	Reviewers   *[]User              `json:"reviewers,omitempty"`
+	Destination *PullRequestRefInput `json:"destination,omitempty"`
 }
 
 type Branch struct {
