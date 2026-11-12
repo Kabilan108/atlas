@@ -96,7 +96,7 @@ func handlerFor(opts Options, defs []ops.Def) (http.Handler, error) {
 		DisableLocalhostProtection: true,
 	})
 	mux := http.NewServeMux()
-	mux.Handle("/mcp", guardHost(opts.AllowedHosts, readBody(maxBody, bodyTimeout, mcpHandler)))
+	mux.Handle("/mcp", guardHost(opts.AllowedHosts, bodyTimeout, readBody(maxBody, bodyTimeout, mcpHandler)))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	})

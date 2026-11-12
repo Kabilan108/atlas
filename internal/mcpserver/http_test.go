@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -131,5 +132,52 @@ func TestPanicLogOmitsThePanicValue(t *testing.T) {
 	}
 	if !strings.Contains(logs.String(), `"msg":"tool panicked"`) || !strings.Contains(logs.String(), `"tool":"boom_log"`) {
 		t.Fatalf("log lacks the fixed message and tool name:\n%s", logs.String())
+	}
+}
+
+// A rejected request whose body then stalls gets its error response, and the
+// connection closes near the body deadline rather than waiting for net/http
+// to drain the rest of the body.
+func TestRejectedStalledBodyClosesConnection(t *testing.T) {
+	const deadline = 100 * time.Millisecond
+	oversized := strings.Repeat("x", 513)
+	tests := []struct {
+		name    string
+		host    string
+		headers string
+		body    string
+		want    int
+	}{
+		{"oversized Content-Length", "localhost", "Content-Length: 4096\r\n", oversized, http.StatusRequestEntityTooLarge},
+		{"oversized chunked", "localhost", "Transfer-Encoding: chunked\r\n", "201\r\n" + oversized + "\r\n", http.StatusRequestEntityTooLarge},
+		{"rejected Host", "evil.example", "Content-Length: 1000\r\n", "x", http.StatusForbidden},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			server := serveHandler(t, mcpserver.Options{MaxBodyBytes: 512, BodyReadTimeout: deadline})
+			conn, err := net.Dial("tcp", server.Listener.Addr().String())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer conn.Close()
+			start := time.Now()
+			fmt.Fprintf(conn, "POST /mcp HTTP/1.1\r\nHost: %s\r\nContent-Type: application/json\r\n%s\r\n%s", tc.host, tc.headers, tc.body)
+			if err := conn.SetReadDeadline(start.Add(10 * deadline)); err != nil {
+				t.Fatal(err)
+			}
+			reader := bufio.NewReader(conn)
+			resp, err := http.ReadResponse(reader, nil)
+			if err != nil {
+				t.Fatalf("no response within %s: %v", 10*deadline, err)
+			}
+			_, _ = io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+			if resp.StatusCode != tc.want {
+				t.Fatalf("status = %d, want %d", resp.StatusCode, tc.want)
+			}
+			if _, err := reader.ReadByte(); err != io.EOF {
+				t.Fatalf("connection still open %s after the request: %v", time.Since(start), err)
+			}
+		})
 	}
 }
