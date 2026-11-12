@@ -45,7 +45,12 @@ func ConfigPath() (string, error) {
 	return filepath.Join(dir, "config.toml"), nil
 }
 
+// CredentialsPath is ATLAS_CREDENTIALS_FILE when set (for example a file a
+// secrets manager decrypts), else credentials.toml in the config directory.
 func CredentialsPath() (string, error) {
+	if path := os.Getenv("ATLAS_CREDENTIALS_FILE"); path != "" {
+		return path, nil
+	}
 	dir, err := ConfigDir()
 	if err != nil {
 		return "", err
@@ -166,28 +171,31 @@ func Set(key, value string) error {
 	return nil
 }
 
-// BitbucketCredentials returns the Bitbucket API token from ATLAS_API_TOKEN,
-// or else api_token in credentials.toml.
+// BitbucketCredentials returns the Bitbucket API token from
+// ATLAS_BITBUCKET_TOKEN or ATLAS_API_TOKEN, or else api_token in the
+// credentials file.
 func BitbucketCredentials() (*Credentials, error) {
-	return loadCredentials("ATLAS_API_TOKEN", "api_token")
+	return loadCredentials("api_token", "ATLAS_BITBUCKET_TOKEN", "ATLAS_API_TOKEN")
 }
 
 // JiraCredentials returns the Jira API token from ATLAS_JIRA_TOKEN, or else
 // jira_token in credentials.toml.
 func JiraCredentials() (*Credentials, error) {
-	return loadCredentials("ATLAS_JIRA_TOKEN", "jira_token")
+	return loadCredentials("jira_token", "ATLAS_JIRA_TOKEN")
 }
 
 // loadCredentials reads the credentials file only when envVar is unset, so
 // a broken entry for one product never blocks the other.
-func loadCredentials(envVar, fileKey string) (*Credentials, error) {
+func loadCredentials(fileKey string, envVars ...string) (*Credentials, error) {
 	cfg, err := Load()
 	if err != nil {
 		return nil, err
 	}
-	creds := &Credentials{Username: cfg.Username, Token: os.Getenv(envVar)}
-	if creds.Token != "" {
-		return creds, nil
+	creds := &Credentials{Username: cfg.Username}
+	for _, name := range envVars {
+		if creds.Token = os.Getenv(name); creds.Token != "" {
+			return creds, nil
+		}
 	}
 
 	credentialsPath, err := CredentialsPath()
