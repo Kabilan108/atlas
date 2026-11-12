@@ -89,6 +89,9 @@ func TestEveryCLICommandIsBoundOrLocal(t *testing.T) {
 			if !def.Info().Surfaces.Has(ops.CLI) {
 				t.Errorf("%s is bound to %s, which lacks the CLI surface", path, opName)
 			}
+			if !def.Info().Surfaces.Has(ops.MCP) {
+				t.Errorf("%s is bound to %s, which lacks the MCP surface: every CLI action must also be an MCP tool", path, opName)
+			}
 			if other, dup := bound[opName]; dup {
 				t.Errorf("%s and %s are both bound to %s", other, path, opName)
 			}

@@ -9,23 +9,25 @@ import (
 )
 
 // cliOnlyFields are the input fields hidden from MCP (json:"-"), which only
-// the CLI can set. A new one needs a reason here; the convention is that only
-// values the CLI reads from the local git checkout qualify.
+// the CLI can set, keyed by the type that declares them ("pr.Ref.CurrentBranch"),
+// so a field embedded in many ops is listed once. A new one needs a reason
+// here; the convention is that only values the CLI reads from the local git
+// checkout qualify.
 var cliOnlyFields = map[string]string{
-	"pr_view.CurrentBranch": "git: the current branch when no PR is given",
+	"pr.Ref.CurrentBranch": "git: the current branch when no PR is given",
 	// Predates the convention: --json fetches only the PR and its comments,
 	// which is all it prints. Revisit when pr_view's JSON form is reworked.
-	"pr_view.JSON": "presentation: --json fetches only what it prints",
+	"pr.ViewInput.JSON": "presentation: --json fetches only what it prints",
 }
 
 func TestCLIOnlyInputFieldsAreAllowlisted(t *testing.T) {
 	found := map[string]bool{}
 	for _, def := range catalog.All() {
 		for _, field := range hiddenFields(def.InputType()) {
-			key := def.Info().Name + "." + field
+			key := field
 			found[key] = true
 			if _, ok := cliOnlyFields[key]; !ok {
-				t.Errorf("%s is json:\"-\" (CLI-only) but not in cliOnlyFields; MCP callers cannot set it", key)
+				t.Errorf("%s (in %s) is json:\"-\" (CLI-only) but not in cliOnlyFields; MCP callers cannot set it", key, def.Info().Name)
 			}
 		}
 	}
@@ -71,7 +73,7 @@ func hiddenFields(t reflect.Type) []string {
 		seen[t] = true
 		for _, field := range reflect.VisibleFields(t) {
 			if field.Tag.Get("json") == "-" {
-				fields = append(fields, field.Name)
+				fields = append(fields, declaringType(t, field.Index).String()+"."+field.Name)
 				continue
 			}
 			if !field.Anonymous {
@@ -81,4 +83,16 @@ func hiddenFields(t reflect.Type) []string {
 	}
 	walk(t, map[reflect.Type]bool{})
 	return fields
+}
+
+// declaringType follows a VisibleFields index path to the struct that declares
+// the field, so promoted fields are named by their own type.
+func declaringType(t reflect.Type, index []int) reflect.Type {
+	for _, i := range index[:len(index)-1] {
+		t = t.Field(i).Type
+		for t.Kind() == reflect.Pointer {
+			t = t.Elem()
+		}
+	}
+	return t
 }

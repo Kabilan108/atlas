@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"runtime/debug"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/kabilan108/atlas/internal/bitbucket"
@@ -50,6 +51,9 @@ type Options struct {
 	// besides localhost and loopback IPs, such as the name a reverse proxy on
 	// the same machine forwards. Ports are ignored.
 	AllowedHosts []string
+	// MaxResultBytes caps the text of every tool result, so no op can flood
+	// a caller's context; zero means DefaultMaxResultBytes.
+	MaxResultBytes int
 	// JiraCloudID selects the Jira site behind the Atlassian API gateway.
 	JiraCloudID string
 	// BitbucketOptions are applied to every Bitbucket client. Never pass
@@ -155,10 +159,11 @@ func toolHandler(def ops.Def, schema *jsonschema.Resolved, opts Options) mcp.Too
 			header = req.Extra.Header
 		}
 		res, err := def.Invoke(ctx, newHeaderEnv(header, opts), args)
+		text := capResult(res.Text, opts.maxResultBytes())
 		if err != nil {
-			return errorResult(err, res.Text), nil
+			return errorResult(err, text), nil
 		}
-		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: res.Text}}}, nil
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}, nil
 	}
 }
 
@@ -217,4 +222,27 @@ func authHint(status int, tokenHeader string) string {
 		return fmt.Sprintf("the token in %s may lack a scope this tool needs, or the account lacks access", tokenHeader)
 	}
 	return ""
+}
+
+// DefaultMaxResultBytes is the tool-result ceiling when Options leaves it zero.
+const DefaultMaxResultBytes = 100 << 10
+
+func (o Options) maxResultBytes() int {
+	if o.MaxResultBytes > 0 {
+		return o.MaxResultBytes
+	}
+	return DefaultMaxResultBytes
+}
+
+// capResult cuts text to limit bytes on a UTF-8 boundary and says how much
+// was dropped, so a caller knows to narrow the request.
+func capResult(text string, limit int) string {
+	if len(text) <= limit {
+		return text
+	}
+	cut := limit
+	for cut > 0 && !utf8.RuneStart(text[cut]) {
+		cut--
+	}
+	return text[:cut] + fmt.Sprintf("\n\n[truncated: %d of %d bytes omitted; narrow the request, e.g. a smaller limit, a path filter, or fewer items]", len(text)-cut, len(text))
 }

@@ -66,6 +66,17 @@ func Errorf(kind Kind, format string, args ...any) error {
 	return &Error{Kind: kind, Err: fmt.Errorf(format, args...)}
 }
 
+// PartialOf is the error a batch op returns with its per-entry results when
+// failed of total entries failed, including when all of them did, so callers
+// always get the results that say which entries to retry. It returns nil when
+// nothing failed. Truncated output is not a failure and never uses it.
+func PartialOf(failed, total int, noun string) error {
+	if failed == 0 {
+		return nil
+	}
+	return Errorf(Partial, "%d of %d %s failed; see the per-entry results for which to retry", failed, total, noun)
+}
+
 // HTTPStatusError is implemented by API errors from both clients
 // (bitbucket.APIError, jira.APIError), so classifying them needs neither.
 type HTTPStatusError interface {
