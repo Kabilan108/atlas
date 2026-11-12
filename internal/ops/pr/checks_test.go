@@ -44,7 +44,7 @@ func TestChecksReadsTheHeadCommit(t *testing.T) {
 			if tc.statuses != "" {
 				fixture.Statuses[mergetest.Head] = tc.statuses
 			}
-			result, err := pr.Checks.Call(context.Background(), env, pr.ChecksInput{Ref: prRef("7")})
+			result, err := pr.Checks.Call(context.Background(), env, pr.ChecksInput{RepoRef: ops.RepoRef{Repo: "acme/widgets"}, PR: "7"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -72,7 +72,7 @@ func TestChecksReadsTheHeadCommit(t *testing.T) {
 func TestChecksFailingListsFailedAndStopped(t *testing.T) {
 	env, fixture := mergeEnv(t)
 	fixture.Statuses[mergetest.Head] = statuses(mergetest.Status("build", "Build", "FAILED"), mergetest.Status("e2e", "E2E", "STOPPED"), mergetest.Status("lint", "Lint", "SUCCESSFUL"))
-	result, err := pr.Checks.Call(context.Background(), env, pr.ChecksInput{Ref: prRef("7")})
+	result, err := pr.Checks.Call(context.Background(), env, pr.ChecksInput{RepoRef: ops.RepoRef{Repo: "acme/widgets"}, PR: "7"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func TestChecksFailingListsFailedAndStopped(t *testing.T) {
 func TestChecksForACommitNeedsNoPR(t *testing.T) {
 	env, fixture := mergeEnv(t)
 	fixture.Statuses["0011aabb"] = statuses(mergetest.Status("build", "Build", "SUCCESSFUL"))
-	result, err := pr.Checks.Call(context.Background(), env, pr.ChecksInput{Ref: pr.Ref{RepoRef: ops.RepoRef{Repo: "widgets"}}, Commit: "0011aabb"})
+	result, err := pr.Checks.Call(context.Background(), env, pr.ChecksInput{RepoRef: ops.RepoRef{Repo: "widgets"}, Commit: "0011aabb"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestChecksForACommitNeedsNoPR(t *testing.T) {
 
 func TestChecksWarnsWhenTheCommitIsNotTheHead(t *testing.T) {
 	env, _ := mergeEnv(t)
-	result, err := pr.Checks.Call(context.Background(), env, pr.ChecksInput{Ref: prRef("7"), Commit: "99887766"})
+	result, err := pr.Checks.Call(context.Background(), env, pr.ChecksInput{RepoRef: ops.RepoRef{Repo: "acme/widgets"}, PR: "7", Commit: "99887766"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +112,7 @@ func TestChecksWarnsWhenTheCommitIsNotTheHead(t *testing.T) {
 		t.Fatalf("markdown:\n%s", text)
 	}
 
-	result, err = pr.Checks.Call(context.Background(), env, pr.ChecksInput{Ref: prRef("7"), Commit: mergetest.Head + "0011223344556677889900aa"})
+	result, err = pr.Checks.Call(context.Background(), env, pr.ChecksInput{RepoRef: ops.RepoRef{Repo: "acme/widgets"}, PR: "7", Commit: mergetest.Head + "0011223344556677889900aa"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,8 +124,8 @@ func TestChecksWarnsWhenTheCommitIsNotTheHead(t *testing.T) {
 func TestChecksNeedsAPROrCommit(t *testing.T) {
 	env, fixture := mergeEnv(t)
 	for _, in := range []pr.ChecksInput{
-		{Ref: pr.Ref{RepoRef: ops.RepoRef{Repo: "acme/widgets"}}},
-		{Ref: pr.Ref{RepoRef: ops.RepoRef{Repo: "acme/widgets"}}, Commit: "abc/../x"},
+		{RepoRef: ops.RepoRef{Repo: "acme/widgets"}},
+		{RepoRef: ops.RepoRef{Repo: "acme/widgets"}, Commit: "abc/../x"},
 	} {
 		if _, err := pr.Checks.Call(context.Background(), env, in); ops.KindOf(err) != ops.Invalid {
 			t.Errorf("%+v: err = %v, want invalid", in, err)

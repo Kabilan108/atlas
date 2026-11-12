@@ -52,3 +52,23 @@ func TestPRChecksCommitNeedsNoGit(t *testing.T) {
 		t.Fatalf("output:\n%s", out)
 	}
 }
+
+func TestPRChecksSeesAForcePushPastTheCache(t *testing.T) {
+	setupCLIEnv(t)
+	fixture := mergetest.New()
+	fixture.Statuses[mergetest.Head] = "[" + mergetest.Status("build", "Build", "SUCCESSFUL") + "]"
+	if _, err := runAtlas(t, fixture, "pr", "checks", "7", "-R", "acme/widgets"); err != nil {
+		t.Fatalf("passing head: %v", err)
+	}
+
+	const pushed = "0f0f0f0f0f0f"
+	fixture.HeadCommit = pushed
+	fixture.Statuses[pushed] = "[" + mergetest.Status("build", "Build", "FAILED") + "]"
+	out, err := runAtlas(t, fixture, "pr", "checks", "7", "-R", "acme/widgets")
+	if err == nil || !strings.Contains(err.Error(), "checks failed: Build (FAILED)") {
+		t.Fatalf("after force-push err = %v, want the new head's failure", err)
+	}
+	if !strings.HasPrefix(out, "# Checks for PR #7 at "+pushed) {
+		t.Fatalf("output:\n%s", out)
+	}
+}

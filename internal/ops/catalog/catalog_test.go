@@ -14,7 +14,8 @@ import (
 // here; the convention is that only values the CLI reads from the local git
 // checkout qualify.
 var cliOnlyFields = map[string]string{
-	"pr.Ref.CurrentBranch": "git: the current branch when no PR is given",
+	"pr.Ref.CurrentBranch":         "git: the current branch when no PR is given",
+	"pr.ChecksInput.CurrentBranch": "git: the current branch when no PR or commit is given",
 	// Predates the convention: --json fetches only the PR and its comments,
 	// which is all it prints. Revisit when pr_view's JSON form is reworked.
 	"pr.ViewInput.JSON": "presentation: --json fetches only what it prints",

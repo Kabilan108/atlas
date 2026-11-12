@@ -13,10 +13,20 @@ import (
 )
 
 // ChecksInput is the input to pr_checks. With Commit alone it reads that
-// commit's statuses; with a PR it reads the PR's current head commit.
+// commit's statuses; with a PR it reads the PR's current head commit. It
+// spells out Ref's fields rather than embedding Ref, whose pr is required.
 type ChecksInput struct {
-	Ref
-	Commit string `json:"commit,omitempty" jsonschema:"commit SHA to read instead of the PR head (pr then optional); with pr, flags a head mismatch"`
+	ops.RepoRef
+	PR     string `json:"pr,omitempty" jsonschema:"PR number, source branch name, or Bitbucket PR URL (which needs no repo); this or commit is required"`
+	Commit string `json:"commit,omitempty" jsonschema:"commit SHA to read instead of the PR head; with pr, flags a head mismatch"`
+
+	// CurrentBranch is used when PR and Commit are empty. Only the CLI sets
+	// it, from git.
+	CurrentBranch string `json:"-"`
+}
+
+func (in ChecksInput) ref() Ref {
+	return Ref{RepoRef: in.RepoRef, PR: in.PR, CurrentBranch: in.CurrentBranch}
 }
 
 // Overall check verdicts. None means nothing reported a status, which is not
@@ -74,7 +84,7 @@ func checks(ctx context.Context, env ops.Env, in ChecksInput) (*ChecksResult, er
 			return nil, err
 		}
 	} else {
-		target, err := in.Resolve(ctx, env)
+		target, err := in.ref().ResolveCurrent(ctx, env)
 		if err != nil {
 			return nil, err
 		}

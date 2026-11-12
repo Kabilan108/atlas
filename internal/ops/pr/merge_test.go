@@ -3,11 +3,14 @@ package pr_test
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/kabilan108/atlas/internal/bitbucket"
 	"github.com/kabilan108/atlas/internal/ops"
+	"github.com/kabilan108/atlas/internal/ops/opstest"
 	"github.com/kabilan108/atlas/internal/ops/pr"
 	"github.com/kabilan108/atlas/internal/ops/pr/mergetest"
 )
@@ -134,5 +137,27 @@ func TestMergeValidatesBeforeCalling(t *testing.T) {
 	}
 	if len(fixture.Requests()) != 0 {
 		t.Fatal("invalid input reached Bitbucket")
+	}
+}
+
+func TestMergeDecidesOnTheCurrentPRNotTheCache(t *testing.T) {
+	fixture := mergetest.New()
+	cached, err := bitbucket.NewClientWithCredentials(opstest.Email, opstest.Token,
+		bitbucket.WithHTTPClient(&http.Client{Transport: fixture}), bitbucket.WithCache(bitbucket.NewCache(t.TempDir())))
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := &opstest.Env{Workspace: "acme", BitbucketClient: cached}
+	if _, err := cached.GetPullRequest(context.Background(), "acme", "widgets", mergetest.PRID); err != nil {
+		t.Fatal(err)
+	}
+
+	fixture.State = "MERGED"
+	_, err = pr.Merge.Call(context.Background(), env, pr.MergeInput{Ref: prRef("7")})
+	if ops.KindOf(err) != ops.Conflict {
+		t.Fatalf("err = %v, want a conflict from the PR's current state", err)
+	}
+	if fixture.Posted() {
+		t.Fatal("merged a PR the cache still showed as open")
 	}
 }

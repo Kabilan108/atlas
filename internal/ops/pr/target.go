@@ -89,8 +89,20 @@ type Target struct {
 }
 
 // Resolve fetches the pull request ref names. A URL decides the repository
-// on its own; other selectors use ref.Repo.
+// on its own; other selectors use ref.Repo. The read may come from the CLI's
+// response cache; use ResolveCurrent when a decision rests on the PR's head
+// commit or state.
 func (ref Ref) Resolve(ctx context.Context, env ops.Env) (*Target, error) {
+	return ref.resolve(ctx, env, false)
+}
+
+// ResolveCurrent is Resolve reading past any response cache, so a force-push
+// or a state change since the last cached read is seen.
+func (ref Ref) ResolveCurrent(ctx context.Context, env ops.Env) (*Target, error) {
+	return ref.resolve(ctx, env, true)
+}
+
+func (ref Ref) resolve(ctx context.Context, env ops.Env, current bool) (*Target, error) {
 	sel, err := ParseSelector(ref.PR)
 	if err != nil {
 		return nil, err
@@ -114,6 +126,9 @@ func (ref Ref) Resolve(ctx context.Context, env ops.Env) (*Target, error) {
 	client, err := env.Bitbucket(ctx)
 	if err != nil {
 		return nil, err
+	}
+	if current {
+		client = client.Uncached()
 	}
 	var pr *bitbucket.PullRequest
 	if sel.ID > 0 {

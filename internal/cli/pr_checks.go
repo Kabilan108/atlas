@@ -32,13 +32,13 @@ func prChecksInput(cmd *cobra.Command, args []string, env *cliEnv) (pr.ChecksInp
 		if err != nil {
 			return pr.ChecksInput{}, err
 		}
-		return pr.ChecksInput{Ref: pr.Ref{RepoRef: ops.RepoRef{Repo: repo}}, Commit: commit}, nil
+		return pr.ChecksInput{RepoRef: ops.RepoRef{Repo: repo}, Commit: commit}, nil
 	}
 	ref, err := env.prRef(cmd, optionalArg(args))
 	if err != nil {
 		return pr.ChecksInput{}, err
 	}
-	return pr.ChecksInput{Ref: ref, Commit: commit}, nil
+	return pr.ChecksInput{RepoRef: ref.RepoRef, PR: ref.PR, CurrentBranch: ref.CurrentBranch, Commit: commit}, nil
 }
 
 func failOnChecks(_ *cobra.Command, result *pr.ChecksResult) error {

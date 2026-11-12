@@ -43,13 +43,15 @@ const (
 // RefusalMessage is Bitbucket's reason in MergeRefused mode.
 const RefusalMessage = "You can't merge until you have at least 1 approval."
 
-// Fixture is the fake API. Statuses maps a commit hash to its JSON status
-// array; a commit without an entry has none.
+// Fixture is the fake API. HeadCommit is the PR's source commit, Head unless
+// a test force-pushes. Statuses maps a commit hash to its JSON status array;
+// a commit without an entry has none.
 type Fixture struct {
-	State     string
-	Statuses  map[string]string
-	Merge     MergeMode
-	TaskPolls int
+	State      string
+	HeadCommit string
+	Statuses   map[string]string
+	Merge      MergeMode
+	TaskPolls  int
 
 	mu       sync.Mutex
 	requests []Request
@@ -64,7 +66,7 @@ type Request struct {
 }
 
 func New() *Fixture {
-	return &Fixture{State: "OPEN", Statuses: map[string]string{}}
+	return &Fixture{State: "OPEN", HeadCommit: Head, Statuses: map[string]string{}}
 }
 
 // Status is one commit status as Bitbucket returns it.
@@ -107,7 +109,7 @@ func (f *Fixture) pr(state string, merged bool) string {
 	return fmt.Sprintf(`{"id":7,"title":"Add login","state":%q,
 		"source":{"branch":{"name":"feature/login"},"commit":{"hash":%q}},
 		"destination":{"branch":{"name":"main"},"commit":{"hash":"0123456789ab"}},
-		"links":{"html":{"href":%q}}%s}`, state, Head, URL, commit)
+		"links":{"html":{"href":%q}}%s}`, state, f.HeadCommit, URL, commit)
 }
 
 func (f *Fixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {

@@ -64,7 +64,7 @@ func merge(ctx context.Context, env ops.Env, in MergeInput) (*MergeReceipt, erro
 	if err != nil {
 		return nil, err
 	}
-	target, err := in.Resolve(ctx, env)
+	target, err := in.ResolveCurrent(ctx, env)
 	if err != nil {
 		return nil, err
 	}
@@ -76,6 +76,7 @@ func merge(ctx context.Context, env ops.Env, in MergeInput) (*MergeReceipt, erro
 	if err != nil {
 		return nil, err
 	}
+	client = client.Uncached()
 
 	started := time.Now()
 	result, err := client.MergePullRequest(ctx, target.Workspace, target.Repo, id, bitbucket.PullRequestMergeOptions{
