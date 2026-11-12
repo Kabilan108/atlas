@@ -30,6 +30,7 @@ func NewRootCmd(version string) *cobra.Command {
 
 	rootCmd.AddCommand(newConfigCmd())
 	rootCmd.AddCommand(newLoginCmd())
+	rootCmd.AddCommand(newMCPCmd(version))
 	rootCmd.AddCommand(newPRCmd())
 	rootCmd.AddCommand(newSnippetCmd())
 	rootCmd.AddCommand(newUpdateCmd(version))

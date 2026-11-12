@@ -8,7 +8,7 @@ buildGoModule rec {
   pname = "atlas";
   version = "0.1.3";
   src = ../.;
-  vendorHash = "sha256-gEMzw1zfgXLlfwkSydNbZ8b4A/6FanI8tsdhSu3vhmE=";
+  vendorHash = "sha256-be+1yrOm0vB5rzRyHWRZF5KiWEZdGe2zKEvGZRQICvk=";
 
   buildPhase = ''
     runHook preBuild

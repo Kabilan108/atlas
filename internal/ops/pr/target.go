@@ -36,7 +36,7 @@ func (s Selector) IsURL() bool {
 
 // IsEmpty reports whether the selector names no PR at all.
 func (s Selector) IsEmpty() bool {
-	return s.ID == 0 && s.Branch == "" && !s.IsURL()
+	return s.ID == 0 && s.Branch == ""
 }
 
 // ParseSelector accepts a PR number (optionally prefixed with #), a
