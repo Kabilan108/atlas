@@ -20,8 +20,8 @@ func TestListOneRepo(t *testing.T) {
 	}
 	want := "2 open pull requests in acme/widgets\n\n" +
 		"| PR | Title | Author | Branches | Created | Updated | Reviews | Feedback | URL |\n|---|---|---|---|---|---|---|---|---|\n" +
-		"| #42 | Fix login: handle 'empty' users | Ada Lovelace | feature/login → main | 2025-03-01 09:00 UTC | 2025-03-05 16:30 UTC | 1 approved, 1 changes requested, 1 pending | 5 comments, 2 tasks | https://bitbucket.org/acme/widgets/pull-requests/42 |\n" +
-		"| #43 | [draft] Tidy the docs | Grace Hopper | docs/tidy → main | 2025-03-04 09:00 UTC | 2025-03-04 10:00 UTC | 1 pending |  | https://bitbucket.org/acme/widgets/pull-requests/43 |\n"
+		"| #42 | Fix login: handle 'empty' users | Ada Lovelace | feature/login → main | 2025-03-01 09:00 UTC | 2025-03-05 16:30 UTC | Grace Hopper approved, Linus Torvalds requested changes, Ken Thompson pending | 5 comments, 2 tasks | https://bitbucket.org/acme/widgets/pull-requests/42 |\n" +
+		"| #43 | [draft] Tidy the docs | Grace Hopper | docs/tidy → main | 2025-03-04 09:00 UTC | 2025-03-04 10:00 UTC | Ada Lovelace pending |  | https://bitbucket.org/acme/widgets/pull-requests/43 |\n"
 	if result.Text != want {
 		t.Fatalf("text:\n%s\nwant:\n%s", result.Text, want)
 	}

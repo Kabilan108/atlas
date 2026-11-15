@@ -16,7 +16,7 @@ type EditInput struct {
 	Base            string   `json:"base,omitempty" jsonschema:"retarget to this destination branch"`
 	Draft           *bool    `json:"draft,omitempty" jsonschema:"true marks draft, false ready for review"`
 	AddReviewers    []string `json:"add_reviewers,omitempty" jsonschema:"account IDs, UUIDs, or exact display names; an ambiguous name fails with the candidates"`
-	RemoveReviewers []string `json:"remove_reviewers,omitempty" jsonschema:"account IDs, UUIDs, or exact display names; an ambiguous name fails with the candidates"`
+	RemoveReviewers []string `json:"remove_reviewers,omitempty" jsonschema:"same forms as add_reviewers"`
 }
 
 // EditResult is the pull request after the edit. Changed is false when
@@ -29,7 +29,7 @@ type EditResult struct {
 var Edit = &ops.Op[EditInput, *EditResult]{
 	Meta: ops.Meta{
 		Name:        "pr_edit",
-		Description: "Edit a Bitbucket pull request: title, description, destination branch, draft state, or reviewers.",
+		Description: "Edit a Bitbucket pull request: title, description, destination branch, draft state, or reviewers. The receipt has both head commits.",
 		Surfaces:    ops.Both,
 		Destructive: true,
 	},

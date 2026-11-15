@@ -97,7 +97,7 @@ func (r *ListResult) MarshalJSON() ([]byte, error) {
 var List = &ops.Op[ListInput, *ListResult]{
 	Meta: ops.Meta{
 		Name:        "pr_list",
-		Description: "List Bitbucket pull requests, newest updated first: one repo, several (repos), or a whole workspace (repo \"workspace/*\", \"*\" for the default). Filter by state, author, reviewer, updated_since.",
+		Description: "List Bitbucket pull requests, newest updated first: one repo, several (repos), or a whole workspace (repo \"workspace/*\", \"*\" for the default). Filter by state, author, reviewer, updated_since. Reviews names each reviewer's verdict.",
 		Surfaces:    ops.Both,
 		ReadOnly:    true,
 	},

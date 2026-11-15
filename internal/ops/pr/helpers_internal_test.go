@@ -305,3 +305,27 @@ func TestFilterDiffMatchesExactPaths(t *testing.T) {
 		t.Errorf("DiffFiles() = %#v, want %#v", got, wantFiles)
 	}
 }
+
+// The PR list endpoint is how audits learn who approved (B7 in the replay
+// suite), so the summary names people, including approvers who were never
+// added as reviewers.
+func TestReviewSummaryNamesVerdicts(t *testing.T) {
+	ada := bitbucket.User{AccountID: "a", DisplayName: "Ada"}
+	linus := bitbucket.User{AccountID: "l", DisplayName: "Linus"}
+	grace := bitbucket.User{AccountID: "g", DisplayName: "Grace"}
+	ken := bitbucket.User{AccountID: "k", DisplayName: "Ken"}
+	pr := bitbucket.PullRequest{
+		Reviewers: []bitbucket.User{linus, grace, ada},
+		Participants: []bitbucket.Participant{
+			{User: ada, Role: "REVIEWER", Approved: true, State: "approved"},
+			{User: linus, Role: "REVIEWER", State: "changes_requested"},
+			{User: ken, Role: "PARTICIPANT", Approved: true, State: "approved"},
+		},
+	}
+	if got, want := reviewSummary(pr), "Ada approved, Ken approved, Linus requested changes, Grace pending"; got != want {
+		t.Fatalf("reviewSummary = %q, want %q", got, want)
+	}
+	if got := reviewSummary(bitbucket.PullRequest{}); got != "no reviewers" {
+		t.Fatalf("empty = %q", got)
+	}
+}

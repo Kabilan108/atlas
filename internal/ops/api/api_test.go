@@ -44,6 +44,34 @@ func TestGetRejectsPathsOutsideTheAPI(t *testing.T) {
 	}
 }
 
+// Agents copy path templates from tool descriptions; an unfilled
+// {workspace} must not reach Bitbucket as a 404, while braced UUIDs and
+// braces in the query still pass.
+func TestGetRejectsUnfilledPlaceholders(t *testing.T) {
+	var served []string
+	env := opstest.New("acme").WithBitbucket(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		served = append(served, r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	_, err := api.Get.Invoke(context.Background(), env, mustJSON(t, map[string]any{"path": "/2.0/repositories/{workspace}/app/diff/a..b"}))
+	if ops.KindOf(err) != ops.Invalid || !strings.Contains(err.Error(), "{workspace}") || !strings.Contains(err.Error(), "default Bitbucket workspace is acme") {
+		t.Fatalf("err = %v", err)
+	}
+	for _, path := range []string{
+		"/2.0/repositories/%7B4e6db8a0-1b97-4d1f-a4c9-bd20d0a0be3c%7D/app/pipelines/1",
+		"/2.0/repositories/{4e6db8a0-1b97-4d1f-a4c9-bd20d0a0be3c}/app",
+		`/2.0/repositories/acme/app/refs?q=name~"{x}"`,
+	} {
+		if _, err := api.Get.Invoke(context.Background(), env, mustJSON(t, map[string]any{"path": path})); err != nil {
+			t.Errorf("path %q: %v", path, err)
+		}
+	}
+	if len(served) != 3 {
+		t.Fatalf("served %d requests, want 3: %v", len(served), served)
+	}
+}
+
 func TestGetFetchesTruncatesAndObserves(t *testing.T) {
 	var got []string
 	env := opstest.New("acme").WithBitbucket(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

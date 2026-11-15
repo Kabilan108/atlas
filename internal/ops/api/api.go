@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"regexp"
 	"strings"
 	"unicode"
 
@@ -117,6 +118,10 @@ func get(ctx context.Context, env ops.Env, in GetInput) (*GetResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	if placeholder := placeholderPattern.FindString(strings.SplitN(path, "?", 2)[0]); placeholder != "" {
+		return nil, ops.Errorf(ops.Invalid, "path %q still has the placeholder %s; fill it in (the default Bitbucket workspace is %s)",
+			in.Path, placeholder, env.DefaultWorkspace())
+	}
 	route, ok := routeFor(path)
 	if !ok {
 		return nil, ops.Errorf(ops.Invalid, "path %q is not an allowed API path; allowed prefixes: %s", in.Path, prefixes())
@@ -145,6 +150,11 @@ func get(ctx context.Context, env ops.Env, in GetInput) (*GetResult, error) {
 		maxBytes:    maxBytes,
 	}, nil
 }
+
+// placeholderPattern finds a template segment such as {workspace} copied
+// from a tool description. Bitbucket's braced UUIDs contain digits or
+// dashes, so they never match.
+var placeholderPattern = regexp.MustCompile(`\{[A-Za-z_]+\}`)
 
 // validatePath accepts an absolute path with an optional query and nothing
 // that could leave the API: no scheme or host, no backslashes, no dot
