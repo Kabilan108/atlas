@@ -48,6 +48,7 @@ type RunReceipt struct {
 	Commit          string `json:"commit,omitempty"`
 	DurationSeconds int    `json:"duration_seconds,omitempty"`
 	URL             string `json:"url"`
+	FailureReason   string `json:"failure_reason,omitempty"`
 
 	waited time.Duration
 }
@@ -99,11 +100,13 @@ func run(ctx context.Context, env ops.Env, in RunInput) (*RunReceipt, error) {
 		return nil, redactSecrets(err, secrets)
 	}
 	receipt := newRunReceipt(repo, started)
-	if wait == 0 || receipt.Finished {
-		return receipt, nil
+	if wait > 0 && !receipt.Finished {
+		receipt.waited = wait
+		receipt, err = waitForRun(ctx, client, repo, receipt, wait)
 	}
-	receipt.waited = wait
-	receipt, err = waitForRun(ctx, client, repo, receipt, wait)
+	if receipt != nil {
+		receipt.FailureReason = redact(receipt.FailureReason, secrets)
+	}
 	return receipt, redactSecrets(err, secrets)
 }
 
@@ -120,6 +123,7 @@ func newRunReceipt(repo ops.Repository, p *bitbucket.Pipeline) *RunReceipt {
 		Commit:          run.Commit,
 		DurationSeconds: run.DurationSeconds,
 		URL:             run.URL,
+		FailureReason:   run.FailureReason,
 	}
 }
 
@@ -181,5 +185,8 @@ func (r *RunReceipt) Markdown() (string, error) {
 		fmt.Fprintf(&b, "Started %s: %s. Follow it with pipeline_view %d.", what, r.Status, r.BuildNumber)
 	}
 	fmt.Fprintf(&b, "\n%s\n", r.URL)
+	if r.FailureReason != "" {
+		fmt.Fprintf(&b, "Bitbucket failed the run itself, before any step: %s\n", r.FailureReason)
+	}
 	return b.String(), nil
 }

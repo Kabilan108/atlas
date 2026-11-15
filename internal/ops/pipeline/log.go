@@ -137,6 +137,10 @@ func (r *logReader) read(ctx context.Context, entry *BuildLogs, build string, na
 		return err
 	}
 	if len(chosen) == 0 {
+		if reason := pipeline.State.ErrorMessage(); reason != "" && len(steps) == 0 {
+			entry.Note = "No step ran, so there is no log. Bitbucket failed the run itself: " + reason
+			return nil
+		}
 		entry.Note = fmt.Sprintf("No failed or running steps. Name steps to read their logs: %s.", stepNames(steps))
 		return nil
 	}

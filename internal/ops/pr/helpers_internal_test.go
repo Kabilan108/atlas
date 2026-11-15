@@ -305,3 +305,50 @@ func TestFilterDiffMatchesExactPaths(t *testing.T) {
 		t.Errorf("DiffFiles() = %#v, want %#v", got, wantFiles)
 	}
 }
+
+// The PR list endpoint is how audits learn who approved (B7 in the replay
+// suite), so the summary names people, including approvers who were never
+// added as reviewers.
+func TestReviewSummaryNamesVerdicts(t *testing.T) {
+	ada := bitbucket.User{AccountID: "a", DisplayName: "Ada"}
+	linus := bitbucket.User{AccountID: "l", DisplayName: "Linus"}
+	grace := bitbucket.User{AccountID: "g", DisplayName: "Grace"}
+	ken := bitbucket.User{AccountID: "k", DisplayName: "Ken"}
+	pr := bitbucket.PullRequest{
+		Reviewers: []bitbucket.User{linus, grace, ada},
+		Participants: []bitbucket.Participant{
+			{User: ada, Role: "REVIEWER", Approved: true, State: "approved"},
+			{User: linus, Role: "REVIEWER", State: "changes_requested"},
+			{User: ken, Role: "PARTICIPANT", Approved: true, State: "approved"},
+		},
+	}
+	if got, want := reviewSummary(pr), "Ada approved, Ken approved, Linus requested changes, Grace pending"; got != want {
+		t.Fatalf("reviewSummary = %q, want %q", got, want)
+	}
+	if got := reviewSummary(bitbucket.PullRequest{}); got != "no reviewers" {
+		t.Fatalf("empty = %q", got)
+	}
+}
+
+func TestListTableEscapesReviewerNames(t *testing.T) {
+	pull := bitbucket.PullRequest{ID: 7, Title: "t", State: "OPEN"}
+	pull.Reviewers = []bitbucket.User{{DisplayName: "Ada | Platform", AccountID: "a1"}}
+	result := &ListResult{PullRequests: []bitbucket.PullRequest{pull}, scope: "acme/widgets", state: StateOpen}
+	text, err := result.Markdown()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var header, row string
+	for _, line := range strings.Split(text, "\n") {
+		switch {
+		case strings.HasPrefix(line, "| PR "):
+			header = line
+		case strings.HasPrefix(line, "| #7 "):
+			row = line
+		}
+	}
+	unescaped := func(line string) int { return strings.Count(line, "|") - strings.Count(line, `\|`) }
+	if header == "" || row == "" || unescaped(row) != unescaped(header) || !strings.Contains(row, `Ada \| Platform pending`) {
+		t.Fatalf("row does not keep the header's columns:\n%s", text)
+	}
+}

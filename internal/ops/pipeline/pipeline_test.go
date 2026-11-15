@@ -3,6 +3,7 @@ package pipeline_test
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -307,6 +308,54 @@ func TestLogPassedBuildSaysWhichStepsToName(t *testing.T) {
 	mustContain(t, markdown(t, result.Markdown), `No failed or running steps. Name steps to read their logs: "backup" (SUCCESSFUL).`)
 }
 
+// A run Bitbucket fails before any step (here a YAML error) has no step or
+// log to explain it, so every view of the run carries Bitbucket's reason.
+func TestRunFailedByBitbucketShowsTheReason(t *testing.T) {
+	env, _ := newEnv(t)
+	ctx := context.Background()
+	in := ops.RepoRef{Repo: repo}
+
+	list, err := pipeline.List.Call(ctx, env, pipeline.ListInput{RepoRef: in, Branch: "fix/yaml"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustContain(t, markdown(t, list.Markdown), "- #2097: "+pipelinetest.YAMLError)
+
+	view, err := pipeline.View.Call(ctx, env, pipeline.ViewInput{RepoRef: in, Builds: []string{"2097"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustContain(t, markdown(t, view.Markdown), "Bitbucket failed the run itself: "+pipelinetest.YAMLError, "No steps ran.")
+
+	logs, err := pipeline.Log.Call(ctx, env, pipeline.LogInput{RepoRef: in, Builds: []string{"2097"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustContain(t, markdown(t, logs.Markdown), "No step ran, so there is no log. Bitbucket failed the run itself: "+pipelinetest.YAMLError)
+
+	other, err := pipeline.List.Call(ctx, env, pipeline.ListInput{RepoRef: in, Branch: "testing"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text := markdown(t, other.Markdown); strings.Contains(text, "failed before or outside") {
+		t.Errorf("runs that failed in a step got a reason section:\n%s", text)
+	}
+}
+
+func TestListGroupsRunsThatFailedForTheSameReason(t *testing.T) {
+	result := &pipeline.ListResult{Repo: repo, Pipelines: []pipeline.Run{
+		{BuildNumber: 9, Status: "FAILED", FailureReason: "YAML error"},
+		{BuildNumber: 8, Status: "FAILED", FailureReason: "out of build minutes"},
+		{BuildNumber: 7, Status: "FAILED", FailureReason: "YAML error"},
+		{BuildNumber: 6, Status: "FAILED"},
+	}}
+	text := markdown(t, result.Markdown)
+	mustContain(t, text, "- #9, #7: YAML error\n- #8: out of build minutes\n")
+	if strings.Contains(text, "#6:") {
+		t.Errorf("a run without a reason is listed:\n%s", text)
+	}
+}
+
 func TestRunStartsCustomPipelineWithVariables(t *testing.T) {
 	env, fixture := newEnv(t)
 	receipt, err := pipeline.Start.Call(context.Background(), env, pipeline.RunInput{
@@ -434,5 +483,27 @@ func TestInvokeDecodesJSONArguments(t *testing.T) {
 	_, err = pipeline.Start.Invoke(context.Background(), env, json.RawMessage(`{"repo":"acme/widgets","branch":"main","variables":[{"key":"A","value":"1","secure":true}]}`))
 	if ops.KindOf(err) != ops.Invalid {
 		t.Fatalf("misspelt variable field: err = %v, want invalid", err)
+	}
+}
+
+// Bitbucket may echo a run's variables in the reason it failed the run, so
+// the receipt's failure reason is scrubbed like an error is.
+func TestRunRedactsSecuredValuesFromTheFailureReason(t *testing.T) {
+	env := opstest.New("acme").WithBitbucket(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"uuid":"{p1}","build_number":3,"state":{"name":"COMPLETED","result":{"name":"FAILED","error":{"key":"k","message":"bad variable TOKEN=s3cret"}}},"target":{"ref_name":"main"}}`))
+	}))
+	receipt, err := pipeline.Start.Call(context.Background(), env, pipeline.RunInput{
+		RepoRef: ops.RepoRef{Repo: repo}, Branch: "main",
+		Variables: []pipeline.Variable{{Key: "TOKEN", Value: "s3cret", Secured: true}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _ := json.Marshal(receipt)
+	text := markdown(t, receipt.Markdown)
+	if strings.Contains(string(data)+text, "s3cret") || !strings.Contains(receipt.FailureReason, "TOKEN=") {
+		t.Fatalf("failure reason = %q\n%s", receipt.FailureReason, text)
 	}
 }

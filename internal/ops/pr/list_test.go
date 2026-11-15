@@ -19,13 +19,13 @@ func TestListOneRepo(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := "2 open pull requests in acme/widgets\n\n" +
-		"| PR | Title | Author | Branches | Created | Updated | Reviews | Feedback | URL |\n|---|---|---|---|---|---|---|---|---|\n" +
-		"| #42 | Fix login: handle 'empty' users | Ada Lovelace | feature/login → main | 2025-03-01 09:00 UTC | 2025-03-05 16:30 UTC | 1 approved, 1 changes requested, 1 pending | 5 comments, 2 tasks | https://bitbucket.org/acme/widgets/pull-requests/42 |\n" +
-		"| #43 | [draft] Tidy the docs | Grace Hopper | docs/tidy → main | 2025-03-04 09:00 UTC | 2025-03-04 10:00 UTC | 1 pending |  | https://bitbucket.org/acme/widgets/pull-requests/43 |\n"
+		"| PR | Title | Author | Draft | Branches | Created | Updated | Reviews | Feedback | URL |\n|---|---|---|---|---|---|---|---|---|---|\n" +
+		"| #42 | Fix login: handle 'empty' users | Ada Lovelace | no | feature/login → main | 2025-03-01 09:00 UTC | 2025-03-05 16:30 UTC | Grace Hopper approved, Linus Torvalds requested changes, Ken Thompson pending | 5 comments, 2 tasks | https://bitbucket.org/acme/widgets/pull-requests/42 |\n" +
+		"| #43 | Tidy the docs | Grace Hopper | yes | docs/tidy → main | 2025-03-04 09:00 UTC | 2025-03-04 10:00 UTC | Ada Lovelace pending |  | https://bitbucket.org/acme/widgets/pull-requests/43 |\n"
 	if result.Text != want {
 		t.Fatalf("text:\n%s\nwant:\n%s", result.Text, want)
 	}
-	wantCalls(t, fixture, "GET /2.0/repositories/acme/widgets/pullrequests?pagelen=50&sort=-updated_on&state=OPEN")
+	wantCalls(t, fixture, "GET /2.0/repositories/acme/widgets/pullrequests?fields=%2Bvalues.reviewers%2C%2Bvalues.participants&pagelen=50&sort=-updated_on&state=OPEN")
 	data, err := json.Marshal(result.Value)
 	if err != nil || !strings.HasPrefix(string(data), `[{"id":42,`) {
 		t.Fatalf("JSON = %.40s (%v), want the bare array", data, err)
@@ -45,7 +45,7 @@ func TestListFiltersAndEmpty(t *testing.T) {
 	if err != nil || result.Text != "No merged pull requests in acme/widgets.\n" {
 		t.Fatalf("text = %q, err = %v", result.Text, err)
 	}
-	if got := calls(fixture); got[len(got)-1] != "GET /2.0/repositories/acme/widgets/pullrequests?pagelen=50&sort=-updated_on&state=MERGED" {
+	if got := calls(fixture); got[len(got)-1] != "GET /2.0/repositories/acme/widgets/pullrequests?fields=%2Bvalues.reviewers%2C%2Bvalues.participants&pagelen=50&sort=-updated_on&state=MERGED" {
 		t.Fatalf("requests = %v", got)
 	}
 }
@@ -92,8 +92,8 @@ func TestListSeveralReposNewestFirst(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantCalls(t, fixture,
-		"GET /2.0/repositories/acme/gadgets/pullrequests?pagelen=5&sort=-updated_on&state=OPEN",
-		"GET /2.0/repositories/acme/widgets/pullrequests?pagelen=5&sort=-updated_on&state=OPEN")
+		"GET /2.0/repositories/acme/gadgets/pullrequests?fields=%2Bvalues.reviewers%2C%2Bvalues.participants&pagelen=5&sort=-updated_on&state=OPEN",
+		"GET /2.0/repositories/acme/widgets/pullrequests?fields=%2Bvalues.reviewers%2C%2Bvalues.participants&pagelen=5&sort=-updated_on&state=OPEN")
 	var ids []string
 	for _, p := range result.Value.(*pr.ListResult).PullRequests {
 		ids = append(ids, p.Destination.Repository.FullName+"#"+itoa(p.ID))
@@ -124,10 +124,10 @@ func TestListUpdatedSinceAllStatesAndMore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantCalls(t, fixture, "GET /2.0/repositories/acme/widgets/pullrequests?pagelen=1&q=updated_on+%3E%3D+2025-03-05T00%3A00%3A00%2B00%3A00&sort=-updated_on&state=OPEN&state=MERGED&state=DECLINED&state=SUPERSEDED")
+	wantCalls(t, fixture, "GET /2.0/repositories/acme/widgets/pullrequests?fields=%2Bvalues.reviewers%2C%2Bvalues.participants&pagelen=1&q=updated_on+%3E%3D+2025-03-05T00%3A00%3A00%2B00%3A00&sort=-updated_on&state=OPEN&state=MERGED&state=DECLINED&state=SUPERSEDED")
 	for _, want := range []string{
 		"1 pull request (all states) in acme/widgets updated since 2025-03-05 00:00 UTC\n",
-		"| PR | Title | Author | State | Branches |",
+		"| PR | Title | Author | State | Draft | Branches |",
 		"| #42 | Fix login: handle 'empty' users | Ada Lovelace | OPEN |",
 	} {
 		if !strings.Contains(result.Text, want) {

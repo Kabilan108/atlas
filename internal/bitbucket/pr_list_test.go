@@ -92,6 +92,9 @@ func TestListPullRequestsQuery(t *testing.T) {
 	if got := query.Get("q"); got != "updated_on >= 2025-01-02T08:04:05+00:00" {
 		t.Fatalf("q = %q", got)
 	}
+	if got := query.Get("fields"); got != "+values.reviewers,+values.participants" {
+		t.Fatalf("fields = %q; the list endpoint omits reviewers and participants without it", got)
+	}
 	if query.Get("sort") != "-updated_on" || query.Get("pagelen") != "20" {
 		t.Fatalf("query = %v", query)
 	}

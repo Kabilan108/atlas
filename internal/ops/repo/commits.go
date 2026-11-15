@@ -33,10 +33,11 @@ type CommitListResult struct {
 
 var CommitList = &ops.Op[CommitListInput, *CommitListResult]{
 	Meta: ops.Meta{
-		Name:        "commit_list",
-		Description: "List commits on a Bitbucket ref, newest first, or with base only those not on base (what a branch adds).",
-		Surfaces:    ops.Both,
-		ReadOnly:    true,
+		Name: "commit_list",
+		Description: "List commits on a Bitbucket ref, newest first, or with base only those not on base (what a branch adds). " +
+			"For a branch's diff before it has a PR, use api /2.0/repositories/ws/repo/diff/{ref}..{base}.",
+		Surfaces: ops.Both,
+		ReadOnly: true,
 	},
 	Run:      listCommits,
 	Markdown: (*CommitListResult).Markdown,

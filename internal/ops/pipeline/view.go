@@ -92,7 +92,11 @@ func (r *ViewResult) Markdown() (string, error) {
 			continue
 		}
 		if len(entry.Steps) == 0 {
-			b.WriteString("\nNo steps yet.\n")
+			if entry.Run.Finished() {
+				b.WriteString("\nNo steps ran.\n")
+			} else {
+				b.WriteString("\nNo steps yet.\n")
+			}
 			continue
 		}
 		b.WriteString("\n| Step | Status | Started | Duration |\n|---|---|---|---|\n")

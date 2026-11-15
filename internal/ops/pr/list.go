@@ -97,7 +97,7 @@ func (r *ListResult) MarshalJSON() ([]byte, error) {
 var List = &ops.Op[ListInput, *ListResult]{
 	Meta: ops.Meta{
 		Name:        "pr_list",
-		Description: "List Bitbucket pull requests, newest updated first: one repo, several (repos), or a whole workspace (repo \"workspace/*\", \"*\" for the default). Filter by state, author, reviewer, updated_since.",
+		Description: "List Bitbucket pull requests, newest updated first: one repo, several (repos), or a whole workspace (repo \"workspace/*\", \"*\" for the default). Filter by state, author, reviewer, updated_since. Reviews names each reviewer's verdict.",
 		Surfaces:    ops.Both,
 		ReadOnly:    true,
 	},
@@ -270,6 +270,7 @@ func (r *ListResult) Markdown() (string, error) {
 	if r.state == StateAll {
 		header = append(header, "State")
 	}
+	header = append(header, "Draft")
 	header = append(header, "Branches", "Created", "Updated", "Reviews", "Feedback", "URL")
 	b.WriteString("| " + strings.Join(header, " | ") + " |\n|" + strings.Repeat("---|", len(header)) + "\n")
 	for _, pr := range r.PullRequests {
@@ -277,18 +278,19 @@ func (r *ListResult) Markdown() (string, error) {
 		if r.multi {
 			id = pr.Destination.Repository.FullName + id
 		}
-		title := pr.Title
-		if pr.Draft {
-			title = "[draft] " + title
-		}
-		row := []string{id, tableCell(title), tableCell(pr.Author.DisplayName)}
+		row := []string{id, tableCell(pr.Title), tableCell(pr.Author.DisplayName)}
 		if r.state == StateAll {
 			row = append(row, pr.State)
 		}
+		draft := "no"
+		if pr.Draft {
+			draft = "yes"
+		}
+		row = append(row, draft)
 		row = append(row,
 			tableCell(pr.Source.Branch.Name)+" → "+tableCell(pr.Destination.Branch.Name),
 			formatTime(pr.CreatedOn), formatTime(pr.UpdatedOn),
-			reviewSummary(pr), FeedbackSummary(pr), pr.Links.HTML.Href)
+			tableCell(reviewSummary(pr)), FeedbackSummary(pr), pr.Links.HTML.Href)
 		b.WriteString("| " + strings.Join(row, " | ") + " |\n")
 	}
 	if len(r.more) > 0 {

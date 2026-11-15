@@ -54,7 +54,8 @@ var InternalComment = &ops.Op[CommentInput, *Commented]{
 	Meta: ops.Meta{
 		Name: "jira_internal_comment",
 		Description: "Add an internal note (agents only, never customers) to a Jira Service Management issue (markdown). " +
-			"Refuses other projects and fails if Jira does not confirm the note is internal.",
+			"Refuses other projects and fails unless Jira confirms the note is internal, so internal: true in the receipt is that check; " +
+			"no readback needed (jira_issue_view also marks internal comments).",
 		Surfaces: ops.Both,
 	},
 	Run: internalComment,

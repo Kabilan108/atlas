@@ -42,7 +42,7 @@ func TestEditWithoutChangesSendsNothing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := `{"id":42,"title":"Fix login: handle 'empty' users","state":"OPEN","source":"feature/login","destination":"main","url":"https://bitbucket.org/acme/widgets/pull-requests/42","changed":false}`; result.Text != want {
+	if want := `{"id":42,"title":"Fix login: handle 'empty' users","state":"OPEN","source":"feature/login","destination":"main","source_commit":"abc1234","destination_commit":"def5678","url":"https://bitbucket.org/acme/widgets/pull-requests/42","changed":false}`; result.Text != want {
 		t.Fatalf("receipt = %s\nwant      %s", result.Text, want)
 	}
 	wantCalls(t, fixture, "GET "+prPath)

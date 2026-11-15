@@ -48,8 +48,28 @@ type PipelineState struct {
 }
 
 type PipelineStateLabel struct {
-	Name string `json:"name"`
-	Type string `json:"type"`
+	Name  string         `json:"name"`
+	Type  string         `json:"type"`
+	Error *PipelineError `json:"error,omitempty"`
+}
+
+// PipelineError is why Bitbucket failed a run before or outside its steps,
+// such as a bitbucket-pipelines.yml syntax error or exhausted build minutes.
+type PipelineError struct {
+	Key     string `json:"key,omitempty"`
+	Message string `json:"message,omitempty"`
+}
+
+// ErrorMessage is the reason Bitbucket gives for failing the run itself, or
+// "" when it gives none (a failed step has its reason in the step log).
+func (s PipelineState) ErrorMessage() string {
+	if s.Result == nil || s.Result.Error == nil {
+		return ""
+	}
+	if s.Result.Error.Message != "" {
+		return s.Result.Error.Message
+	}
+	return s.Result.Error.Key
 }
 
 // Status returns the most specific state label: the result once completed
