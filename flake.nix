@@ -1,5 +1,5 @@
 {
-  description = "atlas CLI (Confluence/Bitbucket) — x86_64-linux only";
+  description = "atlas CLI and MCP server (Bitbucket/Jira) — x86_64-linux only";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 

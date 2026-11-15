@@ -16,10 +16,12 @@ const apiTokenURL = "https://id.atlassian.com/manage-profile/security/api-tokens
 
 var requiredBitbucketAPITokenScopes = []string{
 	"read:user:bitbucket",
+	"read:workspace:bitbucket",
 	"read:repository:bitbucket",
-	"write:repository:bitbucket",
 	"read:pullrequest:bitbucket",
 	"write:pullrequest:bitbucket",
+	"read:pipeline:bitbucket",
+	"write:pipeline:bitbucket",
 	"read:snippet:bitbucket",
 	"write:snippet:bitbucket",
 	"delete:snippet:bitbucket",

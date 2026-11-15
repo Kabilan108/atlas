@@ -12,9 +12,11 @@ import (
 func newAPICmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "api <path>",
-		Short: "GET a Bitbucket REST API path and print the response",
-		Long: `GET a Bitbucket REST API path, such as /2.0/user or
-/2.0/repositories/acme/app/refs/tags?pagelen=50, and print the response body.
+		Short: "GET a Bitbucket or Jira REST API path and print the response",
+		Long: `GET a Bitbucket or Jira REST API path and print the response body.
+Bitbucket paths start with /2.0/, such as /2.0/repositories/acme/app/refs/tags?pagelen=50.
+Jira paths start with /rest/api/3/, /rest/api/2/, /rest/agile/1.0/ or
+/rest/servicedeskapi/, such as /rest/api/3/myself.
 
 Only GET is supported. Prefer the dedicated commands where one exists.`,
 		Args: cobra.ExactArgs(1),

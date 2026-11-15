@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.2.0 - 2026-11-14
+
+### Added
+
+- Serve Atlas as an MCP server with `atlas mcp serve`: 51 tools over stateless streamable HTTP at `/mcp`. The server stores no credentials; each request sends `X-Atlas-Email`, `X-Atlas-Bitbucket-Token`, and `X-Atlas-Jira-Token`.
+- Add Jira commands under `atlas jira`: search, view, create, edit, assign, transitions and transition, comment, internal comments on service desk issues, links, worklogs (including batches from a file), attachments, fields, projects, and whoami.
+- Show PR build statuses with `atlas pr checks`, optionally waiting for pending checks, and merge PRs with `atlas pr merge`, guarded by `--match-head-commit`.
+- Show the PR activity feed with `atlas pr view --activity`. PR view now includes the head commit, created date, merge commit, and reviewer account IDs.
+- Edit and delete PR comments with `atlas pr comment --edit` and `--delete`, and change a PR's destination branch with `atlas pr edit --base`.
+- List PRs across several repositories with `atlas pr list --repos`, filter with `--updated-since`, list `--state all`, and cap results with `--limit`.
+- Prefix diff lines with old and new line numbers using `atlas pr diff --line-numbers`.
+- Add `atlas pipeline list`, `view`, `log`, `run`, and `stop`.
+- Add `atlas repo list`, `branch list`, `branch view`, `commit list`, `file read` (including one path across many repositories with `--repos`), `user search`, and `whoami`.
+- Add `atlas api` for read-only GETs of Bitbucket and Jira REST paths.
+- Exit with a distinct code per error kind: usage 2, authentication 3, not found 4, conflict 5, rate limited 6, partial 7, and timeout or still pending 8.
+- Read the Bitbucket token from `ATLAS_BITBUCKET_TOKEN` (`ATLAS_API_TOKEN` still works), the Jira token from `ATLAS_JIRA_TOKEN` or `jira_token`, and the credentials file path from `ATLAS_CREDENTIALS_FILE`.
+- Add the `jira_cloud_id` config key and `ATLAS_JIRA_CLOUD_ID`.
+
+### Changed
+
+- Accept exact workspace display names, as well as account IDs and UUIDs, in PR reviewer flags.
+- Bound every list, response read, diff, log, and file download, and say when output was truncated.
+- Redact caller credentials from every Bitbucket and Jira error, and secured variable values from pipeline output.
+- List the current Bitbucket token scopes in `atlas login`: add workspace and pipeline scopes, drop `write:repository:bitbucket`.
+
+### Fixed
+
+- Use a PR URL's own repository for every `atlas pr` subcommand, and refuse local git work for a PR URL from another repository.
+- Infer the repository inside git worktrees and submodules.
+
 ## 0.1.3 - 2026-09-20
 
 ### Added
