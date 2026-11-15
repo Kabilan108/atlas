@@ -19,9 +19,9 @@ func TestListOneRepo(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := "2 open pull requests in acme/widgets\n\n" +
-		"| PR | Title | Author | Branches | Created | Updated | Reviews | Feedback | URL |\n|---|---|---|---|---|---|---|---|---|\n" +
-		"| #42 | Fix login: handle 'empty' users | Ada Lovelace | feature/login → main | 2025-03-01 09:00 UTC | 2025-03-05 16:30 UTC | Grace Hopper approved, Linus Torvalds requested changes, Ken Thompson pending | 5 comments, 2 tasks | https://bitbucket.org/acme/widgets/pull-requests/42 |\n" +
-		"| #43 | [draft] Tidy the docs | Grace Hopper | docs/tidy → main | 2025-03-04 09:00 UTC | 2025-03-04 10:00 UTC | Ada Lovelace pending |  | https://bitbucket.org/acme/widgets/pull-requests/43 |\n"
+		"| PR | Title | Author | Draft | Branches | Created | Updated | Reviews | Feedback | URL |\n|---|---|---|---|---|---|---|---|---|---|\n" +
+		"| #42 | Fix login: handle 'empty' users | Ada Lovelace | no | feature/login → main | 2025-03-01 09:00 UTC | 2025-03-05 16:30 UTC | Grace Hopper approved, Linus Torvalds requested changes, Ken Thompson pending | 5 comments, 2 tasks | https://bitbucket.org/acme/widgets/pull-requests/42 |\n" +
+		"| #43 | Tidy the docs | Grace Hopper | yes | docs/tidy → main | 2025-03-04 09:00 UTC | 2025-03-04 10:00 UTC | Ada Lovelace pending |  | https://bitbucket.org/acme/widgets/pull-requests/43 |\n"
 	if result.Text != want {
 		t.Fatalf("text:\n%s\nwant:\n%s", result.Text, want)
 	}
@@ -127,7 +127,7 @@ func TestListUpdatedSinceAllStatesAndMore(t *testing.T) {
 	wantCalls(t, fixture, "GET /2.0/repositories/acme/widgets/pullrequests?fields=%2Bvalues.reviewers%2C%2Bvalues.participants&pagelen=1&q=updated_on+%3E%3D+2025-03-05T00%3A00%3A00%2B00%3A00&sort=-updated_on&state=OPEN&state=MERGED&state=DECLINED&state=SUPERSEDED")
 	for _, want := range []string{
 		"1 pull request (all states) in acme/widgets updated since 2025-03-05 00:00 UTC\n",
-		"| PR | Title | Author | State | Branches |",
+		"| PR | Title | Author | State | Draft | Branches |",
 		"| #42 | Fix login: handle 'empty' users | Ada Lovelace | OPEN |",
 	} {
 		if !strings.Contains(result.Text, want) {

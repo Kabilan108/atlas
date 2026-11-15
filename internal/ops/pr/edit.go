@@ -29,7 +29,7 @@ type EditResult struct {
 var Edit = &ops.Op[EditInput, *EditResult]{
 	Meta: ops.Meta{
 		Name:        "pr_edit",
-		Description: "Edit a Bitbucket pull request: title, description, destination branch, draft state, or reviewers. The receipt has both head commits.",
+		Description: "Edit a Bitbucket pull request: title, description, destination branch, draft state, or reviewers. The receipt is the PR as Bitbucket saved it, head commits included; no readback needed.",
 		Surfaces:    ops.Both,
 		Destructive: true,
 	},

@@ -270,6 +270,7 @@ func (r *ListResult) Markdown() (string, error) {
 	if r.state == StateAll {
 		header = append(header, "State")
 	}
+	header = append(header, "Draft")
 	header = append(header, "Branches", "Created", "Updated", "Reviews", "Feedback", "URL")
 	b.WriteString("| " + strings.Join(header, " | ") + " |\n|" + strings.Repeat("---|", len(header)) + "\n")
 	for _, pr := range r.PullRequests {
@@ -277,14 +278,15 @@ func (r *ListResult) Markdown() (string, error) {
 		if r.multi {
 			id = pr.Destination.Repository.FullName + id
 		}
-		title := pr.Title
-		if pr.Draft {
-			title = "[draft] " + title
-		}
-		row := []string{id, tableCell(title), tableCell(pr.Author.DisplayName)}
+		row := []string{id, tableCell(pr.Title), tableCell(pr.Author.DisplayName)}
 		if r.state == StateAll {
 			row = append(row, pr.State)
 		}
+		draft := "no"
+		if pr.Draft {
+			draft = "yes"
+		}
+		row = append(row, draft)
 		row = append(row,
 			tableCell(pr.Source.Branch.Name)+" → "+tableCell(pr.Destination.Branch.Name),
 			formatTime(pr.CreatedOn), formatTime(pr.UpdatedOn),
