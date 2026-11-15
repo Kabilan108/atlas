@@ -23,6 +23,7 @@
 - Accept exact workspace display names, as well as account IDs and UUIDs, in PR reviewer flags.
 - Bound every list, response read, diff, log, and file download, and say when output was truncated.
 - Redact caller credentials from every Bitbucket and Jira error, and secured variable values from pipeline output.
+- List the current Bitbucket token scopes in `atlas login`: add workspace and pipeline scopes, drop `write:repository:bitbucket`.
 
 ### Fixed
 
