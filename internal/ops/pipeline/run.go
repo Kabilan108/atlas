@@ -48,6 +48,7 @@ type RunReceipt struct {
 	Commit          string `json:"commit,omitempty"`
 	DurationSeconds int    `json:"duration_seconds,omitempty"`
 	URL             string `json:"url"`
+	FailureReason   string `json:"failure_reason,omitempty"`
 
 	waited time.Duration
 }
@@ -120,6 +121,7 @@ func newRunReceipt(repo ops.Repository, p *bitbucket.Pipeline) *RunReceipt {
 		Commit:          run.Commit,
 		DurationSeconds: run.DurationSeconds,
 		URL:             run.URL,
+		FailureReason:   run.FailureReason,
 	}
 }
 
@@ -181,5 +183,8 @@ func (r *RunReceipt) Markdown() (string, error) {
 		fmt.Fprintf(&b, "Started %s: %s. Follow it with pipeline_view %d.", what, r.Status, r.BuildNumber)
 	}
 	fmt.Fprintf(&b, "\n%s\n", r.URL)
+	if r.FailureReason != "" {
+		fmt.Fprintf(&b, "Bitbucket failed the run itself, before any step: %s\n", r.FailureReason)
+	}
 	return b.String(), nil
 }

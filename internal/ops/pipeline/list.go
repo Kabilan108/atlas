@@ -107,6 +107,17 @@ func (r *ListResult) Markdown() (string, error) {
 			run.BuildNumber, run.Status, cell(run.Branch), cell(shortHash(run.Commit)), cell(run.Selector),
 			cell(run.Trigger), cell(run.Creator), formatTime(&run.CreatedOn), formatDuration(run.DurationSeconds, run.Finished()))
 	}
+	reasons := false
+	for _, run := range r.Pipelines {
+		if run.FailureReason == "" {
+			continue
+		}
+		if !reasons {
+			b.WriteString("\nRuns Bitbucket failed before or outside their steps:\n")
+			reasons = true
+		}
+		fmt.Fprintf(&b, "- #%d: %s\n", run.BuildNumber, run.FailureReason)
+	}
 	fmt.Fprintf(&b, "\n%d runs, newest first. pipeline_view shows steps; pipeline_log shows failed step logs.\n", len(r.Pipelines))
 	return b.String(), nil
 }

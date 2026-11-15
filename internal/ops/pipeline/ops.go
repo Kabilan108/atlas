@@ -41,6 +41,9 @@ type Run struct {
 	CompletedOn     *time.Time `json:"completed_on,omitempty"`
 	DurationSeconds int        `json:"duration_seconds"`
 	URL             string     `json:"url"`
+	// FailureReason is Bitbucket's reason for failing the run as a whole,
+	// e.g. a YAML error; failed steps explain themselves in their logs.
+	FailureReason string `json:"failure_reason,omitempty"`
 }
 
 func newRun(repo ops.Repository, p *bitbucket.Pipeline) Run {
@@ -57,6 +60,7 @@ func newRun(repo ops.Repository, p *bitbucket.Pipeline) Run {
 		CompletedOn:     p.CompletedOn,
 		DurationSeconds: p.DurationInSeconds,
 		URL:             bitbucket.PipelineWebURL(repo.Workspace, repo.Repo, p.BuildNumber),
+		FailureReason:   p.State.ErrorMessage(),
 	}
 }
 
@@ -238,4 +242,7 @@ func describeRun(b *strings.Builder, r Run) {
 		b.WriteString(" · ")
 	}
 	fmt.Fprintf(b, "started %s · %s · %s\n", formatTime(&r.CreatedOn), formatDuration(r.DurationSeconds, r.Finished()), r.URL)
+	if r.FailureReason != "" {
+		fmt.Fprintf(b, "\nBitbucket failed the run itself: %s\n", r.FailureReason)
+	}
 }

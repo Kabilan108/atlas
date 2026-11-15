@@ -37,12 +37,16 @@ var FailedLog = func() string {
 // code fence in it.
 const RunningLog = "\x1b[32mconnecting\x1b[0m\r\n```\nnot a fence\n```\nstill waiting\n"
 
+// YAMLError is why Bitbucket failed build 2097 before any step ran.
+const YAMLError = "There is a YAML syntax error in your bitbucket-pipelines.yml at [line 55, column 35]. Mapping values are not allowed here"
+
 // The runs the fixture holds. 2090 failed in its backup step, 2095 passed,
-// 2096 is running.
+// 2096 is running, and Bitbucket failed 2097 itself on a YAML error.
 var pipelines = map[int]string{
 	2090: pipelineJSON(2090, "COMPLETED", `"result":{"name":"FAILED"}`, "testing", "custom", "db-backup", 84, true),
 	2095: pipelineJSON(2095, "COMPLETED", `"result":{"name":"SUCCESSFUL"}`, "testing", "custom", "db-backup", 33, true),
 	2096: pipelineJSON(2096, "IN_PROGRESS", `"stage":{"name":"RUNNING"}`, "main", "branches", "main", 0, false),
+	2097: pipelineJSON(2097, "COMPLETED", `"result":{"name":"FAILED","error":{"key":"plan-service.parse.detailed-parse-error","message":"`+YAMLError+`","type":"pipeline_error"}}`, "fix/yaml", "custom", "db-backup", 0, true),
 }
 
 var steps = map[int]string{
@@ -51,6 +55,7 @@ var steps = map[int]string{
 		stepJSON("s-deploy", "deploy", "COMPLETED", `"result":{"name":"NOT_RUN"}`, 0, false) + `]`,
 	2095: `[` + stepJSON("s-ok", "backup", "COMPLETED", `"result":{"name":"SUCCESSFUL"}`, 33, true) + `]`,
 	2096: `[` + stepJSON("s-run", "backup", "IN_PROGRESS", `"stage":{"name":"RUNNING"}`, 0, true) + `]`,
+	2097: `[]`,
 }
 
 var logs = map[string]string{
@@ -174,7 +179,7 @@ func (f *Fixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (f *Fixture) list(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 	var values []string
-	for _, n := range []int{2096, 2095, 2090} {
+	for _, n := range []int{2097, 2096, 2095, 2090} {
 		var run struct {
 			Target struct {
 				RefName  string `json:"ref_name"`

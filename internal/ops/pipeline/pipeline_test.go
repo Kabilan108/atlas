@@ -307,6 +307,40 @@ func TestLogPassedBuildSaysWhichStepsToName(t *testing.T) {
 	mustContain(t, markdown(t, result.Markdown), `No failed or running steps. Name steps to read their logs: "backup" (SUCCESSFUL).`)
 }
 
+// A run Bitbucket fails before any step (here a YAML error) has no step or
+// log to explain it, so every view of the run carries Bitbucket's reason.
+func TestRunFailedByBitbucketShowsTheReason(t *testing.T) {
+	env, _ := newEnv(t)
+	ctx := context.Background()
+	in := ops.RepoRef{Repo: repo}
+
+	list, err := pipeline.List.Call(ctx, env, pipeline.ListInput{RepoRef: in, Branch: "fix/yaml"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustContain(t, markdown(t, list.Markdown), "- #2097: "+pipelinetest.YAMLError)
+
+	view, err := pipeline.View.Call(ctx, env, pipeline.ViewInput{RepoRef: in, Builds: []string{"2097"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustContain(t, markdown(t, view.Markdown), "Bitbucket failed the run itself: "+pipelinetest.YAMLError)
+
+	logs, err := pipeline.Log.Call(ctx, env, pipeline.LogInput{RepoRef: in, Builds: []string{"2097"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustContain(t, markdown(t, logs.Markdown), "No step ran, so there is no log. Bitbucket failed the run itself: "+pipelinetest.YAMLError)
+
+	other, err := pipeline.List.Call(ctx, env, pipeline.ListInput{RepoRef: in, Branch: "testing"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text := markdown(t, other.Markdown); strings.Contains(text, "failed before or outside") {
+		t.Errorf("runs that failed in a step got a reason section:\n%s", text)
+	}
+}
+
 func TestRunStartsCustomPipelineWithVariables(t *testing.T) {
 	env, fixture := newEnv(t)
 	receipt, err := pipeline.Start.Call(context.Background(), env, pipeline.RunInput{
