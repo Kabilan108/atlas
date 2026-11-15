@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.1 - 2026-11-14
+
+### Changed
+
+- Name each reviewer's verdict in MCP `pr_list` results (approved, requested changes, pending) and show an explicit Draft column.
+- Include the source and destination head commits in PR write receipts.
+- Tune MCP tool descriptions from replays of real Bitbucket and Jira workflows, so agents reach for the right tool and trust receipts instead of re-reading.
+- Group pipeline runs that Bitbucket failed for the same reason in `pipeline list`.
+
+### Fixed
+
+- Ask Bitbucket's PR list endpoint for reviewers and participants, which it omits by default, so `pr list` shows reviews and the reviewer filter matches.
+- Show why Bitbucket failed a pipeline run before any step ran, such as a `bitbucket-pipelines.yml` syntax error, in `pipeline run`, `view`, `log`, and `list`, with secured variable values redacted.
+- Reject `atlas api` paths that still hold a template placeholder such as `{workspace}` in the workspace or repository slot, instead of sending them to Bitbucket.
+
 ## 0.2.0 - 2026-11-14
 
 ### Added
