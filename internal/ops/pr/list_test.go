@@ -25,7 +25,7 @@ func TestListOneRepo(t *testing.T) {
 	if result.Text != want {
 		t.Fatalf("text:\n%s\nwant:\n%s", result.Text, want)
 	}
-	wantCalls(t, fixture, "GET /2.0/repositories/acme/widgets/pullrequests?pagelen=50&sort=-updated_on&state=OPEN")
+	wantCalls(t, fixture, "GET /2.0/repositories/acme/widgets/pullrequests?fields=%2Bvalues.reviewers%2C%2Bvalues.participants&pagelen=50&sort=-updated_on&state=OPEN")
 	data, err := json.Marshal(result.Value)
 	if err != nil || !strings.HasPrefix(string(data), `[{"id":42,`) {
 		t.Fatalf("JSON = %.40s (%v), want the bare array", data, err)
@@ -45,7 +45,7 @@ func TestListFiltersAndEmpty(t *testing.T) {
 	if err != nil || result.Text != "No merged pull requests in acme/widgets.\n" {
 		t.Fatalf("text = %q, err = %v", result.Text, err)
 	}
-	if got := calls(fixture); got[len(got)-1] != "GET /2.0/repositories/acme/widgets/pullrequests?pagelen=50&sort=-updated_on&state=MERGED" {
+	if got := calls(fixture); got[len(got)-1] != "GET /2.0/repositories/acme/widgets/pullrequests?fields=%2Bvalues.reviewers%2C%2Bvalues.participants&pagelen=50&sort=-updated_on&state=MERGED" {
 		t.Fatalf("requests = %v", got)
 	}
 }
@@ -92,8 +92,8 @@ func TestListSeveralReposNewestFirst(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantCalls(t, fixture,
-		"GET /2.0/repositories/acme/gadgets/pullrequests?pagelen=5&sort=-updated_on&state=OPEN",
-		"GET /2.0/repositories/acme/widgets/pullrequests?pagelen=5&sort=-updated_on&state=OPEN")
+		"GET /2.0/repositories/acme/gadgets/pullrequests?fields=%2Bvalues.reviewers%2C%2Bvalues.participants&pagelen=5&sort=-updated_on&state=OPEN",
+		"GET /2.0/repositories/acme/widgets/pullrequests?fields=%2Bvalues.reviewers%2C%2Bvalues.participants&pagelen=5&sort=-updated_on&state=OPEN")
 	var ids []string
 	for _, p := range result.Value.(*pr.ListResult).PullRequests {
 		ids = append(ids, p.Destination.Repository.FullName+"#"+itoa(p.ID))
@@ -124,7 +124,7 @@ func TestListUpdatedSinceAllStatesAndMore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantCalls(t, fixture, "GET /2.0/repositories/acme/widgets/pullrequests?pagelen=1&q=updated_on+%3E%3D+2025-03-05T00%3A00%3A00%2B00%3A00&sort=-updated_on&state=OPEN&state=MERGED&state=DECLINED&state=SUPERSEDED")
+	wantCalls(t, fixture, "GET /2.0/repositories/acme/widgets/pullrequests?fields=%2Bvalues.reviewers%2C%2Bvalues.participants&pagelen=1&q=updated_on+%3E%3D+2025-03-05T00%3A00%3A00%2B00%3A00&sort=-updated_on&state=OPEN&state=MERGED&state=DECLINED&state=SUPERSEDED")
 	for _, want := range []string{
 		"1 pull request (all states) in acme/widgets updated since 2025-03-05 00:00 UTC\n",
 		"| PR | Title | Author | State | Branches |",

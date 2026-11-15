@@ -65,7 +65,7 @@ func TestBranchAndStateQueriesAreEncoded(t *testing.T) {
 	if got := requests[0].Query; len(got) != 1 || got.Get("q") != `source.branch.name="fix/\"quote\"&state=MERGED"` {
 		t.Fatalf("branch query = %v", got)
 	}
-	if got := requests[1].Query; len(got) != 3 || got.Get("state") != "OPEN" || got.Get("sort") != "-updated_on" {
+	if got := requests[1].Query; len(got) != 4 || got.Get("state") != "OPEN" || got.Get("sort") != "-updated_on" {
 		t.Fatalf("list query = %v", got)
 	}
 }

@@ -361,6 +361,7 @@ const (
 	MaxPRListLimit = 500
 	maxPRListScan  = 1000
 	prPageLen      = 50
+	prListFields   = "+values.reviewers,+values.participants"
 )
 
 // PullRequestList is one repository's pull requests, newest updated first.
@@ -397,6 +398,9 @@ func (c *Client) ListPullRequests(ctx context.Context, workspace, repo string, o
 	}
 	values.Set("sort", "-updated_on")
 	values.Set("pagelen", strconv.Itoa(pageLen))
+	// The list endpoint leaves out reviewers and participants unless asked,
+	// which would show every PR as unreviewed and break the reviewer filter.
+	values.Set("fields", prListFields)
 	path := withQuery(repoPath(workspace, repo)+"/pullrequests", values)
 
 	list := &PullRequestList{}
