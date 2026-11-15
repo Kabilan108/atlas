@@ -329,3 +329,26 @@ func TestReviewSummaryNamesVerdicts(t *testing.T) {
 		t.Fatalf("empty = %q", got)
 	}
 }
+
+func TestListTableEscapesReviewerNames(t *testing.T) {
+	pull := bitbucket.PullRequest{ID: 7, Title: "t", State: "OPEN"}
+	pull.Reviewers = []bitbucket.User{{DisplayName: "Ada | Platform", AccountID: "a1"}}
+	result := &ListResult{PullRequests: []bitbucket.PullRequest{pull}, scope: "acme/widgets", state: StateOpen}
+	text, err := result.Markdown()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var header, row string
+	for _, line := range strings.Split(text, "\n") {
+		switch {
+		case strings.HasPrefix(line, "| PR "):
+			header = line
+		case strings.HasPrefix(line, "| #7 "):
+			row = line
+		}
+	}
+	unescaped := func(line string) int { return strings.Count(line, "|") - strings.Count(line, `\|`) }
+	if header == "" || row == "" || unescaped(row) != unescaped(header) || !strings.Contains(row, `Ada \| Platform pending`) {
+		t.Fatalf("row does not keep the header's columns:\n%s", text)
+	}
+}

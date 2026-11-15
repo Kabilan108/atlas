@@ -3,6 +3,7 @@ package pipeline_test
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -482,5 +483,27 @@ func TestInvokeDecodesJSONArguments(t *testing.T) {
 	_, err = pipeline.Start.Invoke(context.Background(), env, json.RawMessage(`{"repo":"acme/widgets","branch":"main","variables":[{"key":"A","value":"1","secure":true}]}`))
 	if ops.KindOf(err) != ops.Invalid {
 		t.Fatalf("misspelt variable field: err = %v, want invalid", err)
+	}
+}
+
+// Bitbucket may echo a run's variables in the reason it failed the run, so
+// the receipt's failure reason is scrubbed like an error is.
+func TestRunRedactsSecuredValuesFromTheFailureReason(t *testing.T) {
+	env := opstest.New("acme").WithBitbucket(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"uuid":"{p1}","build_number":3,"state":{"name":"COMPLETED","result":{"name":"FAILED","error":{"key":"k","message":"bad variable TOKEN=s3cret"}}},"target":{"ref_name":"main"}}`))
+	}))
+	receipt, err := pipeline.Start.Call(context.Background(), env, pipeline.RunInput{
+		RepoRef: ops.RepoRef{Repo: repo}, Branch: "main",
+		Variables: []pipeline.Variable{{Key: "TOKEN", Value: "s3cret", Secured: true}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _ := json.Marshal(receipt)
+	text := markdown(t, receipt.Markdown)
+	if strings.Contains(string(data)+text, "s3cret") || !strings.Contains(receipt.FailureReason, "TOKEN=") {
+		t.Fatalf("failure reason = %q\n%s", receipt.FailureReason, text)
 	}
 }

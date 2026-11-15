@@ -62,13 +62,19 @@ func TestGetRejectsUnfilledPlaceholders(t *testing.T) {
 		"/2.0/repositories/%7B4e6db8a0-1b97-4d1f-a4c9-bd20d0a0be3c%7D/app/pipelines/1",
 		"/2.0/repositories/{4e6db8a0-1b97-4d1f-a4c9-bd20d0a0be3c}/app",
 		`/2.0/repositories/acme/app/refs?q=name~"{x}"`,
+		"/2.0/repositories/acme/app/src/main/templates/{customer}.json",
+		"/2.0/repositories/acme/app/src/main/{customer}",
 	} {
 		if _, err := api.Get.Invoke(context.Background(), env, mustJSON(t, map[string]any{"path": path})); err != nil {
 			t.Errorf("path %q: %v", path, err)
 		}
 	}
-	if len(served) != 3 {
-		t.Fatalf("served %d requests, want 3: %v", len(served), served)
+	if len(served) != 5 {
+		t.Fatalf("served %d requests, want 5: %v", len(served), served)
+	}
+	_, err = api.Get.Invoke(context.Background(), env, mustJSON(t, map[string]any{"path": "/2.0/workspaces/{workspace}/members"}))
+	if ops.KindOf(err) != ops.Invalid {
+		t.Fatalf("workspace placeholder: err = %v", err)
 	}
 }
 
@@ -141,11 +147,11 @@ func TestTemplate(t *testing.T) {
 		"/rest/api/3/issue/createmeta/CSM/issuetypes":                                       "/rest/api/3/issue/createmeta/{value}/issuetypes",
 		"/rest/api/3/users/search?query=alice":                                              "/rest/api/3/users/search",
 		"/rest/api/3/mystery/alice@example.invalid/Secret_Name":                             "/rest/api/3/{value}/{value}/{value}",
-		"/rest/api/9/issue":                                                         "/rest/api/{value}/issue",
-		"/rest/servicedeskapi/request/CSM-1/comment":                                "/rest/servicedeskapi/request/{key}/comment",
-		"/2.0/users/alice@example.invalid":                                          "/2.0/users/{user}",
+		"/rest/api/9/issue":                          "/rest/api/{value}/issue",
+		"/rest/servicedeskapi/request/CSM-1/comment": "/rest/servicedeskapi/request/{key}/comment",
+		"/2.0/users/alice@example.invalid":           "/2.0/users/{user}",
 		"/2.0/repositories/acme/app/pullrequests/42/comments/7/acme-internal-label": "/2.0/repositories/{workspace}/{repo}/pullrequests/{id}/comments/{id}/{value}",
-		"/wiki/rest/api/content/123":                                                "/{path}",
+		"/wiki/rest/api/content/123": "/{path}",
 	} {
 		if got := api.Template(path); got != want {
 			t.Errorf("Template(%q) = %q, want %q", path, got, want)

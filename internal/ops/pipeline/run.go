@@ -100,11 +100,13 @@ func run(ctx context.Context, env ops.Env, in RunInput) (*RunReceipt, error) {
 		return nil, redactSecrets(err, secrets)
 	}
 	receipt := newRunReceipt(repo, started)
-	if wait == 0 || receipt.Finished {
-		return receipt, nil
+	if wait > 0 && !receipt.Finished {
+		receipt.waited = wait
+		receipt, err = waitForRun(ctx, client, repo, receipt, wait)
 	}
-	receipt.waited = wait
-	receipt, err = waitForRun(ctx, client, repo, receipt, wait)
+	if receipt != nil {
+		receipt.FailureReason = redact(receipt.FailureReason, secrets)
+	}
 	return receipt, redactSecrets(err, secrets)
 }
 

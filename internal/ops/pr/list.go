@@ -290,7 +290,7 @@ func (r *ListResult) Markdown() (string, error) {
 		row = append(row,
 			tableCell(pr.Source.Branch.Name)+" → "+tableCell(pr.Destination.Branch.Name),
 			formatTime(pr.CreatedOn), formatTime(pr.UpdatedOn),
-			reviewSummary(pr), FeedbackSummary(pr), pr.Links.HTML.Href)
+			tableCell(reviewSummary(pr)), FeedbackSummary(pr), pr.Links.HTML.Href)
 		b.WriteString("| " + strings.Join(row, " | ") + " |\n")
 	}
 	if len(r.more) > 0 {

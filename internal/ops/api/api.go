@@ -118,7 +118,7 @@ func get(ctx context.Context, env ops.Env, in GetInput) (*GetResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	if placeholder := placeholderPattern.FindString(strings.SplitN(path, "?", 2)[0]); placeholder != "" {
+	if placeholder := unfilledPlaceholder(path); placeholder != "" {
 		return nil, ops.Errorf(ops.Invalid, "path %q still has the placeholder %s; fill it in (the default Bitbucket workspace is %s)",
 			in.Path, placeholder, env.DefaultWorkspace())
 	}
@@ -151,10 +151,34 @@ func get(ctx context.Context, env ops.Env, in GetInput) (*GetResult, error) {
 	}, nil
 }
 
-// placeholderPattern finds a template segment such as {workspace} copied
+// placeholderPattern matches a template segment such as {workspace} copied
 // from a tool description. Bitbucket's braced UUIDs contain digits or
 // dashes, so they never match.
-var placeholderPattern = regexp.MustCompile(`\{[A-Za-z_]+\}`)
+var placeholderPattern = regexp.MustCompile(`^\{[A-Za-z_]+\}$`)
+
+// unfilledPlaceholder returns a template segment left in the workspace or
+// repository slot of a Bitbucket path. Only those slots are checked: deeper
+// segments such as file paths under /src/ may contain braces legitimately.
+func unfilledPlaceholder(path string) string {
+	rest, ok := strings.CutPrefix(strings.SplitN(path, "?", 2)[0], "/2.0/")
+	if !ok {
+		return ""
+	}
+	segments := strings.Split(rest, "/")
+	var slots []string
+	switch segments[0] {
+	case "repositories":
+		slots = segments[1:min(3, len(segments))]
+	case "workspaces":
+		slots = segments[1:min(2, len(segments))]
+	}
+	for _, segment := range slots {
+		if placeholderPattern.MatchString(segment) {
+			return segment
+		}
+	}
+	return ""
+}
 
 // validatePath accepts an absolute path with an optional query and nothing
 // that could leave the API: no scheme or host, no backslashes, no dot
