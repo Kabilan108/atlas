@@ -6,7 +6,7 @@
 }:
 buildGoModule rec {
   pname = "atlas";
-  version = "0.1.3";
+  version = "0.2.0";
   src = ../.;
   vendorHash = "sha256-g95LoEeBKIGuo1aPO05ZIsgVzDRTyEdNI630xifME2w=";
 
@@ -41,7 +41,7 @@ buildGoModule rec {
   env.CGO_ENABLED = 0;
 
   meta = {
-    description = "Atlas CLI that fetches Confluence/Bitbucket content and prints markdown-wrapped output";
+    description = "Atlas CLI and MCP server for Bitbucket Cloud and Jira Cloud";
     homepage = "https://github.com/kabilan108/atlas";
     license = lib.licenses.asl20;
     platforms = [ "x86_64-linux" ];
