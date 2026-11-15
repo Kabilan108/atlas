@@ -324,7 +324,7 @@ func TestRunFailedByBitbucketShowsTheReason(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mustContain(t, markdown(t, view.Markdown), "Bitbucket failed the run itself: "+pipelinetest.YAMLError)
+	mustContain(t, markdown(t, view.Markdown), "Bitbucket failed the run itself: "+pipelinetest.YAMLError, "No steps ran.")
 
 	logs, err := pipeline.Log.Call(ctx, env, pipeline.LogInput{RepoRef: in, Builds: []string{"2097"}})
 	if err != nil {
@@ -338,6 +338,20 @@ func TestRunFailedByBitbucketShowsTheReason(t *testing.T) {
 	}
 	if text := markdown(t, other.Markdown); strings.Contains(text, "failed before or outside") {
 		t.Errorf("runs that failed in a step got a reason section:\n%s", text)
+	}
+}
+
+func TestListGroupsRunsThatFailedForTheSameReason(t *testing.T) {
+	result := &pipeline.ListResult{Repo: repo, Pipelines: []pipeline.Run{
+		{BuildNumber: 9, Status: "FAILED", FailureReason: "YAML error"},
+		{BuildNumber: 8, Status: "FAILED", FailureReason: "out of build minutes"},
+		{BuildNumber: 7, Status: "FAILED", FailureReason: "YAML error"},
+		{BuildNumber: 6, Status: "FAILED"},
+	}}
+	text := markdown(t, result.Markdown)
+	mustContain(t, text, "- #9, #7: YAML error\n- #8: out of build minutes\n")
+	if strings.Contains(text, "#6:") {
+		t.Errorf("a run without a reason is listed:\n%s", text)
 	}
 }
 

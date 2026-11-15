@@ -107,17 +107,30 @@ func (r *ListResult) Markdown() (string, error) {
 			run.BuildNumber, run.Status, cell(run.Branch), cell(shortHash(run.Commit)), cell(run.Selector),
 			cell(run.Trigger), cell(run.Creator), formatTime(&run.CreatedOn), formatDuration(run.DurationSeconds, run.Finished()))
 	}
-	reasons := false
-	for _, run := range r.Pipelines {
+	writeFailureReasons(&b, r.Pipelines)
+	fmt.Fprintf(&b, "\n%d runs, newest first. pipeline_view shows steps; pipeline_log shows failed step logs.\n", len(r.Pipelines))
+	return b.String(), nil
+}
+
+// writeFailureReasons lists the runs Bitbucket failed outside their steps,
+// one line per distinct reason, since a broken config fails every run alike.
+func writeFailureReasons(b *strings.Builder, runs []Run) {
+	var reasons []string
+	builds := map[string][]string{}
+	for _, run := range runs {
 		if run.FailureReason == "" {
 			continue
 		}
-		if !reasons {
-			b.WriteString("\nRuns Bitbucket failed before or outside their steps:\n")
-			reasons = true
+		if _, seen := builds[run.FailureReason]; !seen {
+			reasons = append(reasons, run.FailureReason)
 		}
-		fmt.Fprintf(&b, "- #%d: %s\n", run.BuildNumber, run.FailureReason)
+		builds[run.FailureReason] = append(builds[run.FailureReason], fmt.Sprintf("#%d", run.BuildNumber))
 	}
-	fmt.Fprintf(&b, "\n%d runs, newest first. pipeline_view shows steps; pipeline_log shows failed step logs.\n", len(r.Pipelines))
-	return b.String(), nil
+	if len(reasons) == 0 {
+		return
+	}
+	b.WriteString("\nRuns Bitbucket failed before or outside their steps:\n")
+	for _, reason := range reasons {
+		fmt.Fprintf(b, "- %s: %s\n", strings.Join(builds[reason], ", "), reason)
+	}
 }
