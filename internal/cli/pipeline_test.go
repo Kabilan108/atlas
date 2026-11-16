@@ -36,6 +36,19 @@ func TestPipelineViewSeveralBuildsPrintsThenFails(t *testing.T) {
 	}
 }
 
+func TestPipelineViewNeverPrintsSecuredValues(t *testing.T) {
+	setupCLIEnv(t)
+	for _, args := range [][]string{nil, {"--json"}} {
+		out, err := runAtlas(t, pipelinetest.New(), append([]string{"--no-cache", "pipeline", "view", "-R", "acme/widgets", "2095"}, args...)...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(out, pipelinetest.SecuredValue) || !strings.Contains(out, "API_TOKEN") {
+			t.Fatalf("%v output:\n%s", args, out)
+		}
+	}
+}
+
 func TestPipelineLogStepsAndFull(t *testing.T) {
 	setupCLIEnv(t)
 	fixture := pipelinetest.New()

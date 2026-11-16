@@ -27,7 +27,9 @@ const maxBuilds = 10
 
 const stateCompleted = "COMPLETED"
 
-// Run is one pipeline run.
+// Run is one pipeline run. Creator is the display name of whoever started
+// it; CreatorKind is set when that was not a user, e.g.
+// "workspace_access_token".
 type Run struct {
 	BuildNumber     int        `json:"build_number"`
 	UUID            string     `json:"uuid"`
@@ -37,6 +39,7 @@ type Run struct {
 	Selector        string     `json:"selector,omitempty"`
 	Trigger         string     `json:"trigger,omitempty"`
 	Creator         string     `json:"creator,omitempty"`
+	CreatorKind     string     `json:"creator_kind,omitempty"`
 	CreatedOn       time.Time  `json:"created_on"`
 	CompletedOn     *time.Time `json:"completed_on,omitempty"`
 	DurationSeconds int        `json:"duration_seconds"`
@@ -55,7 +58,8 @@ func newRun(repo ops.Repository, p *bitbucket.Pipeline) Run {
 		Commit:          p.Target.CommitHash(),
 		Selector:        selector(p.Target.Selector),
 		Trigger:         trigger(p.Trigger),
-		Creator:         p.Creator.DisplayName,
+		Creator:         creatorName(p.Creator),
+		CreatorKind:     creatorKind(p.Creator),
 		CreatedOn:       p.CreatedOn,
 		CompletedOn:     p.CompletedOn,
 		DurationSeconds: p.DurationInSeconds,
@@ -81,6 +85,38 @@ func selector(s *bitbucket.PipelineSelector) string {
 		return s.Type
 	}
 	return s.Type + ":" + s.Pattern
+}
+
+func creatorName(c bitbucket.PipelineCreator) string {
+	if name := strings.TrimSpace(c.DisplayName); name != "" {
+		return name
+	}
+	return strings.TrimSpace(c.Nickname)
+}
+
+// creatorKind names the kind of non-user account that started a run, or
+// "" for a user or when Bitbucket names no creator.
+func creatorKind(c bitbucket.PipelineCreator) string {
+	if kind := strings.TrimSpace(c.Kind); kind != "" {
+		return kind
+	}
+	if kind := strings.TrimSpace(c.Type); kind != "user" {
+		return kind
+	}
+	return ""
+}
+
+// CreatorLabel is who started the run, as "name (kind)" for a token or
+// app, or "" when Bitbucket does not say.
+func (r Run) CreatorLabel() string {
+	switch {
+	case r.Creator != "" && r.CreatorKind != "":
+		return r.Creator + " (" + r.CreatorKind + ")"
+	case r.Creator != "":
+		return r.Creator
+	default:
+		return r.CreatorKind
+	}
 }
 
 func trigger(t bitbucket.PipelineTrigger) string {
@@ -215,6 +251,10 @@ func shortHash(hash string) string {
 	return hash
 }
 
+func oneLine(s string) string {
+	return strings.Join(strings.Fields(s), " ")
+}
+
 func cell(s string) string {
 	if s == "" {
 		return "-"
@@ -234,12 +274,14 @@ func describeRun(b *strings.Builder, r Run) {
 		fmt.Fprintf(b, " @ %s", shortHash(r.Commit))
 	}
 	b.WriteString("\n\n")
-	if r.Trigger != "" {
-		fmt.Fprintf(b, "Trigger %s", r.Trigger)
-		if r.Creator != "" {
-			fmt.Fprintf(b, " by %s", r.Creator)
-		}
-		b.WriteString(" · ")
+	creator := oneLine(r.CreatorLabel())
+	switch {
+	case r.Trigger != "" && creator != "":
+		fmt.Fprintf(b, "Trigger %s by %s · ", oneLine(r.Trigger), creator)
+	case r.Trigger != "":
+		fmt.Fprintf(b, "Trigger %s · ", oneLine(r.Trigger))
+	case creator != "":
+		fmt.Fprintf(b, "By %s · ", creator)
 	}
 	fmt.Fprintf(b, "started %s · %s · %s\n", formatTime(&r.CreatedOn), formatDuration(r.DurationSeconds, r.Finished()), r.URL)
 	if r.FailureReason != "" {

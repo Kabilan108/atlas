@@ -105,7 +105,7 @@ func (r *ListResult) Markdown() (string, error) {
 	for _, run := range r.Pipelines {
 		fmt.Fprintf(&b, "| %d | %s | %s | %s | %s | %s | %s | %s | %s |\n",
 			run.BuildNumber, run.Status, cell(run.Branch), cell(shortHash(run.Commit)), cell(run.Selector),
-			cell(run.Trigger), cell(run.Creator), formatTime(&run.CreatedOn), formatDuration(run.DurationSeconds, run.Finished()))
+			cell(run.Trigger), cell(run.CreatorLabel()), formatTime(&run.CreatedOn), formatDuration(run.DurationSeconds, run.Finished()))
 	}
 	writeFailureReasons(&b, r.Pipelines)
 	fmt.Fprintf(&b, "\n%d runs, newest first. pipeline_view shows steps; pipeline_log shows failed step logs.\n", len(r.Pipelines))

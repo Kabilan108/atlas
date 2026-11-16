@@ -40,13 +40,51 @@ const RunningLog = "\x1b[32mconnecting\x1b[0m\r\n```\nnot a fence\n```\nstill wa
 // YAMLError is why Bitbucket failed build 2097 before any step ran.
 const YAMLError = "There is a YAML syntax error in your bitbucket-pipelines.yml at [line 55, column 35]. Mapping values are not allowed here"
 
+// SecuredValue is the value of 2095's secured variable. Bitbucket omits
+// secured values, but the fixture sends this one so tests can check it never
+// reaches output.
+const SecuredValue = "synthetic-secured-7f3c2a"
+
+// LongKey and LongValue are 2098's first variable, both longer than Atlas
+// shows. The value's cap falls inside a two-byte rune.
+var (
+	LongKey   = strings.Repeat("K", 150)
+	LongValue = "x" + strings.Repeat("é", 300)
+)
+
+// Who started each run, and with what variables.
+const (
+	byToken = `"trigger":{"name":"MANUAL","type":"pipeline_trigger_manual"},
+		"creator":{"type":"app_user","kind":"workspace_access_token","display_name":"cicd pipeline token","uuid":"{t-1}","account_id":"712020:t-1"},
+		"variables":[{"type":"pipeline_variable","key":"META","value":"iam","secured":false},{"type":"pipeline_variable","key":"DB_PASSWORD","secured":true}]`
+	byUser = `"trigger":{"name":"MANUAL","type":"pipeline_trigger_manual"},
+		"creator":{"type":"user","display_name":"Merge Console","nickname":"merge","uuid":"{u-1}"},
+		"variables":[{"key":"META","value":"cns","secured":false},{"key":"API_TOKEN","value":"` + SecuredValue + `","secured":true}]`
+	byPush     = `"trigger":{"name":"PUSH","type":"pipeline_trigger_push"},"creator":{"type":"user","display_name":"Merge Console"},"variables":[]`
+	bySchedule = `"trigger":{"name":"SCHEDULE","type":"pipeline_trigger_schedule"},"creator":null`
+	unknown    = `"trigger":null,"creator":{},"variables":null`
+)
+
+// manyVariables is more variables than Atlas shows for one run.
+func manyVariables() string {
+	vars := []string{fmt.Sprintf(`{"key":%q,"value":%q}`, LongKey, LongValue), `null`, `{"value":"no key"}`}
+	for i := 1; i < 30; i++ {
+		vars = append(vars, fmt.Sprintf(`{"key":"VAR_%02d","value":"v%d"}`, i, i))
+	}
+	return `"variables":[` + strings.Join(vars, ",") + `]`
+}
+
 // The runs the fixture holds. 2090 failed in its backup step, 2095 passed,
-// 2096 is running, and Bitbucket failed 2097 itself on a YAML error.
+// 2096 is running, and Bitbucket failed 2097 itself on a YAML error. A
+// workspace token started 2090 and 2097, a user 2095, a push 2096, and a
+// schedule 2098; 2099 names no trigger or creator.
 var pipelines = map[int]string{
-	2090: pipelineJSON(2090, "COMPLETED", `"result":{"name":"FAILED"}`, "testing", "custom", "db-backup", 84, true),
-	2095: pipelineJSON(2095, "COMPLETED", `"result":{"name":"SUCCESSFUL"}`, "testing", "custom", "db-backup", 33, true),
-	2096: pipelineJSON(2096, "IN_PROGRESS", `"stage":{"name":"RUNNING"}`, "main", "branches", "main", 0, false),
-	2097: pipelineJSON(2097, "COMPLETED", `"result":{"name":"FAILED","error":{"key":"plan-service.parse.detailed-parse-error","message":"`+YAMLError+`","type":"pipeline_error"}}`, "fix/yaml", "custom", "db-backup", 0, true),
+	2090: pipelineJSON(2090, "COMPLETED", `"result":{"name":"FAILED"}`, "testing", "custom", "db-backup", 84, true, byToken),
+	2095: pipelineJSON(2095, "COMPLETED", `"result":{"name":"SUCCESSFUL"}`, "testing", "custom", "db-backup", 33, true, byUser),
+	2096: pipelineJSON(2096, "IN_PROGRESS", `"stage":{"name":"RUNNING"}`, "main", "branches", "main", 0, false, byPush),
+	2097: pipelineJSON(2097, "COMPLETED", `"result":{"name":"FAILED","error":{"key":"plan-service.parse.detailed-parse-error","message":"`+YAMLError+`","type":"pipeline_error"}}`, "fix/yaml", "custom", "db-backup", 0, true, byToken),
+	2098: pipelineJSON(2098, "COMPLETED", `"result":{"name":"SUCCESSFUL"}`, "main", "custom", "nightly", 5, true, bySchedule+","+manyVariables()),
+	2099: pipelineJSON(2099, "COMPLETED", `"result":{"name":"SUCCESSFUL"}`, "main", "branches", "main", 5, true, unknown),
 }
 
 var steps = map[int]string{
@@ -56,6 +94,8 @@ var steps = map[int]string{
 	2095: `[` + stepJSON("s-ok", "backup", "COMPLETED", `"result":{"name":"SUCCESSFUL"}`, 33, true) + `]`,
 	2096: `[` + stepJSON("s-run", "backup", "IN_PROGRESS", `"stage":{"name":"RUNNING"}`, 0, true) + `]`,
 	2097: `[]`,
+	2098: `[]`,
+	2099: `[]`,
 }
 
 var logs = map[string]string{
@@ -65,16 +105,16 @@ var logs = map[string]string{
 	"2096/s-run":    RunningLog,
 }
 
-func pipelineJSON(n int, state, detail, branch, selectorType, pattern string, seconds int, done bool) string {
+func pipelineJSON(n int, state, detail, branch, selectorType, pattern string, seconds int, done bool, who string) string {
 	completed := ""
 	if done {
 		completed = `"completed_on":"2026-11-02T18:47:01Z",`
 	}
 	return fmt.Sprintf(`{"uuid":"{p-%d}","build_number":%d,"state":{"name":%q,%s},
 		"target":{"type":"pipeline_ref_target","ref_type":"branch","ref_name":%q,"commit":{"hash":"333ec33226f2aa11bb22cc33dd44ee55ff667788"},"selector":{"type":%q,"pattern":%q}},
-		"trigger":{"name":"MANUAL","type":"pipeline_trigger_manual"},"creator":{"display_name":"Merge Console"},
+		%s,
 		"created_on":"2026-11-02T18:45:37Z",%s"duration_in_seconds":%d}`,
-		n, n, state, detail, branch, selectorType, pattern, completed, seconds)
+		n, n, state, detail, branch, selectorType, pattern, who, completed, seconds)
 }
 
 func stepJSON(uuid, name, state, detail string, seconds int, started bool) string {
@@ -162,7 +202,7 @@ func (f *Fixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.list(w, r)
 	case rest == "" && r.Method == http.MethodPost:
 		w.WriteHeader(http.StatusCreated)
-		_, _ = io.WriteString(w, pipelineJSON(Started, "PENDING", `"stage":{"name":"PENDING"}`, "main", "custom", "db-backup", 0, false))
+		_, _ = io.WriteString(w, pipelineJSON(Started, "PENDING", `"stage":{"name":"PENDING"}`, "main", "custom", "db-backup", 0, false, byUser))
 	case len(parts) == 1 && r.Method == http.MethodGet:
 		f.pipeline(w, parts[0])
 	case len(parts) == 2 && parts[1] == "steps":
@@ -218,10 +258,10 @@ func (f *Fixture) pipeline(w http.ResponseWriter, segment string) {
 		done := f.StartedPolls >= 0 && f.polls > f.StartedPolls
 		f.mu.Unlock()
 		if done {
-			writeJSON(w, pipelineJSON(Started, "COMPLETED", `"result":{"name":"SUCCESSFUL"}`, "main", "custom", "db-backup", 41, true))
+			writeJSON(w, pipelineJSON(Started, "COMPLETED", `"result":{"name":"SUCCESSFUL"}`, "main", "custom", "db-backup", 41, true, byUser))
 			return
 		}
-		writeJSON(w, pipelineJSON(Started, "IN_PROGRESS", `"stage":{"name":"RUNNING"}`, "main", "custom", "db-backup", 0, false))
+		writeJSON(w, pipelineJSON(Started, "IN_PROGRESS", `"stage":{"name":"RUNNING"}`, "main", "custom", "db-backup", 0, false, byUser))
 		return
 	}
 	run, ok := pipelines[n]
