@@ -177,18 +177,10 @@ op run --env-file="$HOME/.config/atlas/op.env" -- atlas config verify
 alias atlas='op run --env-file="$HOME/.config/atlas/op.env" -- atlas'
 ```
 
-Claude Code and Codex fill the Atlas headers from their own environment (see
-[Connecting an MCP Client](#connecting-an-mcp-client)), so start the client
-under `op run` and its header settings pick up the tokens:
-
-```bash
-op run --env-file="$HOME/.config/atlas/op.env" -- claude
-op run --env-file="$HOME/.config/atlas/op.env" -- codex
-```
-
-The client passes the tokens on to every process it starts, including an
-agent's shell commands. `op run` masks secret values in the command's stdout
-and stderr by default. Masking is best effort; `--no-masking` turns it off.
+`op run` masks secret values in the command's stdout and stderr by default.
+Masking is best effort; `--no-masking` turns it off. For MCP clients, use a
+header helper instead (see [Connecting an MCP Client](#connecting-an-mcp-client)):
+a helper's output is what the client sends, so masking would break it.
 
 ## Usage
 
@@ -366,25 +358,70 @@ commands that act on the local machine stay CLI-only: `pr checkout`,
 
 ## Connecting an MCP Client
 
-Each config below reads the email and tokens from `ATLAS_USERNAME`,
-`ATLAS_BITBUCKET_TOKEN`, and `ATLAS_JIRA_TOKEN` in the client's environment, so
-no token is written into a config file. Replace the URL if the server listens
-elsewhere. Drop the Jira header if you only use Bitbucket tools.
+Every client ends up sending the three headers from [MCP Server](#mcp-server).
+What differs is where the values come from. In the office, Executor holds them.
+On your own machine, a script the client runs at connect time prints them.
 
-### Claude Code
+### Office Executor
 
-Add the server from the CLI. Single quotes keep the `${VAR}` references
-unexpanded, so Claude Code stores them and expands them when it connects:
+[Executor](https://executor.sh) is an MCP gateway that stores each user's
+secrets. Point your agent at the office Executor, not at Atlas. Executor
+forwards each call to the shared `atlas mcp serve` with your own headers, so
+your machine needs no helper script, no 1Password, and no tokens in its
+environment.
 
-```bash
-claude mcp add --transport http atlas http://127.0.0.1:8080/mcp \
-  --header 'X-Atlas-Email: ${ATLAS_USERNAME}' \
-  --header 'X-Atlas-Bitbucket-Token: ${ATLAS_BITBUCKET_TOKEN}' \
-  --header 'X-Atlas-Jira-Token: ${ATLAS_JIRA_TOKEN}'
+Store three values in Executor:
+
+| Header | Value |
+|--------|-------|
+| `X-Atlas-Email` | Your Atlassian account email |
+| `X-Atlas-Bitbucket-Token` | A Bitbucket API token with the scopes under [Credentials](#credentials) |
+| `X-Atlas-Jira-Token` | A Jira API token with the scopes under [Credentials](#credentials). Skip it if you only use Bitbucket tools. |
+
+Executor's own docs cover where to enter them and how to connect an agent to
+it.
+
+Whoever runs Executor registers Atlas's `/mcp` URL as a streamable HTTP MCP
+server whose three headers come from each user's secrets. Executor must be able
+to reach that URL. A container or another host can't reach `127.0.0.1`, so
+start `atlas mcp serve --addr` on an address Executor can reach, or put it
+behind a reverse proxy with `--allowed-host`.
+
+### Claude Code or Codex, directly
+
+Run `atlas mcp serve` yourself and give the client a header helper: a command
+that prints a JSON object of headers to stdout. The client runs it when it
+connects and sends its output as headers. The tokens never land in a config
+file or in any process environment, so an agent's shell commands can't see
+them.
+
+This helper fills both tokens from 1Password with one `op inject` call. Replace
+the email and the vault, item, and field names with your own:
+
+```sh
+#!/bin/sh
+# ~/.config/atlas/headers.sh (chmod +x)
+exec op inject <<'EOF'
+{
+  "X-Atlas-Email": "user@example.com",
+  "X-Atlas-Bitbucket-Token": "{{ op://Dev/atlas-bitbucket/credential }}",
+  "X-Atlas-Jira-Token": "{{ op://Dev/atlas-jira/credential }}"
+}
+EOF
 ```
 
-Add `--scope project` to write a shareable `.mcp.json` instead. Or write
-`.mcp.json` yourself:
+1Password is one example. Any command that prints that JSON works, such as a
+script that reads `pass` or your OS keychain.
+
+In Claude Code, `headersHelper` names the helper. `claude mcp add` has no flag
+for it, so add the entry as JSON:
+
+```bash
+claude mcp add-json -s user atlas \
+  '{"type":"http","url":"http://127.0.0.1:8080/mcp","headersHelper":"/home/me/.config/atlas/headers.sh"}'
+```
+
+The same entry works under `mcpServers` in a project's `.mcp.json`:
 
 ```json
 {
@@ -392,56 +429,44 @@ Add `--scope project` to write a shareable `.mcp.json` instead. Or write
     "atlas": {
       "type": "http",
       "url": "http://127.0.0.1:8080/mcp",
-      "headers": {
-        "X-Atlas-Email": "${ATLAS_USERNAME}",
-        "X-Atlas-Bitbucket-Token": "${ATLAS_BITBUCKET_TOKEN}",
-        "X-Atlas-Jira-Token": "${ATLAS_JIRA_TOKEN}"
-      }
+      "headersHelper": "/home/me/.config/atlas/headers.sh"
     }
   }
 }
 ```
 
-### Codex
-
-In `~/.codex/config.toml`, `env_http_headers` maps each header to the name of
-the environment variable that holds its value:
+In Codex, set `http_headers_helper` in `~/.codex/config.toml`. `codex mcp add`
+has no flag for it either:
 
 ```toml
 [mcp_servers.atlas]
 url = "http://127.0.0.1:8080/mcp"
-env_http_headers = { "X-Atlas-Email" = "ATLAS_USERNAME", "X-Atlas-Bitbucket-Token" = "ATLAS_BITBUCKET_TOKEN", "X-Atlas-Jira-Token" = "ATLAS_JIRA_TOKEN" }
+http_headers_helper = "/home/me/.config/atlas/headers.sh"
 ```
 
-### Executor
+The Codex setup follows Codex's docs and source and hasn't been tested end to
+end. Things to know before writing a helper:
 
-[Executor](https://executor.sh) keeps credentials as its own secrets and
-renders them into headers on each call, so agents behind it never see the
-tokens. Register Atlas as a remote MCP integration whose API-key method
-declares the three headers as variables:
-
-```bash
-executor call executor mcp addServer '{
-  "name": "Atlas",
-  "endpoint": "http://atlas.example.internal:8080/mcp",
-  "remoteTransport": "streamable-http",
-  "authenticationTemplate": [{
-    "type": "apiKey",
-    "label": "Atlassian email and API tokens",
-    "headers": {
-      "X-Atlas-Email": [{ "type": "variable", "name": "email" }],
-      "X-Atlas-Bitbucket-Token": [{ "type": "variable", "name": "bitbucket_token" }],
-      "X-Atlas-Jira-Token": [{ "type": "variable", "name": "jira_token" }]
-    }
-  }]
-}'
-```
-
-Then connect the integration in Executor's web UI and enter the email and both
-tokens there. Executor stores them as secrets. The endpoint must be reachable
-from Executor: a server in a container or on another host can't reach Atlas on
-`127.0.0.1`, so run `atlas mcp serve --addr` on an address it can reach, or
-behind a reverse proxy with `--allowed-host`.
+- Don't use `op run` in a helper. It masks secrets in the command's stdout,
+  which is the helper's output, so Atlas receives the literal text
+  `<concealed by 1Password>`. Use `op inject` or `op read`, which print the
+  values.
+- Give the helper an absolute path. Claude Code runs a user-scope helper in
+  `~/.claude` and a project helper in the project directory.
+- Codex runs the helper with `sh -c` in a cleared environment: only `HOME`,
+  `LOGNAME`, `PATH`, `SHELL`, `USER`, `LANG`, `LC_ALL`, `TERM`, `TMPDIR`, `TZ`,
+  and CA-bundle variables. It discards the helper's stderr. A 1Password service
+  account token in Codex's environment never reaches the helper, so the script
+  must load `OP_SERVICE_ACCOUNT_TOKEN` itself, for example from a file. Codex
+  supports helpers only for local MCP servers.
+- Claude Code removes variables whose names contain `TOKEN`, `SECRET`, `KEY`,
+  `AUTH`, or `PASSWORD` before it runs a helper from a project `.mcp.json`, so
+  `OP_SERVICE_ACCOUNT_TOKEN` is gone there too. User and local scope helpers
+  get the full environment. Project and local scope helpers run only after you
+  trust the folder.
+- The helper runs once per connection, at session start and on each reconnect,
+  and again after a 401 or 403. Each run has 10 seconds. If `op` waits for you
+  to unlock the 1Password app, that wait counts toward the 10 seconds.
 
 ## License
 

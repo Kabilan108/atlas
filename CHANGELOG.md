@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.2 - unreleased
+
+### Added
+
+- Diff two refs without a pull request with `atlas repo diff <base>...<head>` and the MCP `repo_diff` tool: a per-file summary, then the diff, bounded like `pr diff`.
+- Delete Jira worklogs with `atlas jira worklog delete <issue> <id>...` and `jira_worklog_delete`, up to 100 IDs per call. Jira adds the deleted time back to the remaining estimate, but only when the issue has an estimate.
+- Delete Jira comments, including internal service desk notes, with `atlas jira comment <issue> --delete <id>` and `jira_comment_delete`.
+
+### Changed
+
+- Raise the MCP tool description budgets to 1.5 KiB per tool and 48 KiB for the whole list, replacing the per-tool exceptions.
+- Document running the CLI under 1Password's `op run`.
+- Document MCP client credentials: the office Executor's three headers for coworkers, and header helpers (`headersHelper` in Claude Code, `http_headers_helper` in Codex) for connecting directly. Drop the advice to start the client under `op run`.
+
 ## 0.2.1 - 2026-11-14
 
 ### Changed
