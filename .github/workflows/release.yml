@@ -18,6 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       current_version: ${{ steps.get_version.outputs.version }}
+      latest_tag: ${{ steps.get_tag.outputs.latest_tag }}
       should_release: ${{ steps.check.outputs.should_release }}
     steps:
       - uses: actions/checkout@v4
@@ -36,7 +37,7 @@ jobs:
         id: get_version
         run: |
           VERSION=$(nix eval .#default.version --raw)
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Current version: $VERSION"
 
       - name: Validate update metadata
@@ -47,7 +48,7 @@ jobs:
         id: get_tag
         run: |
           LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
-          echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+          echo "latest_tag=$LATEST_TAG" >> "$GITHUB_OUTPUT"
           echo "Latest tag: $LATEST_TAG"
 
       - name: Check if version changed
@@ -60,10 +61,10 @@ jobs:
           LATEST=${LATEST#v}
 
           if [ "$CURRENT" != "$LATEST" ]; then
-            echo "should_release=true" >> $GITHUB_OUTPUT
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
             echo "Version changed: $LATEST -> $CURRENT"
           else
-            echo "should_release=false" >> $GITHUB_OUTPUT
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
             echo "No version change detected"
           fi
 
@@ -109,6 +110,13 @@ jobs:
           done
           (cd release-assets && sha256sum atlas-* > checksums.txt)
 
+      - name: Write release notes
+        run: |
+          .github/scripts/release-notes.sh \
+            "${{ needs.check-version.outputs.current_version }}" \
+            "${{ needs.check-version.outputs.latest_tag }}" > release-notes.md
+          cat release-notes.md
+
       - name: Create and push tag
         run: |
           VERSION="${{ needs.check-version.outputs.current_version }}"
@@ -118,23 +126,11 @@ jobs:
           git push origin "v$VERSION"
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.check-version.outputs.current_version }}
           name: Release v${{ needs.check-version.outputs.current_version }}
-          body: |
-            Automated release for version ${{ needs.check-version.outputs.current_version }}
-
-            ## Changes
-            - Built with Nix flake
-            - Standalone Linux and macOS binaries included
-            - Checksums included
-
-            ## Installation
-            Run:
-            ```bash
-            curl -fsSL https://raw.githubusercontent.com/kabilan108/atlas/master/install.sh | sh
-            ```
+          body_path: release-notes.md
           files: |
             release-assets/atlas-linux-amd64
             release-assets/atlas-linux-arm64
