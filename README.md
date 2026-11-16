@@ -211,6 +211,7 @@ atlas repo list --query api
 atlas branch list --query feature/
 atlas branch view main
 atlas commit list main --path internal/cli --limit 10
+atlas repo diff main...feature/login --stat   # what a branch changes, before its PR exists
 atlas file read go.mod --ref v1.2.0
 atlas file read CODEOWNERS --repos 'my-workspace/*'   # the same file from every repository
 atlas api /2.0/repositories/my-workspace/app/refs/tags   # read-only GET of a REST path
@@ -314,7 +315,7 @@ The server has 51 tools:
 |------|-------|
 | Pull requests | `pr_list`, `pr_status`, `pr_view`, `pr_diff`, `pr_checks`, `pr_create`, `pr_edit`, `pr_comment`, `pr_comment_delete`, `pr_approve`, `pr_unapprove`, `pr_request_changes`, `pr_clear_change_request`, `pr_review`, `pr_merge`, `pr_close` |
 | Pipelines | `pipeline_list`, `pipeline_view`, `pipeline_log`, `pipeline_run`, `pipeline_stop` |
-| Repositories | `repo_list`, `branch_list`, `branch_view`, `commit_list`, `file_read` |
+| Repositories | `repo_list`, `repo_diff`, `branch_list`, `branch_view`, `commit_list`, `file_read` |
 | Snippets | `snippet_list`, `snippet_view`, `snippet_create`, `snippet_edit`, `snippet_rename`, `snippet_delete` |
 | Accounts | `whoami`, `user_search`, `jira_whoami` |
 | Jira | `jira_search`, `jira_issue_view`, `jira_issue_create`, `jira_issue_edit`, `jira_assign`, `jira_transition_list`, `jira_transition`, `jira_comment`, `jira_internal_comment`, `jira_link`, `jira_worklog_list`, `jira_worklog_add`, `jira_attach`, `jira_fields`, `jira_projects` |

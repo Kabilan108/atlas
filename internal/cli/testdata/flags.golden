@@ -323,6 +323,13 @@ atlas pr view
   flag --web -w bool default="false"
 atlas repo
   use: repo
+atlas repo diff
+  use: diff <base>...<head>
+  flag --json bool default="false"
+  flag --line-numbers -n bool default="false"
+  flag --path string default=""
+  flag --repo -R string default=""
+  flag --stat bool default="false"
 atlas repo list
   use: list
   aliases: ls

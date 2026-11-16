@@ -3,9 +3,11 @@ package cli
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/kabilan108/atlas/internal/bitbucket"
 	"github.com/kabilan108/atlas/internal/ops"
+	"github.com/kabilan108/atlas/internal/ops/pr"
 	"github.com/kabilan108/atlas/internal/ops/repo"
 	"github.com/spf13/cobra"
 )
@@ -16,6 +18,7 @@ func newRepoCmd() *cobra.Command {
 		Short: "Work with repositories",
 	}
 	cmd.AddCommand(newRepoListCmd())
+	cmd.AddCommand(newRepoDiffCmd())
 	return cmd
 }
 
@@ -36,6 +39,45 @@ func newRepoListCmd() *cobra.Command {
 			query, _ := cmd.Flags().GetString("query")
 			limit, err := positiveLimit(cmd)
 			return repo.ListInput{Workspace: workspace, Query: query, Limit: limit}, err
+		},
+	})
+}
+
+func newRepoDiffCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "diff <base>...<head>",
+		Short: "Show what head changes since its merge base with base, as a pull request would",
+		Long: `Show a per-file summary and the diff of what head (a branch, tag, or
+commit) changes since its merge base with base, as a pull request from head
+into base would show it. No pull request is needed. <base>..<head> means the
+same.`,
+		Args: cobra.ExactArgs(1),
+	}
+	addPRRepoFlag(cmd)
+	cmd.Flags().String("path", "", "Diff only this file, or the files under this directory")
+	cmd.Flags().Bool("stat", false, "Show only the per-file summary")
+	cmd.Flags().BoolP("line-numbers", "n", false, "Prefix each diff line with its old and new line numbers")
+	return bind(cmd, binding[repo.DiffInput, *repo.DiffResult]{
+		op: repo.Diff,
+		input: func(cmd *cobra.Command, args []string, env *cliEnv) (repo.DiffInput, error) {
+			base, head, ok := strings.Cut(args[0], "...")
+			if !ok {
+				base, head, ok = strings.Cut(args[0], "..")
+			}
+			if !ok {
+				return repo.DiffInput{}, fmt.Errorf("give the refs as <base>...<head>, for example main...feature/login")
+			}
+			ref, err := repoRef(cmd, env)
+			if err != nil {
+				return repo.DiffInput{}, err
+			}
+			path, _ := cmd.Flags().GetString("path")
+			stat, _ := cmd.Flags().GetBool("stat")
+			lineNumbers, _ := cmd.Flags().GetBool("line-numbers")
+			return repo.DiffInput{
+				RepoRef: ref, Base: base, Head: head, Path: path,
+				FilesOnly: stat, LineNumbers: lineNumbers, MaxBytes: pr.MaxDiffBytes,
+			}, nil
 		},
 	})
 }

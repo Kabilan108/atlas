@@ -17,6 +17,7 @@ func Ops() []ops.Def {
 		BranchList,
 		BranchView,
 		CommitList,
+		Diff,
 		FileRead,
 		UserSearch,
 		Whoami,

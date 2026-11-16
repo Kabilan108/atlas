@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/kabilan108/atlas/internal/bitbucket"
 	"github.com/kabilan108/atlas/internal/ops"
 )
 
@@ -32,14 +33,9 @@ type DiffInput struct {
 type DiffResult struct {
 	PullRequest int      `json:"pull_request"`
 	Files       []string `json:"files"`
-	Diff        string   `json:"diff"`
-	Truncated   bool     `json:"truncated,omitempty"`
-	// DownloadTruncated is set when the diff exceeded MaxDiffDownload.
-	DownloadTruncated bool `json:"download_truncated,omitempty"`
+	BoundedDiff
 
-	target    *Target
-	path      string
-	fullBytes int
+	target *Target
 }
 
 // Target is the pull request the diff belongs to.
@@ -67,56 +63,93 @@ func diff(ctx context.Context, env ops.Env, in DiffInput) (*DiffResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	if in.MaxBytes < 0 || in.MaxBytes > MaxDiffBytes {
-		return nil, ops.Errorf(ops.Invalid, "max_bytes must be between 1 and %d (0 means %d)", MaxDiffBytes, DefaultDiffBytes)
+	limit, err := DiffLimit(in.MaxBytes)
+	if err != nil {
+		return nil, err
 	}
 	body, err := client.GetPullRequestDiffLimit(ctx, target.Workspace, target.Repo, target.PR.ID, MaxDiffDownload)
 	if err != nil {
 		return nil, err
 	}
-	raw := body.Data
-	if body.Truncated {
-		raw = raw[:bytes.LastIndexByte(raw, '\n')+1]
-	}
-	path := strings.Trim(strings.TrimSpace(in.Path), "/")
-	result := &DiffResult{PullRequest: target.PR.ID, Files: DiffFiles(raw), target: target, path: path, DownloadTruncated: body.Truncated}
-	if path != "" {
-		raw = filterDiff(raw, path)
-	}
-	if in.LineNumbers {
-		raw = numberDiff(raw)
-	}
-	result.fullBytes = len(raw)
-	limit := in.MaxBytes
-	if limit == 0 {
-		limit = DefaultDiffBytes
-	}
-	if len(raw) > limit {
-		cut := bytes.LastIndexByte(raw[:limit], '\n') + 1
-		raw, result.Truncated = raw[:cut], true
-	}
-	result.Diff = string(raw)
-	return result, nil
+	bounded, files := BoundDiff(body, in.Path, in.LineNumbers, limit)
+	return &DiffResult{PullRequest: target.PR.ID, Files: files, BoundedDiff: bounded, target: target}, nil
 }
 
 // Markdown is the diff as is, with a note when the path matched nothing or
 // the diff was cut short.
 func (r *DiffResult) Markdown() (string, error) {
-	if r.path != "" && r.fullBytes == 0 {
-		return fmt.Sprintf("No changes under %s. Changed files:\n%s", r.path, fileList(r.Files)), nil
+	return r.Render(fileList(r.Files)), nil
+}
+
+// BoundedDiff is a unified diff cut down for output: to the files under a
+// path, with line numbers, and to a byte cap.
+type BoundedDiff struct {
+	Diff      string `json:"diff"`
+	Truncated bool   `json:"truncated,omitempty"`
+	// DownloadTruncated is set when the diff exceeded MaxDiffDownload.
+	DownloadTruncated bool `json:"download_truncated,omitempty"`
+
+	path      string
+	fullBytes int
+}
+
+// DiffLimit checks a max_bytes input and returns the cap it means.
+func DiffLimit(maxBytes int) (int, error) {
+	if maxBytes < 0 || maxBytes > MaxDiffBytes {
+		return 0, ops.Errorf(ops.Invalid, "max_bytes must be between 1 and %d (0 means %d)", MaxDiffBytes, DefaultDiffBytes)
 	}
-	if r.DownloadTruncated {
-		note := fmt.Sprintf("\n[the diff is larger than %d bytes; only its start was read, so the file list may be incomplete. Pass path for one file.]\n", MaxDiffDownload)
-		if !r.Truncated {
-			return r.Diff + note, nil
-		}
-		r.Diff += note
+	if maxBytes == 0 {
+		return DefaultDiffBytes, nil
 	}
-	if !r.Truncated {
-		return r.Diff, nil
+	return maxBytes, nil
+}
+
+// BoundDiff keeps the files of a diff read with MaxDiffDownload that lie
+// under path (every file when path is empty), numbers its lines if asked,
+// and cuts it at a line boundary to limit bytes. It also returns every file
+// the read part of the diff changes.
+func BoundDiff(body *bitbucket.LimitedBody, path string, lineNumbers bool, limit int) (BoundedDiff, []string) {
+	raw := body.Data
+	if body.Truncated {
+		raw = raw[:bytes.LastIndexByte(raw, '\n')+1]
 	}
-	return fmt.Sprintf("%s\n[diff truncated: showing %d of %d bytes; pass path for one file or raise max_bytes. Changed files:]\n%s",
-		r.Diff, len(r.Diff), r.fullBytes, fileList(r.Files)), nil
+	files := DiffFiles(raw)
+	path = strings.Trim(strings.TrimSpace(path), "/")
+	if path != "" {
+		raw = filterDiff(raw, path)
+	}
+	if lineNumbers {
+		raw = numberDiff(raw)
+	}
+	result := BoundedDiff{DownloadTruncated: body.Truncated, path: path, fullBytes: len(raw)}
+	if len(raw) > limit {
+		cut := bytes.LastIndexByte(raw[:limit], '\n') + 1
+		raw, result.Truncated = raw[:cut], true
+	}
+	result.Diff = string(raw)
+	return result, files
+}
+
+// Render is the diff with a note when the path matched nothing or the diff
+// was cut short. listing, the changed files as a markdown list, follows
+// those notes; an empty listing leaves them without one.
+func (d *BoundedDiff) Render(listing string) string {
+	changed, read := "", "only its start was read."
+	if listing != "" {
+		changed, read = " Changed files:", "only its start was read, so the file list may be incomplete."
+	}
+	if d.path != "" && d.fullBytes == 0 {
+		return fmt.Sprintf("No changes under %s.%s\n%s", d.path, changed, listing)
+	}
+	text := d.Diff
+	if d.DownloadTruncated {
+		text += fmt.Sprintf("\n[the diff is larger than %d bytes; %s Pass path for one file.]\n", MaxDiffDownload, read)
+	}
+	if d.Truncated {
+		text += fmt.Sprintf("\n[diff truncated: showing %d of %d bytes; pass path for one file or raise max_bytes.%s]\n%s",
+			len(d.Diff), d.fullBytes, changed, listing)
+	}
+	return text
 }
 
 func fileList(files []string) string {
