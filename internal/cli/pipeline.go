@@ -100,7 +100,7 @@ func newPipelineLogCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "log <build>...",
 		Short: "Show step logs of pipeline runs",
-		Long:  "Show the tail of step logs: failed steps by default, else running ones, or the steps named with --step.",
+		Long:  "Show the tail of step logs: failed steps by default, else running ones, or the steps named with --step. The runner setup before each step's script is replaced by one line naming the runner, image and pipeline variables; --include-setup keeps it.",
 		Args:  cobra.RangeArgs(1, 10),
 	}
 	addPRRepoFlag(cmd)
@@ -108,6 +108,7 @@ func newPipelineLogCmd() *cobra.Command {
 	cmd.Flags().Int("tail", 0, "Bytes from the end of each step log (default 12000)")
 	cmd.Flags().Int("max-bytes", 0, "Cap across all logs (default 48000)")
 	cmd.Flags().Bool("full", false, "Print up to 2 MiB of each step log, 8 MiB in all")
+	cmd.Flags().Bool("include-setup", false, "Keep the runner setup (clone, defined variable names, images) before each script")
 	cmd.MarkFlagsMutuallyExclusive("full", "tail")
 	cmd.MarkFlagsMutuallyExclusive("full", "max-bytes")
 	return bind(cmd, binding[pipeline.LogInput, *pipeline.LogResult]{
@@ -123,7 +124,8 @@ func newPipelineLogCmd() *cobra.Command {
 			if full, _ := cmd.Flags().GetBool("full"); full {
 				tail, maxBytes = pipeline.MaxTailBytes, pipeline.MaxCallBytes
 			}
-			return pipeline.LogInput{RepoRef: repo, Builds: args, Steps: steps, TailBytes: tail, MaxBytes: maxBytes}, nil
+			includeSetup, _ := cmd.Flags().GetBool("include-setup")
+			return pipeline.LogInput{RepoRef: repo, Builds: args, Steps: steps, TailBytes: tail, MaxBytes: maxBytes, IncludeSetup: includeSetup}, nil
 		},
 	})
 }

@@ -23,12 +23,119 @@ const (
 	Started = 2100
 )
 
-// FailedLog is the log of build 2090's failed "backup" step: numbered lines,
-// long enough that the default tail cuts it.
-var FailedLog = func() string {
+// The runner setup Bitbucket prints before a step's script, built from the
+// shape of a real self-hosted db-backup run.
+const (
+	selfHostedRunner = "Runner matching labels:\n    - linux\n    - self.hosted\n" +
+		"Runner name: devserver4_k8s_1\nRunner UUID: {abd695ff-509e-5a50-867d-6ed7f72097f3}\n" +
+		"Runner labels: self.hosted, linux, devserver4\nRunner version:\n    current: 6.0.6\n    latest: 7.0.0\n\n\n" +
+		"The version of this runner is outdated. Upgrade to the latest version (7.0.0). \n" +
+		"Update instructions: https://support.atlassian.com/bitbucket-cloud/kb/updating-a-runner-version \n" +
+		"Runner changelog: https://downloads.example.com/bitbucket/pipelines/CHANGELOG.md \n"
+	cloneStart = "+ umask 000\n\n+ export GIT_LFS_SKIP_SMUDGE=1\n\n" +
+		"+ retry 6 git clone --branch='testing' --depth 1 https://x-token-auth:$REPOSITORY_OAUTH_ACCESS_TOKEN@bitbucket.org/$BITBUCKET_REPO_FULL_NAME.git $BUILD_DIR\n" +
+		"Cloning into '/opt/atlassian/pipelines/agent/build'...\n"
+	cloneSetup = cloneStart + "\n+ git reset --hard 333ec33226f2aa11bb22cc33dd44ee55ff667788\nHEAD is now at 333ec33 fix: retry the dump on a timeout error\n\n" +
+		"+ git config user.name bitbucket-pipelines\n\n+ git config user.email commits-noreply@bitbucket.org\n\n" +
+		"+ git config push.default current\n\n+ git config http.${BITBUCKET_GIT_HTTP_ORIGIN}.proxy http://localhost:29418/\n\n" +
+		"+ git remote set-url origin http://bitbucket.org/$BITBUCKET_REPO_FULL_NAME\n\n+ git reflog expire --expire=all --all\n\n" +
+		"+ echo \".bitbucket/pipelines/generated\" >> .git/info/exclude\n\n+ chmod 777 $BUILD_DIR\n\n\n"
+	variableNames = "Default variables:\n    BITBUCKET_BRANCH\n    BITBUCKET_BUILD_NUMBER\n    BITBUCKET_CLONE_DIR\n    BITBUCKET_COMMIT\n" +
+		"    BITBUCKET_REPO_FULL_NAME\n    BITBUCKET_STEP_OIDC_TOKEN\n    BITBUCKET_WORKSPACE\n    CI\n    DOCKER_HOST\n\n" +
+		"Workspace variables:\n    BITBUCKET_ACCESS_TOKEN\n    DOCKERHUB_PASSWORD\n    SONAR_TOKEN\n    VAULT_ROLE_ID\n    VAULT_SECRET_ID\n\n" +
+		"Repository variables:\n    BITBUCKET_PASSWORD\n    BITBUCKET_USERNAME\n\n"
+	selfHostedImage = "Runtime:\n    self-hosted:\n        storage: default\n\n" +
+		"Images used:\n    build: us.icr.io/acme/pipeline-image@sha256:c6c369ed603fb782ba2eee5e8976a3703708ef18c92007b6bef2dc6c7716c3bd\n\n" +
+		"Runner warnings:\n    us.icr.io/acme/pipeline-image:latest: Your kernel does not support memory swappiness capabilities or the cgroup is not mounted. Memory swappiness discarded.\n\n"
+)
+
+// BackupSetup is the runner setup at the start of build 2090's backup log.
+const BackupSetup = selfHostedRunner + cloneSetup + variableNames +
+	"Pipeline variables:\n    BRANCH: testing\n    META: iam\n\n" + selfHostedImage
+
+// backupCommands are the script of the db-backup steps.
+const backupCommands = `[{"commandType":"user","name":"cd pipelineImage","command":"cd pipelineImage"},
+	{"commandType":"user","name":"chmod +x cicd-scripts/*.sh","command":"chmod +x cicd-scripts/*.sh"},
+	{"commandType":"user","name":"./cicd-scripts/db_backup.sh","command":"./cicd-scripts/db_backup.sh"}]`
+
+// FailedScript is what build 2090's failed "backup" step printed after its
+// setup: the script's echo, then numbered lines, long enough that the
+// default tail cuts it. FailedLog is the whole log.
+var (
+	FailedScript = func() string {
+		var b strings.Builder
+		b.WriteString("+ cd pipelineImage\n\n+ chmod +x cicd-scripts/*.sh\n\n+ ./cicd-scripts/db_backup.sh\n")
+		for i := 1; b.Len() < 20000; i++ {
+			fmt.Fprintf(&b, "backup line %05d\n", i)
+		}
+		return b.String()
+	}()
+	FailedLog = BackupSetup + FailedScript
+)
+
+// BackupImageShort is the build image BackupSetup names, with its digest
+// cut as the setup line shows it.
+const BackupImageShort = "us.icr.io/acme/pipeline-image@sha256:c6c369ed603f"
+
+// Build 2091 failed in four steps. "clone" and "image" failed in setup, so
+// their script never started. "pipe" ran a pipe whose first command the log
+// echoes only after other commands, as a trace inside the script. "cloud" ran on a Bitbucket cloud runner and failed in its
+// script, whose first command reads like a setup line; its run had secured,
+// multi-line and more variables than Atlas shows. "long" passed with a log
+// longer than the default read.
+const (
+	CloneFailure = "fatal: unable to access 'https://bitbucket.org/acme/widgets.git/': Could not resolve host: bitbucket.org\n"
+	CloneLog     = selfHostedRunner + cloneStart + CloneFailure
+	ImageFailure = "Failed to pull image us.icr.io/acme/missing:latest: manifest unknown\n"
+	ImageLog     = selfHostedRunner + cloneSetup + variableNames +
+		"Runtime:\n    self-hosted:\n        storage: default\n\nImages used:\n    build: us.icr.io/acme/missing:latest\n\n" + ImageFailure
+	PipeLog = selfHostedRunner + cloneSetup + variableNames + selfHostedImage +
+		"+ docker run atlassian/scp-deploy:1.5.0\nPulling pipe atlassian/scp-deploy:1.5.0\n+ pipe: atlassian/scp-deploy:1.5.0\nscp: connection refused\n"
+	pipeCommands = `[{"commandType":"user","name":"pipe: atlassian/scp-deploy:1.5.0","command":"pipe: atlassian/scp-deploy:1.5.0"}]`
+
+	CloudScript    = "+ umask 000\necho \"exporting $TARGET\"\nexporting staging\n\n+ exit 3\npg_dump: error: connection refused\n"
+	cloudSetupHead = cloneSetup + "Cache \"pip\": Downloading\n" + CacheMiss + "\n\n" + variableNames + "Pipeline variables:\n"
+	cloudSetupTail = "    TARGET: staging\n    NOTE: back up · then [verify]\n    MULTI: first line\n        second line\n    EMPTY:\n" +
+		"    API_TOKEN: $API_TOKEN\n    DB_PASSWORD\n    SIGNING_KEY: ********\n    WRAPPED: ${WRAPPED}\n" +
+		"%s\n" +
+		"Images used:\n    build : docker.io/library/alpine@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc\n" +
+		"    docker : docker-public.packages.atlassian.com/sox/atlassian/bitbucket-pipelines-docker-daemon@sha256:eb2a1b37ebc2\n\n" +
+		"Runtime:\n    cloud:\n        version: 2\n        platform: linux\n        arch: x86\n\n"
+	cloudCommands = `[{"commandType":"user","name":"umask 000","command":"umask 000\necho \"exporting $TARGET\"\n"},{"commandType":"user","name":"exit 3","command":"exit 3"}]`
+)
+
+// CacheMiss is a setup line of "cloud" that reads like a problem, so it is
+// kept when the setup is cut.
+const CacheMiss = `Cache "pip": Not found`
+
+// MaskedForms are the masked secured values in "cloud"'s setup. None may
+// reach output.
+var MaskedForms = []string{"$API_TOKEN", "********", "${WRAPPED}"}
+
+// LongKey and LongValue are "cloud"'s first variable, both longer than
+// Atlas shows. The value's cap falls inside a two-byte rune.
+var (
+	LongKey   = strings.Repeat("K", 150)
+	LongValue = "x" + strings.Repeat("é", 300)
+)
+
+// CloudSetup is the runner setup of 2091's "cloud" step: a long variable,
+// eight that test parsing, and 25 more, so 34 in all.
+var CloudSetup = func() string {
+	var more strings.Builder
+	for i := 1; i <= 25; i++ {
+		fmt.Fprintf(&more, "    VAR_%02d: v%d\n", i, i)
+	}
+	return cloudSetupHead + "    " + LongKey + ": " + LongValue + "\n" + fmt.Sprintf(cloudSetupTail, strings.TrimSuffix(more.String(), "\n"))
+}()
+
+// LongScript is what 2091's passing "long" step printed after its setup,
+// longer than a default read reaches.
+var LongScript = func() string {
 	var b strings.Builder
-	for i := 1; b.Len() < 20000; i++ {
-		fmt.Fprintf(&b, "backup line %05d\n", i)
+	b.WriteString("+ cd pipelineImage\n")
+	for i := 1; b.Len() < 60000; i++ {
+		fmt.Fprintf(&b, "long line %05d\n", i)
 	}
 	return b.String()
 }()
@@ -40,59 +147,48 @@ const RunningLog = "\x1b[32mconnecting\x1b[0m\r\n```\nnot a fence\n```\nstill wa
 // YAMLError is why Bitbucket failed build 2097 before any step ran.
 const YAMLError = "There is a YAML syntax error in your bitbucket-pipelines.yml at [line 55, column 35]. Mapping values are not allowed here"
 
-// SecuredValue is the value of 2095's secured variable. Bitbucket omits
-// secured values, but the fixture sends this one so tests can check it never
-// reaches output.
-const SecuredValue = "synthetic-secured-7f3c2a"
-
-// LongKey and LongValue are 2098's first variable, both longer than Atlas
-// shows. The value's cap falls inside a two-byte rune.
-var (
-	LongKey   = strings.Repeat("K", 150)
-	LongValue = "x" + strings.Repeat("é", 300)
-)
-
-// Who started each run, and with what variables.
+// Who started each run.
 const (
 	byToken = `"trigger":{"name":"MANUAL","type":"pipeline_trigger_manual"},
-		"creator":{"type":"app_user","kind":"workspace_access_token","display_name":"cicd pipeline token","uuid":"{t-1}","account_id":"712020:t-1"},
-		"variables":[{"type":"pipeline_variable","key":"META","value":"iam","secured":false},{"type":"pipeline_variable","key":"DB_PASSWORD","secured":true}]`
+		"creator":{"type":"app_user","kind":"workspace_access_token","display_name":"cicd pipeline token","uuid":"{t-1}","account_id":"712020:t-1"}`
 	byUser = `"trigger":{"name":"MANUAL","type":"pipeline_trigger_manual"},
-		"creator":{"type":"user","display_name":"Merge Console","nickname":"merge","uuid":"{u-1}"},
-		"variables":[{"key":"META","value":"cns","secured":false},{"key":"API_TOKEN","value":"` + SecuredValue + `","secured":true}]`
-	byPush     = `"trigger":{"name":"PUSH","type":"pipeline_trigger_push"},"creator":{"type":"user","display_name":"Merge Console"},"variables":[]`
+		"creator":{"type":"user","display_name":"Merge Console","nickname":"merge","uuid":"{u-1}"}`
+	byPush     = `"trigger":{"name":"PUSH","type":"pipeline_trigger_push"},"creator":{"type":"user","display_name":"Merge Console"}`
 	bySchedule = `"trigger":{"name":"SCHEDULE","type":"pipeline_trigger_schedule"},"creator":null`
-	unknown    = `"trigger":null,"creator":{},"variables":null`
+	unknown    = `"trigger":null,"creator":{}`
 )
 
-// manyVariables is more variables than Atlas shows for one run.
-func manyVariables() string {
-	vars := []string{fmt.Sprintf(`{"key":%q,"value":%q}`, LongKey, LongValue), `null`, `{"value":"no key"}`}
-	for i := 1; i < 30; i++ {
-		vars = append(vars, fmt.Sprintf(`{"key":"VAR_%02d","value":"v%d"}`, i, i))
-	}
-	return `"variables":[` + strings.Join(vars, ",") + `]`
-}
-
-// The runs the fixture holds. 2090 failed in its backup step, 2095 passed,
+// The runs the fixture holds. 2090 failed in its backup step, 2091 in four,
+// 2095 passed,
 // 2096 is running, and Bitbucket failed 2097 itself on a YAML error. A
 // workspace token started 2090 and 2097, a user 2095, a push 2096, and a
 // schedule 2098; 2099 names no trigger or creator.
 var pipelines = map[int]string{
 	2090: pipelineJSON(2090, "COMPLETED", `"result":{"name":"FAILED"}`, "testing", "custom", "db-backup", 84, true, byToken),
+	2091: pipelineJSON(2091, "COMPLETED", `"result":{"name":"FAILED"}`, "testing", "custom", "db-backup", 54, true, byToken),
 	2095: pipelineJSON(2095, "COMPLETED", `"result":{"name":"SUCCESSFUL"}`, "testing", "custom", "db-backup", 33, true, byUser),
 	2096: pipelineJSON(2096, "IN_PROGRESS", `"stage":{"name":"RUNNING"}`, "main", "branches", "main", 0, false, byPush),
 	2097: pipelineJSON(2097, "COMPLETED", `"result":{"name":"FAILED","error":{"key":"plan-service.parse.detailed-parse-error","message":"`+YAMLError+`","type":"pipeline_error"}}`, "fix/yaml", "custom", "db-backup", 0, true, byToken),
-	2098: pipelineJSON(2098, "COMPLETED", `"result":{"name":"SUCCESSFUL"}`, "main", "custom", "nightly", 5, true, bySchedule+","+manyVariables()),
+	2098: pipelineJSON(2098, "COMPLETED", `"result":{"name":"SUCCESSFUL"}`, "main", "custom", "nightly", 5, true, bySchedule),
 	2099: pipelineJSON(2099, "COMPLETED", `"result":{"name":"SUCCESSFUL"}`, "main", "branches", "main", 5, true, unknown),
 }
 
+var (
+	failed    = `"result":{"name":"FAILED"}`
+	succeeded = `"result":{"name":"SUCCESSFUL"}`
+)
+
 var steps = map[int]string{
-	2090: `[` + stepJSON("s-build", "build", "COMPLETED", `"result":{"name":"SUCCESSFUL"}`, 12, true) + `,` +
-		stepJSON("s-backup", "backup", "COMPLETED", `"result":{"name":"FAILED"}`, 72, true) + `,` +
-		stepJSON("s-deploy", "deploy", "COMPLETED", `"result":{"name":"NOT_RUN"}`, 0, false) + `]`,
-	2095: `[` + stepJSON("s-ok", "backup", "COMPLETED", `"result":{"name":"SUCCESSFUL"}`, 33, true) + `]`,
-	2096: `[` + stepJSON("s-run", "backup", "IN_PROGRESS", `"stage":{"name":"RUNNING"}`, 0, true) + `]`,
+	2090: `[` + stepJSON("s-build", "build", "COMPLETED", succeeded, 12, true, "") + `,` +
+		stepJSON("s-backup", "backup", "COMPLETED", failed, 72, true, backupCommands) + `,` +
+		stepJSON("s-deploy", "deploy", "COMPLETED", `"result":{"name":"NOT_RUN"}`, 0, false, backupCommands) + `]`,
+	2091: `[` + stepJSON("s-clone", "clone", "COMPLETED", failed, 5, true, backupCommands) + `,` +
+		stepJSON("s-image", "image", "COMPLETED", failed, 9, true, backupCommands) + `,` +
+		stepJSON("s-pipe", "pipe", "COMPLETED", failed, 14, true, pipeCommands) + `,` +
+		stepJSON("s-cloud", "cloud", "COMPLETED", failed, 12, true, cloudCommands) + `,` +
+		stepJSON("s-long", "long", "COMPLETED", succeeded, 40, true, backupCommands) + `]`,
+	2095: `[` + stepJSON("s-ok", "backup", "COMPLETED", succeeded, 33, true, backupCommands) + `]`,
+	2096: `[` + stepJSON("s-run", "backup", "IN_PROGRESS", `"stage":{"name":"RUNNING"}`, 0, true, backupCommands) + `]`,
 	2097: `[]`,
 	2098: `[]`,
 	2099: `[]`,
@@ -101,6 +197,11 @@ var steps = map[int]string{
 var logs = map[string]string{
 	"2090/s-build":  "build ok\n",
 	"2090/s-backup": FailedLog,
+	"2091/s-clone":  CloneLog,
+	"2091/s-image":  ImageLog,
+	"2091/s-pipe":   PipeLog,
+	"2091/s-cloud":  CloudSetup + CloudScript,
+	"2091/s-long":   BackupSetup + LongScript,
 	"2095/s-ok":     "backup ok\n",
 	"2096/s-run":    RunningLog,
 }
@@ -117,7 +218,7 @@ func pipelineJSON(n int, state, detail, branch, selectorType, pattern string, se
 		n, n, state, detail, branch, selectorType, pattern, who, completed, seconds)
 }
 
-func stepJSON(uuid, name, state, detail string, seconds int, started bool) string {
+func stepJSON(uuid, name, state, detail string, seconds int, started bool, commands string) string {
 	times := ""
 	if started {
 		times = `"started_on":"2026-11-02T18:45:38Z",`
@@ -125,7 +226,11 @@ func stepJSON(uuid, name, state, detail string, seconds int, started bool) strin
 			times += `"completed_on":"2026-11-02T18:47:00Z",`
 		}
 	}
-	return fmt.Sprintf(`{"uuid":"{%s}","name":%q,"state":{"name":%q,%s},%s"duration_in_seconds":%d}`, uuid, name, state, detail, times, seconds)
+	script := ""
+	if commands != "" {
+		script = `,"script_commands":` + commands
+	}
+	return fmt.Sprintf(`{"uuid":"{%s}","name":%q,"state":{"name":%q,%s},%s"duration_in_seconds":%d%s}`, uuid, name, state, detail, times, seconds, script)
 }
 
 // Request is one request the fixture received.

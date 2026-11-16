@@ -168,6 +168,7 @@ atlas pipeline list
 atlas pipeline log
   use: log <build>...
   flag --full bool default="false" cobra_annotation_mutually_exclusive=full max-bytes|full tail
+  flag --include-setup bool default="false"
   flag --json bool default="false"
   flag --max-bytes int default="0" cobra_annotation_mutually_exclusive=full max-bytes
   flag --repo -R string default=""

@@ -27,19 +27,19 @@ const (
 	maxPipelineSteps = 1000
 )
 
-// Pipeline is one run. Bitbucket leaves a secured variable's value empty.
+// Pipeline is one run. Bitbucket's GET of a run does not return the
+// variables it was started with; the step logs list them.
 type Pipeline struct {
-	UUID              string             `json:"uuid"`
-	BuildNumber       int                `json:"build_number"`
-	State             PipelineState      `json:"state"`
-	Target            PipelineTarget     `json:"target"`
-	Trigger           PipelineTrigger    `json:"trigger"`
-	Creator           PipelineCreator    `json:"creator"`
-	Variables         []PipelineVariable `json:"variables,omitempty"`
-	CreatedOn         time.Time          `json:"created_on"`
-	CompletedOn       *time.Time         `json:"completed_on,omitempty"`
-	DurationInSeconds int                `json:"duration_in_seconds"`
-	BuildSecondsUsed  int                `json:"build_seconds_used"`
+	UUID              string          `json:"uuid"`
+	BuildNumber       int             `json:"build_number"`
+	State             PipelineState   `json:"state"`
+	Target            PipelineTarget  `json:"target"`
+	Trigger           PipelineTrigger `json:"trigger"`
+	Creator           PipelineCreator `json:"creator"`
+	CreatedOn         time.Time       `json:"created_on"`
+	CompletedOn       *time.Time      `json:"completed_on,omitempty"`
+	DurationInSeconds int             `json:"duration_in_seconds"`
+	BuildSecondsUsed  int             `json:"build_seconds_used"`
 }
 
 // PipelineCreator is the account that started a run: a user (Type "user")
@@ -140,14 +140,23 @@ type PipelineTrigger struct {
 	Type string `json:"type"`
 }
 
+// PipelineStep is one step of a run. ScriptCommands are the step's script
+// lines in order; its log echoes each as "+ " and the command's first line.
 type PipelineStep struct {
-	UUID              string        `json:"uuid"`
-	Name              string        `json:"name"`
-	State             PipelineState `json:"state"`
-	StartedOn         *time.Time    `json:"started_on,omitempty"`
-	CompletedOn       *time.Time    `json:"completed_on,omitempty"`
-	DurationInSeconds int           `json:"duration_in_seconds"`
-	RunNumber         int           `json:"run_number,omitempty"`
+	UUID              string            `json:"uuid"`
+	Name              string            `json:"name"`
+	State             PipelineState     `json:"state"`
+	StartedOn         *time.Time        `json:"started_on,omitempty"`
+	CompletedOn       *time.Time        `json:"completed_on,omitempty"`
+	DurationInSeconds int               `json:"duration_in_seconds"`
+	RunNumber         int               `json:"run_number,omitempty"`
+	ScriptCommands    []PipelineCommand `json:"script_commands,omitempty"`
+}
+
+type PipelineCommand struct {
+	Name        string `json:"name,omitempty"`
+	Command     string `json:"command"`
+	CommandType string `json:"commandType,omitempty"`
 }
 
 type PipelineListOptions struct {

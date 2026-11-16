@@ -1,14 +1,11 @@
 package pipeline
 
 import (
-	"fmt"
-	"strings"
 	"unicode/utf8"
-
-	"github.com/kabilan108/atlas/internal/bitbucket"
 )
 
-// Bounds on the variables one run shows, so a run cannot flood the output.
+// Bounds on the variables shown for one step, so a run cannot flood the
+// output.
 const (
 	maxRunVariables  = 25
 	maxVariableKey   = 100
@@ -16,8 +13,8 @@ const (
 )
 
 // RunVariable is a variable a run was started with. A secured variable has
-// no value here, whatever Bitbucket returns. Truncated is set when the key
-// or value was cut to its cap.
+// no value here, whatever the log shows. Truncated is set when the key or
+// value was cut to its cap, or the value went on past its first line.
 type RunVariable struct {
 	Key       string `json:"key"`
 	Value     string `json:"value,omitempty"`
@@ -27,7 +24,7 @@ type RunVariable struct {
 
 // runVariables keeps the first maxRunVariables variables that have a key
 // and counts the rest.
-func runVariables(variables []bitbucket.PipelineVariable) ([]RunVariable, int) {
+func runVariables(variables []RunVariable) ([]RunVariable, int) {
 	var kept []RunVariable
 	omitted := 0
 	for _, v := range variables {
@@ -42,7 +39,7 @@ func runVariables(variables []bitbucket.PipelineVariable) ([]RunVariable, int) {
 		out := RunVariable{Key: key, Secured: v.Secured, Truncated: keyCut}
 		if !v.Secured {
 			value, valueCut := truncate(v.Value, maxVariableValue)
-			out.Value, out.Truncated = value, keyCut || valueCut
+			out.Value, out.Truncated = value, keyCut || valueCut || v.Truncated
 		}
 		kept = append(kept, out)
 	}
@@ -59,25 +56,4 @@ func truncate(s string, limit int) (string, bool) {
 		cut--
 	}
 	return s[:cut], true
-}
-
-func writeVariables(b *strings.Builder, variables []RunVariable, omitted int) {
-	if len(variables) == 0 && omitted == 0 {
-		return
-	}
-	b.WriteString("\nVariables:\n")
-	for _, v := range variables {
-		more := ""
-		if v.Truncated {
-			more = " (truncated)"
-		}
-		if v.Secured {
-			fmt.Fprintf(b, "- %s (secured)%s\n", oneLine(v.Key), more)
-			continue
-		}
-		fmt.Fprintf(b, "- %s=%s%s\n", oneLine(v.Key), oneLine(v.Value), more)
-	}
-	if omitted > 0 {
-		fmt.Fprintf(b, "- and %d more not shown\n", omitted)
-	}
 }

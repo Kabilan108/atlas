@@ -24,10 +24,11 @@ const (
 // LogInput is the input to pipeline_log.
 type LogInput struct {
 	ops.RepoRef
-	Builds    []string `json:"builds" jsonschema:"build numbers (2090 or #2090), pipeline UUIDs, or result URLs (from pr_checks), at most 10"`
-	Steps     []string `json:"steps,omitempty" jsonschema:"step names (any case) or UUIDs; default: failed steps, else running ones"`
-	TailBytes int      `json:"tail_bytes,omitempty" jsonschema:"bytes from the end of each step log, default 12000, max 2097152"`
-	MaxBytes  int      `json:"max_bytes,omitempty" jsonschema:"cap across all logs in the call, default 48000, max 8388608"`
+	Builds       []string `json:"builds" jsonschema:"build numbers (2090 or #2090), pipeline UUIDs, or result URLs (from pr_checks), at most 10"`
+	Steps        []string `json:"steps,omitempty" jsonschema:"step names (any case) or UUIDs; default: failed steps, else running ones"`
+	TailBytes    int      `json:"tail_bytes,omitempty" jsonschema:"bytes from the end of each step log, default 12000, max 2097152"`
+	MaxBytes     int      `json:"max_bytes,omitempty" jsonschema:"cap across all logs in the call, default 48000, max 8388608"`
+	IncludeSetup bool     `json:"include_setup,omitempty" jsonschema:"return the setup whole, e.g. to see which workspace or repository variables are defined"`
 }
 
 // LogResult holds one entry per requested build, in order.
@@ -49,10 +50,13 @@ type BuildLogs struct {
 }
 
 // StepLog is the tail of one step's log. Skipped says why no log is shown.
+// Setup is set when the runner setup was cut from the start of Log;
+// Truncated only when the tail cut the log.
 type StepLog struct {
 	Name       string `json:"name"`
 	UUID       string `json:"uuid"`
 	Status     string `json:"status"`
+	Setup      *Setup `json:"setup,omitempty"`
 	Log        string `json:"log"`
 	Bytes      int    `json:"bytes"`
 	TotalBytes int64  `json:"total_bytes"`
@@ -63,7 +67,7 @@ type StepLog struct {
 var Log = &ops.Op[LogInput, *LogResult]{
 	Meta: ops.Meta{
 		Name:        "pipeline_log",
-		Description: "Tail the step logs of one or more Bitbucket Pipelines runs: failed steps by default, or the steps you name. Each log is cut to its last tail_bytes, all logs to max_bytes.",
+		Description: "Tail the step logs of one or more Bitbucket Pipelines runs: failed steps by default, or the steps you name. Runner setup becomes one line: runner, image, and the run's variables (secured values hidden). Each log is then cut to its last tail_bytes, all logs to max_bytes.",
 		Surfaces:    ops.Both,
 		ReadOnly:    true,
 	},
@@ -88,7 +92,7 @@ func readLogs(ctx context.Context, env ops.Env, in LogInput) (*LogResult, error)
 	if err != nil {
 		return nil, err
 	}
-	reader := &logReader{client: client, repo: repo, tail: tail, budget: budget}
+	reader := &logReader{client: client, repo: repo, tail: tail, budget: budget, includeSetup: in.IncludeSetup}
 	result := &LogResult{Repo: repo.String(), Results: make([]BuildLogs, len(builds))}
 	err = eachBuild(builds, func(i int, build string) error {
 		entry := &result.Results[i]
@@ -119,7 +123,8 @@ type logReader struct {
 	repo   ops.Repository
 	tail   int
 	// budget is the bytes left for the rest of the call.
-	budget int
+	budget       int
+	includeSetup bool
 }
 
 func (r *logReader) read(ctx context.Context, entry *BuildLogs, build string, names []string) error {
@@ -162,7 +167,11 @@ func (r *logReader) stepLog(ctx context.Context, pipelineUUID string, step bitbu
 		out.Skipped = "the call's max_bytes is used up; ask for fewer builds or steps, or raise max_bytes"
 		return out, nil
 	}
-	log, err := r.client.GetPipelineStepLog(ctx, r.repo.Workspace, r.repo.Repo, pipelineUUID, step.UUID, want)
+	fetch := want
+	if !r.includeSetup {
+		fetch += setupAllowance
+	}
+	log, err := r.client.GetPipelineStepLog(ctx, r.repo.Workspace, r.repo.Repo, pipelineUUID, step.UUID, fetch)
 	if errors.Is(err, bitbucket.ErrNotFound) {
 		out.Skipped = "no log yet: the step has not run"
 		return out, nil
@@ -172,12 +181,20 @@ func (r *logReader) stepLog(ctx context.Context, pipelineUUID string, step bitbu
 		return out, err
 	}
 	content := log.Content
+	whole := log.TotalSize >= 0 && int64(len(content)) == log.TotalSize
+	if whole && !r.includeSetup {
+		if cut, ok := setupEnd(content, step.ScriptCommands); ok {
+			out.Setup = parseSetup(cleanLog(content[:cut]), cut)
+			content = content[cut:]
+		}
+	}
+	out.Truncated = log.TotalSize > int64(len(log.Content))
 	if len(content) > want {
 		content = content[len(content)-want:]
+		out.Truncated = true
 	}
 	r.budget -= len(content)
 	out.TotalBytes = log.TotalSize
-	out.Truncated = log.TotalSize > int64(len(content)) || len(content) < len(log.Content)
 	if out.Truncated {
 		if newline := bytes.IndexByte(content, '\n'); newline >= 0 && newline < len(content)-1 {
 			content = content[newline+1:]
@@ -275,9 +292,13 @@ func (r *LogResult) Markdown() (string, error) {
 					fmt.Fprintf(&b, " (last %d bytes)", step.Bytes)
 				}
 			}
-			fence := codeFence(step.Log)
-			fmt.Fprintf(&b, "\n\n%stext\n%s", fence, step.Log)
-			if !strings.HasSuffix(step.Log, "\n") {
+			text := step.Log
+			if step.Setup != nil {
+				text = step.Setup.text() + text
+			}
+			fence := codeFence(text)
+			fmt.Fprintf(&b, "\n\n%stext\n%s", fence, text)
+			if !strings.HasSuffix(text, "\n") {
 				b.WriteString("\n")
 			}
 			b.WriteString(fence + "\n")

@@ -36,19 +36,6 @@ func TestPipelineViewSeveralBuildsPrintsThenFails(t *testing.T) {
 	}
 }
 
-func TestPipelineViewNeverPrintsSecuredValues(t *testing.T) {
-	setupCLIEnv(t)
-	for _, args := range [][]string{nil, {"--json"}} {
-		out, err := runAtlas(t, pipelinetest.New(), append([]string{"--no-cache", "pipeline", "view", "-R", "acme/widgets", "2095"}, args...)...)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if strings.Contains(out, pipelinetest.SecuredValue) || !strings.Contains(out, "API_TOKEN") {
-			t.Fatalf("%v output:\n%s", args, out)
-		}
-	}
-}
-
 func TestPipelineLogStepsAndFull(t *testing.T) {
 	setupCLIEnv(t)
 	fixture := pipelinetest.New()
@@ -56,12 +43,26 @@ func TestPipelineLogStepsAndFull(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "build ok\n") || !strings.Contains(out, pipelinetest.FailedLog) {
-		t.Fatalf("output lacks the whole logs:\n%.400s", out)
+	if !strings.Contains(out, "build ok\n") || !strings.Contains(out, "include_setup shows it]\n"+pipelinetest.FailedScript) || strings.Contains(out, "Runner name:") {
+		t.Fatalf("output lacks the whole logs with the setup cut:\n%.400s", out)
 	}
 	for _, req := range fixture.Requests() {
+		if strings.HasSuffix(req.Path, "/log") && req.Range != "bytes=-2129920" {
+			t.Fatalf("--full sent Range %q, want the per-step maximum and the setup allowance", req.Range)
+		}
+	}
+
+	whole := pipelinetest.New()
+	out, err = runAtlas(t, whole, "--no-cache", "pipeline", "log", "-R", "acme/widgets", "2090", "--full", "--include-setup")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, pipelinetest.FailedLog) || strings.Contains(out, "runner setup omitted") {
+		t.Fatalf("--include-setup output:\n%.400s", out)
+	}
+	for _, req := range whole.Requests() {
 		if strings.HasSuffix(req.Path, "/log") && req.Range != "bytes=-2097152" {
-			t.Fatalf("--full sent Range %q, want the per-step maximum", req.Range)
+			t.Fatalf("--include-setup sent Range %q, want the per-step maximum", req.Range)
 		}
 	}
 	if _, err := runAtlas(t, fixture, "--no-cache", "pipeline", "log", "-R", "acme/widgets", "2090", "--full", "--tail", "10"); err == nil {
