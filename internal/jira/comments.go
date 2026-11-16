@@ -77,8 +77,41 @@ func (c *Client) CreateComment(ctx context.Context, issueKey string, input Comme
 	return &comment, nil
 }
 
+// GetComment returns one comment. JSDPublic is set on Service Management
+// issues only.
+func (c *Client) GetComment(ctx context.Context, issueKey, commentID string) (*Comment, error) {
+	var comment Comment
+	if err := c.getJSON(ctx, issuePath(issueKey, "comment", escape(commentID)), nil, &comment); err != nil {
+		return nil, err
+	}
+	return &comment, nil
+}
+
 func (c *Client) DeleteComment(ctx context.Context, issueKey, commentID string) error {
 	return c.sendJSON(ctx, http.MethodDelete, issuePath(issueKey, "comment", escape(commentID)), nil, nil, nil)
+}
+
+func (c *Client) GetWorklog(ctx context.Context, issueKey, worklogID string) (*Worklog, error) {
+	var w Worklog
+	if err := c.getJSON(ctx, issuePath(issueKey, "worklog", escape(worklogID)), nil, &w); err != nil {
+		return nil, err
+	}
+	return &w, nil
+}
+
+// DeleteWorklog deletes a worklog. adjustEstimate is "auto" (Jira's
+// default: add the worklog's time back to the remaining estimate) or
+// "leave"; empty sends nothing, which Jira treats as "auto".
+func (c *Client) DeleteWorklog(ctx context.Context, issueKey, worklogID, adjustEstimate string) error {
+	q := url.Values{}
+	switch adjustEstimate {
+	case "":
+	case "auto", "leave":
+		q.Set("adjustEstimate", adjustEstimate)
+	default:
+		return fmt.Errorf("jira: unsupported adjustEstimate %q for a worklog delete; want auto or leave", adjustEstimate)
+	}
+	return c.sendJSON(ctx, http.MethodDelete, issuePath(issueKey, "worklog", escape(worklogID)), q, nil, nil)
 }
 
 type WorklogListOptions struct {

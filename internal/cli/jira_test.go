@@ -290,3 +290,87 @@ func TestJiraFileInputsReadStdinWithLimits(t *testing.T) {
 		})
 	}
 }
+
+func TestJiraWorklogDelete(t *testing.T) {
+	setupJiraCLIEnv(t)
+	newFake := func() *jiratest.Fake {
+		fake := jiratest.New()
+		fake.JSON("GET /rest/api/3/issue/CSM-756/worklog/900", http.StatusOK,
+			`{"id":"900","author":{"displayName":"Tony"},"started":"2026-11-11T09:00:00.000-0500","timeSpent":"1h"}`)
+		fake.JSON("DELETE /rest/api/3/issue/CSM-756/worklog/900", http.StatusNoContent, "")
+		return fake
+	}
+
+	fake := newFake()
+	if _, err := runAtlas(t, fake.Transport(), "jira", "worklog", "delete", "CSM-756", "900"); err == nil || !strings.Contains(err.Error(), "without --yes") {
+		t.Errorf("unconfirmed delete: err = %v", err)
+	}
+	if len(fake.Requests()) != 0 {
+		t.Errorf("unconfirmed delete sent %v", fake.Routes())
+	}
+
+	fake = newFake()
+	got, err := runAtlas(t, fake.Transport(), "jira", "worklog", "delete", "CSM-756", "900", "901", "--yes")
+	if ops.KindOf(err) != ops.Partial {
+		t.Fatalf("err = %v, want Partial", err)
+	}
+	want := "ok CSM-756 worklog 900 2026-11-11T09:00:00.000-0500 1h by Tony\nfailed CSM-756 worklog 901: worklog 901 not found on CSM-756"
+	if !strings.HasPrefix(got, want) {
+		t.Errorf("output = %q, want prefix %q", got, want)
+	}
+	mcpFake := newFake()
+	if _, err := jiraops.WorklogDelete.Invoke(context.Background(), opstest.New("").WithJira(t, mcpFake), json.RawMessage(`{"issue":"CSM-756","ids":["900","901"]}`)); ops.KindOf(err) != ops.Partial {
+		t.Fatalf("MCP err = %v", err)
+	}
+	if strings.Join(fake.Routes(), "\n") != strings.Join(mcpFake.Routes(), "\n") {
+		t.Errorf("Jira calls differ\ncli: %v\nmcp: %v", fake.Routes(), mcpFake.Routes())
+	}
+}
+
+func TestJiraCommentDelete(t *testing.T) {
+	setupJiraCLIEnv(t)
+	const path = "/rest/api/3/issue/CSM-756/comment/15198"
+	newFake := func() *jiratest.Fake {
+		fake := jiratest.New()
+		fake.JSON("GET "+path, http.StatusOK, `{"id":"15198","author":{"displayName":"Tony"},"created":"2026-11-12T10:00:00.000-0500","jsdPublic":false}`)
+		fake.JSON("DELETE "+path, http.StatusNoContent, "")
+		return fake
+	}
+
+	fake := newFake()
+	got, err := runAtlas(t, fake.Transport(), "jira", "comment", "CSM-756", "--delete", "15198", "--yes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "Deleted internal note 15198 on CSM-756 by Tony\n" {
+		t.Errorf("output = %q", got)
+	}
+	if routes := strings.Join(fake.Routes(), ","); routes != "GET "+path+",DELETE "+path {
+		t.Errorf("routes = %s", routes)
+	}
+
+	fake = newFake()
+	got, err = runAtlas(t, fake.Transport(), "jira", "comment", "CSM-756", "--delete", "15198", "--yes", "--json")
+	if err != nil || !strings.Contains(got, `"internal": true`) {
+		t.Errorf("--json = %q, %v", got, err)
+	}
+
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"comment", "CSM-756", "--delete", "15198"}, "without --yes"},
+		{[]string{"comment", "CSM-756", "--delete", "15198", "--yes", "-b", "x"}, "--delete cannot be combined with --body"},
+		{[]string{"comment", "CSM-756", "--delete", " ", "--yes"}, "--delete needs a comment ID"},
+		{[]string{"comment", "CSM-756", "-b", "x", "--yes"}, "--yes only confirms --delete"},
+		{[]string{"internal-comment", "CSM-756", "--delete", "15198"}, "unknown flag: --delete"},
+	} {
+		fake := newFake()
+		if _, err := runAtlas(t, fake.Transport(), append([]string{"jira"}, tc.args...)...); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%v: err = %v, want %q", tc.args, err, tc.want)
+		}
+		if len(fake.Requests()) != 0 {
+			t.Errorf("%v sent %v", tc.args, fake.Routes())
+		}
+	}
+}

@@ -148,11 +148,13 @@ atlas jira assign <issue> <user> [--json]
 atlas jira transitions <issue> [--json]
 atlas jira transition <issue> <transition-or-status> [--field Name=value]... [--force] [--json]
 atlas jira comment <issue> (-b <body>|-F <file>) [--json]
+atlas jira comment <issue> --delete <comment-id> [--yes] [--json]
 atlas jira internal-comment <issue> (-b <body>|-F <file>) [--json]
 atlas jira link <issue> <target> <type> [--inward] [--json]
 atlas jira worklog list <issue> [--json]
 atlas jira worklog add <issue> <duration> [-m <comment>] [--started <time>] [--json]
 atlas jira worklog add -f <file> [--json]
+atlas jira worklog delete <issue> <worklog-id>... [--yes] [--json]
 atlas jira attach <issue> <file>... [--json]
 atlas jira fields [<issue>] [-p <project> -t <type>] [--json]
 atlas jira projects [-q <text>] [-L <limit>] [--json]
@@ -616,9 +618,10 @@ Jira commands need `username`, a Jira token, and `jira_cloud_id`. Summaries, des
 - `atlas jira edit <issue>` edits an issue. `--append` adds the body after the current description. A description holding content markdown cannot represent is not replaced unless `--force` is passed. `-l -label` removes a label.
 - `atlas jira assign <issue> <user>` assigns an issue.
 - `atlas jira transitions <issue>` lists the transitions an issue allows; `atlas jira transition <issue> <transition-or-status>` (alias `move`) moves it by transition name or target status, with any screen fields as `--field`. Rich-text screen fields are guarded like `edit`'s description.
-- `atlas jira comment <issue>` adds a public comment; on service desk issues customers can read it. `atlas jira internal-comment <issue>` adds an agent-only note, refuses issues outside service desk projects, and fails if Jira does not confirm the note is internal.
+- `atlas jira comment <issue>` adds a public comment; on service desk issues customers can read it. `atlas jira internal-comment <issue>` adds an agent-only note, refuses issues outside service desk projects, and fails if Jira does not confirm the note is internal. `atlas jira comment <issue> --delete <id>` deletes a comment or internal note through `jira_comment_delete` and reports its author, created time, and whether it was internal.
 - `atlas jira link <issue> <target> <type>` links two issues using the type's outward wording (issue blocks target); `--inward` uses the inward wording (issue is blocked by target).
-- `atlas jira worklog add <issue> <duration>` logs work (`1h 30m`, `1h30m`, `45m`, `1.5h`, or `PT1H30M`), starting now unless `--started`. `--entries-file` reads a JSON array of `{"issue","started","duration","comment"}` entries; entries already logged are skipped. `atlas jira worklog list <issue>` lists every worklog.
+- `atlas jira worklog add <issue> <duration>` logs work (`1h 30m`, `1h30m`, `45m`, `1.5h`, or `PT1H30M`), starting now unless `--started`. `--entries-file` reads a JSON array of `{"issue","started","duration","comment"}` entries; entries already logged are skipped. `atlas jira worklog list <issue>` lists every worklog. `atlas jira worklog delete <issue> <id>...` deletes up to 100 worklogs from one issue and reports each one's author, start, and time spent; Jira adds the deleted time back to the remaining estimate (`adjustEstimate=auto`), undoing what logging it took off. With several IDs, failures are reported per ID and the command exits as a partial failure; a single failed ID returns its own error (not found or auth).
+- Both Jira deletes ask for confirmation in interactive terminals and refuse to run non-interactively without `--yes`.
 - `atlas jira attach <issue> <file>...` attaches files.
 - `atlas jira fields` lists create fields for `-p` and `-t`, or an issue's edit fields.
 - `atlas jira projects` lists projects, filtered by `--query`.
@@ -660,14 +663,14 @@ On a loopback listener the server rejects any `Host` header that is neither loop
 
 ### Tools
 
-51 tools, annotated read-only or destructive from each op's metadata:
+53 tools, annotated read-only or destructive from each op's metadata:
 
 - Pull requests: `pr_list`, `pr_status`, `pr_view`, `pr_diff`, `pr_checks`, `pr_create`, `pr_edit`, `pr_comment`, `pr_comment_delete`, `pr_approve`, `pr_unapprove`, `pr_request_changes`, `pr_clear_change_request`, `pr_review`, `pr_merge`, `pr_close`
 - Pipelines: `pipeline_list`, `pipeline_view`, `pipeline_log`, `pipeline_run`, `pipeline_stop`
 - Repositories: `repo_list`, `repo_diff`, `branch_list`, `branch_view`, `commit_list`, `file_read`
 - Snippets: `snippet_list`, `snippet_view`, `snippet_create`, `snippet_edit`, `snippet_rename`, `snippet_delete`
 - Accounts: `whoami`, `user_search`, `jira_whoami`
-- Jira: `jira_search`, `jira_issue_view`, `jira_issue_create`, `jira_issue_edit`, `jira_assign`, `jira_transition_list`, `jira_transition`, `jira_comment`, `jira_internal_comment`, `jira_link`, `jira_worklog_list`, `jira_worklog_add`, `jira_attach`, `jira_fields`, `jira_projects`
+- Jira: `jira_search`, `jira_issue_view`, `jira_issue_create`, `jira_issue_edit`, `jira_assign`, `jira_transition_list`, `jira_transition`, `jira_comment`, `jira_internal_comment`, `jira_comment_delete`, `jira_link`, `jira_worklog_list`, `jira_worklog_add`, `jira_worklog_delete`, `jira_attach`, `jira_fields`, `jira_projects`
 - Raw API: `api`
 
 Reads return the same markdown as the CLI's `--raw` or non-TTY output; writes return a small JSON receipt. A failed call returns a tool error with its message and any partial results.

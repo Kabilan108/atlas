@@ -406,21 +406,8 @@ func newSnippetDeleteCmd() *cobra.Command {
 // confirmSnippetDeleteFlag asks before deleting unless --yes is set, and
 // handles the command itself when the user declines.
 func confirmSnippetDeleteFlag(cmd *cobra.Command, _ *cliEnv, in snippetops.DeleteInput) (bool, error) {
-	if yes, _ := cmd.Flags().GetBool("yes"); yes {
-		return false, nil
-	}
-	if !term.IsTerminal(int(os.Stdin.Fd())) {
-		return true, fmt.Errorf("refusing to delete non-interactively without --yes")
-	}
-	confirmed, err := confirmSnippetDelete(in.Snippet)
-	if err != nil {
-		return true, err
-	}
-	if !confirmed {
-		_, err := fmt.Fprintln(cmd.OutOrStdout(), "Deletion cancelled.")
-		return true, err
-	}
-	return false, nil
+	proceed, err := confirmDeletion(cmd, "snippet "+in.Snippet)
+	return !proceed, err
 }
 
 func fileStrings(files map[string][]byte) map[string]string {
@@ -791,14 +778,4 @@ func editBuffer(filename string, content []byte) ([]byte, error) {
 		return nil, errors.New("no changes made")
 	}
 	return edited, nil
-}
-
-func confirmSnippetDelete(id string) (bool, error) {
-	fmt.Fprintf(os.Stderr, "Delete snippet %s? [y/N] ", id)
-	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
-	if err != nil {
-		return false, err
-	}
-	answer := strings.ToLower(strings.TrimSpace(line))
-	return answer == "y" || answer == "yes", nil
 }

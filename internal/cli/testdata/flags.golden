@@ -58,7 +58,9 @@ atlas jira comment
   use: comment <issue>
   flag --body -b string default="" cobra_annotation_mutually_exclusive=body body-file
   flag --body-file -F string default="" cobra_annotation_mutually_exclusive=body body-file
+  flag --delete string default=""
   flag --json bool default="false"
+  flag --yes bool default="false"
 atlas jira create
   use: create
   flag --assignee -a string default=""
@@ -136,6 +138,10 @@ atlas jira worklog add
   flag --entries-file -f string default="" cobra_annotation_mutually_exclusive=entries-file comment|entries-file started
   flag --json bool default="false"
   flag --started string default="" cobra_annotation_mutually_exclusive=entries-file started
+atlas jira worklog delete
+  use: delete <issue> <worklog-id>...
+  flag --json bool default="false"
+  flag --yes bool default="false"
 atlas jira worklog list
   use: list <issue>
   flag --json bool default="false"

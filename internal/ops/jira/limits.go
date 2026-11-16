@@ -12,6 +12,7 @@ const (
 	MaxProjects       = 1000
 	MaxWorklogs       = 1000
 	MaxWorklogEntries = 200
+	MaxWorklogDeletes = 100
 	MaxAttachFiles    = 20
 	// MaxAttachBytes caps the decoded files one jira_attach call uploads.
 	MaxAttachBytes = 10 << 20
