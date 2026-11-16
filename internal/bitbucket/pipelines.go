@@ -27,17 +27,31 @@ const (
 	maxPipelineSteps = 1000
 )
 
+// Pipeline is one run. Bitbucket leaves a secured variable's value empty.
 type Pipeline struct {
-	UUID              string          `json:"uuid"`
-	BuildNumber       int             `json:"build_number"`
-	State             PipelineState   `json:"state"`
-	Target            PipelineTarget  `json:"target"`
-	Trigger           PipelineTrigger `json:"trigger"`
-	Creator           User            `json:"creator"`
-	CreatedOn         time.Time       `json:"created_on"`
-	CompletedOn       *time.Time      `json:"completed_on,omitempty"`
-	DurationInSeconds int             `json:"duration_in_seconds"`
-	BuildSecondsUsed  int             `json:"build_seconds_used"`
+	UUID              string             `json:"uuid"`
+	BuildNumber       int                `json:"build_number"`
+	State             PipelineState      `json:"state"`
+	Target            PipelineTarget     `json:"target"`
+	Trigger           PipelineTrigger    `json:"trigger"`
+	Creator           PipelineCreator    `json:"creator"`
+	Variables         []PipelineVariable `json:"variables,omitempty"`
+	CreatedOn         time.Time          `json:"created_on"`
+	CompletedOn       *time.Time         `json:"completed_on,omitempty"`
+	DurationInSeconds int                `json:"duration_in_seconds"`
+	BuildSecondsUsed  int                `json:"build_seconds_used"`
+}
+
+// PipelineCreator is the account that started a run: a user (Type "user")
+// or an app user such as an access token, whose Kind says which, e.g.
+// "workspace_access_token". Scheduled runs may have none.
+type PipelineCreator struct {
+	Type        string `json:"type,omitempty"`
+	Kind        string `json:"kind,omitempty"`
+	DisplayName string `json:"display_name,omitempty"`
+	Nickname    string `json:"nickname,omitempty"`
+	UUID        string `json:"uuid,omitempty"`
+	AccountID   string `json:"account_id,omitempty"`
 }
 
 type PipelineState struct {

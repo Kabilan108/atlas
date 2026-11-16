@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/kabilan108/atlas/internal/ops"
 	"github.com/kabilan108/atlas/internal/ops/opstest"
@@ -58,8 +59,8 @@ func TestListFiltersAndShowsRunDetails(t *testing.T) {
 	}
 	mustContain(t, markdown(t, result.Markdown),
 		"# Pipelines in acme/widgets (branch testing, commit 333ec33226f2aa11bb22cc33dd44ee55ff667788, pattern db-backup)",
-		"| 2090 | FAILED | testing | 333ec33226f2 | custom:db-backup | MANUAL | Merge Console | 2026-11-02T18:45:37Z | 1m24s |",
-		"| 2095 | SUCCESSFUL |")
+		"| 2090 | FAILED | testing | 333ec33226f2 | custom:db-backup | MANUAL | cicd pipeline token (workspace_access_token) | 2026-11-02T18:45:37Z | 1m24s |",
+		"| 2095 | SUCCESSFUL | testing | 333ec33226f2 | custom:db-backup | MANUAL | Merge Console |")
 
 	empty, err := pipeline.List.Call(context.Background(), env, pipeline.ListInput{RepoRef: ops.RepoRef{Repo: repo}, Pipeline: "nightly"})
 	if err != nil {
@@ -104,12 +105,71 @@ func TestViewSeveralBuildsReportsEachEntry(t *testing.T) {
 	}
 	mustContain(t, markdown(t, result.Markdown),
 		"## #2090 FAILED · custom:db-backup on testing @ 333ec33226f2",
-		"Trigger MANUAL by Merge Console · started 2026-11-02T18:45:37Z · 1m24s · https://bitbucket.org/acme/widgets/pipelines/results/2090",
+		"Trigger MANUAL by cicd pipeline token (workspace_access_token) · started 2026-11-02T18:45:37Z · 1m24s · https://bitbucket.org/acme/widgets/pipelines/results/2090",
+		"Variables:\n- META=iam\n- DB_PASSWORD (secured)\n",
+		"Trigger PUSH by Merge Console · started",
 		"| backup | FAILED | 2026-11-02T18:45:38Z | 1m12s |",
 		"| deploy | NOT_RUN | - | - |",
 		"## #2096 RUNNING · branches:main on main",
 		"| backup | RUNNING | 2026-11-02T18:45:38Z | running |",
 		"## 99999\n\nFailed: not_found:")
+}
+
+func TestViewShowsWhoStartedEachRunAndItsVariables(t *testing.T) {
+	env, _ := newEnv(t)
+	result, err := pipeline.View.Call(context.Background(), env, pipeline.ViewInput{
+		RepoRef: ops.RepoRef{Repo: repo}, Builds: []string{"2090", "2095", "2098", "2099"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, user, scheduled, unknown := result.Results[0], result.Results[1], result.Results[2], result.Results[3]
+	if token.Run.Creator != "cicd pipeline token" || token.Run.CreatorKind != "workspace_access_token" || token.Run.Trigger != "MANUAL" {
+		t.Errorf("token run = %+v", token.Run)
+	}
+	if user.Run.Creator != "Merge Console" || user.Run.CreatorKind != "" {
+		t.Errorf("user run = %+v", user.Run)
+	}
+	if scheduled.Run.Trigger != "SCHEDULE" || scheduled.Run.CreatorLabel() != "" {
+		t.Errorf("scheduled run = %+v", scheduled.Run)
+	}
+	if unknown.Run.Trigger != "" || unknown.Run.CreatorLabel() != "" || unknown.Variables != nil || unknown.VariablesOmitted != 0 {
+		t.Errorf("run with no trigger, creator, or variables = %+v", unknown)
+	}
+
+	if len(scheduled.Variables) != 25 || scheduled.VariablesOmitted != 5 {
+		t.Fatalf("scheduled run shows %d variables and omits %d, want 25 and 5 (keyless entries skipped)", len(scheduled.Variables), scheduled.VariablesOmitted)
+	}
+	long := scheduled.Variables[0]
+	if !long.Truncated || len(long.Key) != 100 || len(long.Value) != 199 || !utf8.ValidString(long.Value) || !strings.HasPrefix(pipelinetest.LongValue, long.Value) {
+		t.Errorf("long variable: key %d bytes, value %d bytes, truncated %v, valid UTF-8 %v", len(long.Key), len(long.Value), long.Truncated, utf8.ValidString(long.Value))
+	}
+
+	data, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := markdown(t, result.Markdown)
+	for name, out := range map[string]string{"json": string(data), "markdown": text} {
+		if strings.Contains(out, pipelinetest.SecuredValue) {
+			t.Errorf("%s leaks a secured value:\n%s", name, out)
+		}
+	}
+	mustContain(t, string(data),
+		`"creator":"cicd pipeline token","creator_kind":"workspace_access_token"`,
+		`"variables":[{"key":"META","value":"iam"},{"key":"DB_PASSWORD","secured":true}]`,
+		`{"key":"API_TOKEN","secured":true}`,
+		`"variables_omitted":5`)
+	mustContain(t, text,
+		"Trigger MANUAL by Merge Console · started",
+		"Variables:\n- META=cns\n- API_TOKEN (secured)\n",
+		"## #2098 SUCCESSFUL · custom:nightly on main @ 333ec33226f2\n\nTrigger SCHEDULE · started",
+		"- "+long.Key+"="+long.Value+" (truncated)\n- VAR_01=v1\n",
+		"- VAR_24=v24\n- and 5 more not shown\n",
+		"## #2099 SUCCESSFUL · branches:main on main @ 333ec33226f2\n\nstarted 2026-11-02T18:45:37Z · 5s ·")
+	if strings.Contains(text, "VAR_25") || strings.Count(text, "Variables:") != 3 {
+		t.Errorf("variables past the cap, or a Variables heading for a run with none:\n%s", text)
+	}
 }
 
 func TestViewSingleMissingBuildIsStillPartial(t *testing.T) {

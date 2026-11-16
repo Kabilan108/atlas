@@ -227,7 +227,7 @@ them with `atlas user search <name>`.
 
 ```bash
 atlas pipeline list --branch main
-atlas pipeline view 2090                        # a build number, pipeline UUID, or result URL
+atlas pipeline view 2090                        # by number, UUID, or result URL: trigger, creator, variables, steps
 atlas pipeline log 2090                         # tail of the failed steps' logs
 atlas pipeline run --branch main --pipeline db-backup --var TARGET=staging --wait 10m
 atlas pipeline stop 2090

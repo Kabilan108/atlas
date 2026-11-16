@@ -511,8 +511,8 @@ Status only (no attribution for who completed).
 
 A build is a build number (`2090` or `#2090`), a pipeline UUID, or a result URL.
 
-- `atlas pipeline list` lists recent runs, filtered by `--branch`, `--commit`, or `--pipeline` (a custom pipeline name or selector pattern)
-- `atlas pipeline view <build>...` shows runs and their steps
+- `atlas pipeline list` lists recent runs, filtered by `--branch`, `--commit`, or `--pipeline` (a custom pipeline name or selector pattern). Each row names the trigger and who started the run.
+- `atlas pipeline view <build>...` shows runs and their steps. Each run names its trigger (`MANUAL`, `PUSH`, `SCHEDULE`...) and creator: a user's display name, or a token or app's name with its kind, such as `cicd pipeline token (workspace_access_token)`. It lists the run's variables as `KEY=value`, and secured ones as `KEY (secured)` with no value, even if Bitbucket returns one. A run shows at most 25 variables, keys up to 100 bytes and values up to 200; the rest are counted (`variables_omitted`) or marked `truncated`.
 - `atlas pipeline log <build>...` shows the tail of step logs: failed steps by default, else running ones, or the steps named with `--step`. `--tail` sets bytes per step, `--max-bytes` the cap across all logs, and `--full` prints up to 2 MiB per step and 8 MiB in all.
 - `atlas pipeline run` starts a run on `--branch` or `--commit` (both pins the run), optionally a custom `--pipeline` with `--var` and `--secured-var` variables. `--wait` (max 10m) exits non-zero unless the run finished successfully in time. A started run is never retried.
 - `atlas pipeline stop <build>` stops a running pipeline
