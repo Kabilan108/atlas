@@ -284,10 +284,12 @@ atlas jira transitions CSM-12
 atlas jira transition CSM-12 "In Review"
 atlas jira comment CSM-12 --body "Deployed to staging"
 atlas jira internal-comment CSM-12 --body "Agent-only note"   # service desk issues only
+atlas jira comment CSM-12 --delete 10450 --yes               # comments and internal notes
 atlas jira link CSM-12 CSM-2 Blocks                          # CSM-12 blocks CSM-2
 atlas jira worklog add CSM-12 1h30m --comment "Pairing"
 atlas jira worklog add --entries-file worklogs.json
 atlas jira worklog list CSM-12
+atlas jira worklog delete CSM-12 100028 100029 --yes        # time goes back to the estimate
 atlas jira attach CSM-12 screenshot.png
 atlas jira fields -p CSM -t Task                             # fields the create screen accepts
 atlas jira projects
@@ -346,7 +348,7 @@ accepts loopback `Host` headers, which blocks DNS rebinding. Add
 `--allowed-host` for each name a reverse proxy on the same machine forwards. On
 any other address the server accepts every `Host` header.
 
-The server has 51 tools:
+The server has 53 tools:
 
 | Area | Tools |
 |------|-------|
@@ -355,7 +357,7 @@ The server has 51 tools:
 | Repositories | `repo_list`, `repo_diff`, `branch_list`, `branch_view`, `commit_list`, `file_read` |
 | Snippets | `snippet_list`, `snippet_view`, `snippet_create`, `snippet_edit`, `snippet_rename`, `snippet_delete` |
 | Accounts | `whoami`, `user_search`, `jira_whoami` |
-| Jira | `jira_search`, `jira_issue_view`, `jira_issue_create`, `jira_issue_edit`, `jira_assign`, `jira_transition_list`, `jira_transition`, `jira_comment`, `jira_internal_comment`, `jira_link`, `jira_worklog_list`, `jira_worklog_add`, `jira_attach`, `jira_fields`, `jira_projects` |
+| Jira | `jira_search`, `jira_issue_view`, `jira_issue_create`, `jira_issue_edit`, `jira_assign`, `jira_transition_list`, `jira_transition`, `jira_comment`, `jira_internal_comment`, `jira_comment_delete`, `jira_link`, `jira_worklog_list`, `jira_worklog_add`, `jira_worklog_delete`, `jira_attach`, `jira_fields`, `jira_projects` |
 | Raw API | `api`: read-only GET of a Bitbucket or Jira REST path |
 
 Tools are annotated read-only or destructive so clients can gate them. Only the

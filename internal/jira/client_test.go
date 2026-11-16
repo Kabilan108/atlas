@@ -680,6 +680,39 @@ func TestComments(t *testing.T) {
 	}
 }
 
+func TestWorklogGetAndDelete(t *testing.T) {
+	var deletes []string
+	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			expect(t, r, http.MethodGet, "/rest/api/3/issue/ED-1/worklog/100028")
+			writeJSON(t, w, 200, `{"id":"100028","timeSpent":"1h","author":{"displayName":"Mia"}}`)
+		case http.MethodDelete:
+			expect(t, r, http.MethodDelete, "/rest/api/3/issue/ED-1/worklog/100028")
+			deletes = append(deletes, r.URL.RawQuery)
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+	})
+	ctx := context.Background()
+	got, err := c.GetWorklog(ctx, "ED-1", "100028")
+	if err != nil || got.TimeSpent != "1h" || got.Author.DisplayName != "Mia" {
+		t.Fatalf("worklog = %+v, %v", got, err)
+	}
+	for _, adjust := range []string{"auto", "leave", ""} {
+		if err := c.DeleteWorklog(ctx, "ED-1", "100028", adjust); err != nil {
+			t.Fatalf("delete %q: %v", adjust, err)
+		}
+	}
+	if strings.Join(deletes, ",") != "adjustEstimate=auto,adjustEstimate=leave," {
+		t.Errorf("delete queries = %q", deletes)
+	}
+	if err := c.DeleteWorklog(ctx, "ED-1", "100028", "new"); err == nil || len(deletes) != 3 {
+		t.Errorf("adjustEstimate new: err = %v after %d deletes", err, len(deletes))
+	}
+}
+
 func TestWorklogs(t *testing.T) {
 	var starts []string
 	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {

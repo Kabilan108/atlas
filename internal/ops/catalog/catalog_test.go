@@ -62,17 +62,19 @@ func TestOpNamesAreUniqueAndDescribed(t *testing.T) {
 // destructive names every tool with a mode that can destroy data, and why;
 // changing a tool's hint means changing this list.
 var destructive = map[string]string{
-	"pr_close":          "declines the pull request",
-	"pr_comment_delete": "deletes a comment",
-	"pr_comment":        "edit replaces a comment's body",
-	"pr_edit":           "replaces or clears the description and drops reviewers",
-	"pr_merge":          "merges for good; close_source_branch deletes the branch",
-	"snippet_delete":    "deletes the snippet",
-	"snippet_edit":      "replaces and removes files",
-	"snippet_rename":    "replaces a file already named to",
-	"pipeline_stop":     "halts a run mid-step",
-	"jira_issue_edit":   "replaces the summary, description, and fields; null clears",
-	"jira_transition":   "force replaces or clears rich-text screen fields",
+	"pr_close":            "declines the pull request",
+	"pr_comment_delete":   "deletes a comment",
+	"pr_comment":          "edit replaces a comment's body",
+	"pr_edit":             "replaces or clears the description and drops reviewers",
+	"pr_merge":            "merges for good; close_source_branch deletes the branch",
+	"snippet_delete":      "deletes the snippet",
+	"snippet_edit":        "replaces and removes files",
+	"snippet_rename":      "replaces a file already named to",
+	"pipeline_stop":       "halts a run mid-step",
+	"jira_issue_edit":     "replaces the summary, description, and fields; null clears",
+	"jira_transition":     "force replaces or clears rich-text screen fields",
+	"jira_worklog_delete": "deletes worklogs",
+	"jira_comment_delete": "deletes a comment or internal note",
 }
 
 func TestDestructiveHints(t *testing.T) {

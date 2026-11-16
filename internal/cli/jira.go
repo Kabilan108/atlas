@@ -14,6 +14,7 @@ import (
 	jiraapi "github.com/kabilan108/atlas/internal/jira"
 	"github.com/kabilan108/atlas/internal/ops"
 	jiraops "github.com/kabilan108/atlas/internal/ops/jira"
+	"github.com/kabilan108/atlas/internal/output"
 	"github.com/spf13/cobra"
 )
 
@@ -248,11 +249,56 @@ func newJiraTransitionCmd() *cobra.Command {
 func newJiraCommentCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "comment <issue>",
-		Short: "Add a public comment",
-		Long:  "Add a public comment. On service desk issues customers can read it; use 'atlas jira internal-comment' for agent-only notes.",
-		Args:  cobra.ExactArgs(1),
+		Short: "Add a public comment, or delete a comment with --delete",
+		Long: "Add a public comment. On service desk issues customers can read it; use 'atlas jira internal-comment' for agent-only notes.\n" +
+			"--delete <id> deletes a comment or internal note instead.",
+		Args: cobra.ExactArgs(1),
 	}
-	return bindJiraComment(cmd, jiraops.Comment)
+	return bindJiraComment(cmd, jiraops.Comment, true)
+}
+
+// jiraCommentDeleteInput checks --delete's flags; the issue comes from the
+// caller.
+func jiraCommentDeleteInput(cmd *cobra.Command) (string, error) {
+	for _, flag := range []string{"body", "body-file"} {
+		if cmd.Flags().Changed(flag) {
+			return "", fmt.Errorf("--delete cannot be combined with --%s", flag)
+		}
+	}
+	id, _ := cmd.Flags().GetString("delete")
+	if strings.TrimSpace(id) == "" {
+		return "", fmt.Errorf("--delete needs a comment ID")
+	}
+	return id, nil
+}
+
+// deleteJiraComment runs --delete through jira_comment_delete, the MCP tool
+// for it, since one command is bound to one op.
+func deleteJiraComment(cmd *cobra.Command, env *cliEnv, in jiraops.CommentInput) (bool, error) {
+	if !cmd.Flags().Changed("delete") {
+		return false, nil
+	}
+	id, _ := cmd.Flags().GetString("delete")
+	if proceed, err := confirmDeletion(cmd, fmt.Sprintf("comment %s on %s", id, in.Issue)); !proceed || err != nil {
+		return true, err
+	}
+	result, err := jiraops.CommentDelete.Call(cmd.Context(), env, jiraops.CommentDeleteInput{IssueRef: in.IssueRef, ID: id})
+	if err != nil {
+		return true, err
+	}
+	if jsonOutput, _ := cmd.Flags().GetBool("json"); jsonOutput {
+		return true, output.WriteJSON(cmd.OutOrStdout(), result)
+	}
+	kind := "comment"
+	if result.Internal {
+		kind = "internal note"
+	}
+	line := fmt.Sprintf("Deleted %s %s on %s", kind, result.ID, result.Key)
+	if result.Author != "" {
+		line += " by " + result.Author
+	}
+	_, err = fmt.Fprintln(cmd.OutOrStdout(), line)
+	return true, err
 }
 
 func newJiraInternalCommentCmd() *cobra.Command {
@@ -262,20 +308,36 @@ func newJiraInternalCommentCmd() *cobra.Command {
 		Long:  "Add an internal note that only agents see. Refuses issues outside service desk projects and fails if Jira does not confirm the note is internal.",
 		Args:  cobra.ExactArgs(1),
 	}
-	return bindJiraComment(cmd, jiraops.InternalComment)
+	return bindJiraComment(cmd, jiraops.InternalComment, false)
 }
 
-func bindJiraComment(cmd *cobra.Command, op *ops.Op[jiraops.CommentInput, *jiraops.Commented]) *cobra.Command {
+// bindJiraComment binds a comment command to op; deletable adds --delete
+// and --yes, which run jira_comment_delete instead.
+func bindJiraComment(cmd *cobra.Command, op *ops.Op[jiraops.CommentInput, *jiraops.Commented], deletable bool) *cobra.Command {
 	addJiraBodyFlags(cmd, "Comment in markdown")
+	var intercept func(*cobra.Command, *cliEnv, jiraops.CommentInput) (bool, error)
+	if deletable {
+		cmd.Flags().String("delete", "", "Delete the comment or internal note with this ID")
+		cmd.Flags().Bool("yes", false, "Confirm --delete without prompting")
+		intercept = deleteJiraComment
+	}
 	return bind(cmd, binding[jiraops.CommentInput, *jiraops.Commented]{
 		op: op,
 		input: func(cmd *cobra.Command, args []string, _ *cliEnv) (jiraops.CommentInput, error) {
+			if deletable && cmd.Flags().Changed("delete") {
+				_, err := jiraCommentDeleteInput(cmd)
+				return jiraops.CommentInput{IssueRef: jiraops.IssueRef{Issue: args[0]}}, err
+			}
+			if deletable && cmd.Flags().Changed("yes") {
+				return jiraops.CommentInput{}, fmt.Errorf("--yes only confirms --delete")
+			}
 			body, err := jiraBody(cmd, true)
 			if err != nil {
 				return jiraops.CommentInput{}, err
 			}
 			return jiraops.CommentInput{IssueRef: jiraops.IssueRef{Issue: args[0]}, Body: body}, nil
 		},
+		intercept: intercept,
 		human: func(w io.Writer, out *jiraops.Commented) error {
 			kind := "comment"
 			if out.Internal {
@@ -351,7 +413,7 @@ func newJiraFieldsCmd() *cobra.Command {
 func newJiraWorklogCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "worklog",
-		Short: "List and add worklogs",
+		Short: "List, add and delete worklogs",
 	}
 	list := &cobra.Command{
 		Use:   "list <issue>",
@@ -375,6 +437,13 @@ func newJiraWorklogCmd() *cobra.Command {
 	add.Flags().StringP("entries-file", "f", "", "Read a JSON array of entries from a file (- for stdin)")
 	add.MarkFlagsMutuallyExclusive("entries-file", "started")
 	add.MarkFlagsMutuallyExclusive("entries-file", "comment")
+	del := &cobra.Command{
+		Use:   "delete <issue> <worklog-id>...",
+		Short: "Delete worklogs from an issue",
+		Long:  "Delete worklogs from an issue by ID (see 'atlas jira worklog list'). Jira adds their time back to the remaining estimate.",
+		Args:  cobra.MinimumNArgs(2),
+	}
+	del.Flags().Bool("yes", false, "Confirm deletion without prompting")
 	cmd.AddCommand(
 		bind(list, binding[jiraops.IssueRef, *jiraops.WorklogsResult]{op: jiraops.WorklogList, input: issueArg}),
 		bind(add, binding[jiraops.WorklogAddInput, *jiraops.WorklogAddResult]{
@@ -396,8 +465,39 @@ func newJiraWorklogCmd() *cobra.Command {
 				return nil
 			},
 		}),
+		bind(del, binding[jiraops.WorklogDeleteInput, *jiraops.WorklogDeleteResult]{
+			op: jiraops.WorklogDelete,
+			input: func(_ *cobra.Command, args []string, _ *cliEnv) (jiraops.WorklogDeleteInput, error) {
+				return jiraops.WorklogDeleteInput{IssueRef: jiraops.IssueRef{Issue: args[0]}, IDs: args[1:]}, nil
+			},
+			intercept: confirmWorklogDelete,
+			human: func(w io.Writer, out *jiraops.WorklogDeleteResult) error {
+				for _, r := range out.Results {
+					line := fmt.Sprintf("%s %s worklog %s", r.Status, out.Key, r.ID)
+					if r.Started != "" {
+						line += fmt.Sprintf(" %s %s by %s", r.Started, r.TimeSpent, r.Author)
+					}
+					if r.Error != "" {
+						line += ": " + r.Error
+					}
+					if _, err := fmt.Fprintln(w, line); err != nil {
+						return err
+					}
+				}
+				return nil
+			},
+		}),
 	)
 	return cmd
+}
+
+func confirmWorklogDelete(cmd *cobra.Command, _ *cliEnv, in jiraops.WorklogDeleteInput) (bool, error) {
+	what := fmt.Sprintf("worklog %s on %s", in.IDs[0], in.Issue)
+	if len(in.IDs) > 1 {
+		what = fmt.Sprintf("%d worklogs on %s (%s)", len(in.IDs), in.Issue, strings.Join(in.IDs, ", "))
+	}
+	proceed, err := confirmDeletion(cmd, what)
+	return !proceed, err
 }
 
 func worklogAddInput(cmd *cobra.Command, args []string, _ *cliEnv) (jiraops.WorklogAddInput, error) {
