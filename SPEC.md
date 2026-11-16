@@ -118,7 +118,7 @@ atlas pr checkout <id|url|branch> [-R <workspace/repo|repo>] [-b <name>] [--deta
 
 atlas pipeline list [-R <workspace/repo|repo>] [-b <branch>] [--commit <sha>] [-p <pipeline>] [-L <limit>] [--json]
 atlas pipeline view <build>... [-R <workspace/repo|repo>] [--json]
-atlas pipeline log <build>... [-R <workspace/repo|repo>] [--step <name|uuid>]... [--tail <bytes>] [--max-bytes <bytes>] [--full] [--json]
+atlas pipeline log <build>... [-R <workspace/repo|repo>] [--step <name|uuid>]... [--tail <bytes>] [--max-bytes <bytes>] [--full] [--include-setup] [--json]
 atlas pipeline run [-R <workspace/repo|repo>] [-b <branch>] [--commit <sha>] [-p <pipeline>] [--var KEY=VALUE]... [--secured-var KEY=VALUE]... [--wait <duration>] [--json]
 atlas pipeline stop <build> [-R <workspace/repo|repo>] [--json]
 
@@ -512,8 +512,12 @@ Status only (no attribution for who completed).
 A build is a build number (`2090` or `#2090`), a pipeline UUID, or a result URL.
 
 - `atlas pipeline list` lists recent runs, filtered by `--branch`, `--commit`, or `--pipeline` (a custom pipeline name or selector pattern). Each row names the trigger and who started the run.
-- `atlas pipeline view <build>...` shows runs and their steps. Each run names its trigger (`MANUAL`, `PUSH`, `SCHEDULE`...) and creator: a user's display name, or a token or app's name with its kind, such as `cicd pipeline token (workspace_access_token)`. It lists the run's variables as `KEY=value`, and secured ones as `KEY (secured)` with no value, even if Bitbucket returns one. A run shows at most 25 variables, keys up to 100 bytes and values up to 200; the rest are counted (`variables_omitted`) or marked `truncated`.
+- `atlas pipeline view <build>...` shows runs and their steps. Each run names its trigger (`MANUAL`, `PUSH`, `SCHEDULE`...) and creator: a user's display name, or a token or app's name with its kind, such as `cicd pipeline token (workspace_access_token)`. Bitbucket's GET of a run does not return the variables it was started with, so `pipeline view` does not list them; `pipeline log` does.
 - `atlas pipeline log <build>...` shows the tail of step logs: failed steps by default, else running ones, or the steps named with `--step`. `--tail` sets bytes per step, `--max-bytes` the cap across all logs, and `--full` prints up to 2 MiB per step and 8 MiB in all.
+  - Runner setup is cut by default. Everything Bitbucket printed before the step's script becomes one line, such as `[runner setup omitted: 3.1 KB · runner devserver4_k8s_1 · image …@sha256:c6c369ed603f · variables BRANCH=testing META=iam · include_setup shows it]`. That setup covers the runner, clone, names of the defined variables, runtime and images. Image digests are cut to 12 hex digits in the line. Setup lines that read like a problem (`error`, `failed`, `not found`, `warning`...), such as `Cache "node": Not found`, stay below the line.
+  - The cut ends at the line echoing the step's first script command: `+ ` and the command's first line, from the steps API's `script_commands`. That line must be the first `+ ` line after the setup's `Default variables:` block. Otherwise the log is left whole. So a step that failed in clone, image pull or runner setup shows everything.
+  - The line lists the run's pipeline variables, parsed from the setup's `Pipeline variables:` block. A secured variable shows as `KEY (secured)` with no value. That covers a bare `KEY`, a value Bitbucket masked as `$KEY`, `${KEY}` or asterisks, and placeholders such as `[masked]`. The line shows at most 25 variables, keys up to 100 bytes and values up to 200 (marked `truncated`); the rest are counted. JSON output carries the same as `setup`.
+  - `--include-setup` keeps the setup, for questions such as which workspace or repository variables are defined. Without it, Atlas reads up to 32 KiB past the tail so that a log a little longer than the tail still arrives whole. The tail and `--max-bytes` count only what remains after the cut. A log longer than the tail plus 32 KiB has no setup in its tail and gets no setup line; raise `--tail` (or use `--full`) to see its variables.
 - `atlas pipeline run` starts a run on `--branch` or `--commit` (both pins the run), optionally a custom `--pipeline` with `--var` and `--secured-var` variables. `--wait` (max 10m) exits non-zero unless the run finished successfully in time. A started run is never retried.
 - `atlas pipeline stop <build>` stops a running pipeline
 

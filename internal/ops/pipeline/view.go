@@ -20,23 +20,20 @@ type ViewResult struct {
 	Results []BuildView `json:"results"`
 }
 
-// BuildView is a run, its variables and steps, or the error reading them.
-// VariablesOmitted counts the variables past the cap.
+// BuildView is a run and its steps, or the error reading them.
 type BuildView struct {
-	Index            int           `json:"index"`
-	Build            string        `json:"build"`
-	Status           string        `json:"status"`
-	Error            string        `json:"error,omitempty"`
-	Run              *Run          `json:"run,omitempty"`
-	Variables        []RunVariable `json:"variables,omitempty"`
-	VariablesOmitted int           `json:"variables_omitted,omitempty"`
-	Steps            []Step        `json:"steps,omitempty"`
+	Index  int    `json:"index"`
+	Build  string `json:"build"`
+	Status string `json:"status"`
+	Error  string `json:"error,omitempty"`
+	Run    *Run   `json:"run,omitempty"`
+	Steps  []Step `json:"steps,omitempty"`
 }
 
 var View = &ops.Op[ViewInput, *ViewResult]{
 	Meta: ops.Meta{
 		Name:        "pipeline_view",
-		Description: "Show one or more Bitbucket Pipelines runs by build number or UUID: trigger, who started it (a user, or a token's kind), run variables (secured values never shown), and each step's status, start time, and duration.",
+		Description: "Show one or more Bitbucket Pipelines runs by build number or UUID: trigger, who started it (a user, or a token's kind), and each step's status, start time, and duration. Bitbucket does not return a run's variables here; pipeline_log shows them.",
 		Surfaces:    ops.Both,
 		ReadOnly:    true,
 	},
@@ -67,7 +64,6 @@ func view(ctx context.Context, env ops.Env, in ViewInput) (*ViewResult, error) {
 		}
 		run := newRun(repo, pipeline)
 		entry.Run = &run
-		entry.Variables, entry.VariablesOmitted = runVariables(pipeline.Variables)
 		steps, err := client.ListPipelineSteps(ctx, repo.Workspace, repo.Repo, pipeline.UUID)
 		if err != nil {
 			return fail(fmt.Errorf("steps: %w", err))
@@ -91,7 +87,6 @@ func (r *ViewResult) Markdown() (string, error) {
 			continue
 		}
 		describeRun(&b, *entry.Run)
-		writeVariables(&b, entry.Variables, entry.VariablesOmitted)
 		if entry.Error != "" {
 			fmt.Fprintf(&b, "\nFailed: %s\n", entry.Error)
 			continue

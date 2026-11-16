@@ -3,6 +3,7 @@ package pipeline_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -106,7 +107,6 @@ func TestViewSeveralBuildsReportsEachEntry(t *testing.T) {
 	mustContain(t, markdown(t, result.Markdown),
 		"## #2090 FAILED · custom:db-backup on testing @ 333ec33226f2",
 		"Trigger MANUAL by cicd pipeline token (workspace_access_token) · started 2026-11-02T18:45:37Z · 1m24s · https://bitbucket.org/acme/widgets/pipelines/results/2090",
-		"Variables:\n- META=iam\n- DB_PASSWORD (secured)\n",
 		"Trigger PUSH by Merge Console · started",
 		"| backup | FAILED | 2026-11-02T18:45:38Z | 1m12s |",
 		"| deploy | NOT_RUN | - | - |",
@@ -115,7 +115,7 @@ func TestViewSeveralBuildsReportsEachEntry(t *testing.T) {
 		"## 99999\n\nFailed: not_found:")
 }
 
-func TestViewShowsWhoStartedEachRunAndItsVariables(t *testing.T) {
+func TestViewShowsWhoStartedEachRun(t *testing.T) {
 	env, _ := newEnv(t)
 	result, err := pipeline.View.Call(context.Background(), env, pipeline.ViewInput{
 		RepoRef: ops.RepoRef{Repo: repo}, Builds: []string{"2090", "2095", "2098", "2099"},
@@ -133,42 +133,22 @@ func TestViewShowsWhoStartedEachRunAndItsVariables(t *testing.T) {
 	if scheduled.Run.Trigger != "SCHEDULE" || scheduled.Run.CreatorLabel() != "" {
 		t.Errorf("scheduled run = %+v", scheduled.Run)
 	}
-	if unknown.Run.Trigger != "" || unknown.Run.CreatorLabel() != "" || unknown.Variables != nil || unknown.VariablesOmitted != 0 {
-		t.Errorf("run with no trigger, creator, or variables = %+v", unknown)
-	}
-
-	if len(scheduled.Variables) != 25 || scheduled.VariablesOmitted != 5 {
-		t.Fatalf("scheduled run shows %d variables and omits %d, want 25 and 5 (keyless entries skipped)", len(scheduled.Variables), scheduled.VariablesOmitted)
-	}
-	long := scheduled.Variables[0]
-	if !long.Truncated || len(long.Key) != 100 || len(long.Value) != 199 || !utf8.ValidString(long.Value) || !strings.HasPrefix(pipelinetest.LongValue, long.Value) {
-		t.Errorf("long variable: key %d bytes, value %d bytes, truncated %v, valid UTF-8 %v", len(long.Key), len(long.Value), long.Truncated, utf8.ValidString(long.Value))
+	if unknown.Run.Trigger != "" || unknown.Run.CreatorLabel() != "" {
+		t.Errorf("run with no trigger or creator = %+v", unknown)
 	}
 
 	data, err := json.Marshal(result)
 	if err != nil {
 		t.Fatal(err)
 	}
+	mustContain(t, string(data), `"creator":"cicd pipeline token","creator_kind":"workspace_access_token"`)
 	text := markdown(t, result.Markdown)
-	for name, out := range map[string]string{"json": string(data), "markdown": text} {
-		if strings.Contains(out, pipelinetest.SecuredValue) {
-			t.Errorf("%s leaks a secured value:\n%s", name, out)
-		}
-	}
-	mustContain(t, string(data),
-		`"creator":"cicd pipeline token","creator_kind":"workspace_access_token"`,
-		`"variables":[{"key":"META","value":"iam"},{"key":"DB_PASSWORD","secured":true}]`,
-		`{"key":"API_TOKEN","secured":true}`,
-		`"variables_omitted":5`)
 	mustContain(t, text,
 		"Trigger MANUAL by Merge Console · started",
-		"Variables:\n- META=cns\n- API_TOKEN (secured)\n",
 		"## #2098 SUCCESSFUL · custom:nightly on main @ 333ec33226f2\n\nTrigger SCHEDULE · started",
-		"- "+long.Key+"="+long.Value+" (truncated)\n- VAR_01=v1\n",
-		"- VAR_24=v24\n- and 5 more not shown\n",
 		"## #2099 SUCCESSFUL · branches:main on main @ 333ec33226f2\n\nstarted 2026-11-02T18:45:37Z · 5s ·")
-	if strings.Contains(text, "VAR_25") || strings.Count(text, "Variables:") != 3 {
-		t.Errorf("variables past the cap, or a Variables heading for a run with none:\n%s", text)
+	if strings.Contains(text, "Variables") || strings.Contains(string(data), "variables") {
+		t.Errorf("pipeline_view shows variables, which Bitbucket never returns for a run:\n%s", text)
 	}
 }
 
@@ -241,24 +221,40 @@ func TestLogDefaultsToFailedStepsWithBoundedTail(t *testing.T) {
 		t.Fatalf("steps = %+v, want only the failed backup step", entry.Steps)
 	}
 	step := entry.Steps[0]
-	if !step.Truncated || step.TotalBytes != int64(len(pipelinetest.FailedLog)) || step.Bytes > 12000 {
+	if !step.Truncated || step.TotalBytes != int64(len(pipelinetest.FailedLog)) || step.Bytes > 12000 || step.Bytes < 11900 {
 		t.Fatalf("step = truncated %v, %d of %d bytes", step.Truncated, step.Bytes, step.TotalBytes)
 	}
-	if !strings.HasPrefix(step.Log, "backup line ") || !strings.HasSuffix(pipelinetest.FailedLog, step.Log) {
+	if !strings.HasPrefix(step.Log, "backup line ") || !strings.HasSuffix(pipelinetest.FailedScript, step.Log) {
 		t.Fatalf("log does not start on a line boundary at the end of the log: %q", step.Log[:40])
 	}
+	if step.Setup == nil || step.Setup.OmittedBytes != len(pipelinetest.BackupSetup) {
+		t.Fatalf("setup = %+v, want the whole log read and its setup cut before the tail", step.Setup)
+	}
+	if ranges := logRanges(fixture); strings.Join(ranges, ",") != "bytes=-44768" {
+		t.Fatalf("log requests used ranges %v, want the tail and the setup allowance", ranges)
+	}
+	mustContain(t, markdown(t, result.Markdown),
+		"## #2090 FAILED",
+		`### Step "backup": FAILED (last `+jsonInt(step.Bytes)+" of "+jsonInt(len(pipelinetest.FailedLog))+" bytes)",
+		"```text\n"+backupSummary+"\nbackup line ")
+}
+
+// backupSummary is the line that stands in for BackupSetup.
+var backupSummary = "[runner setup omitted: " + kb(len(pipelinetest.BackupSetup)) + " · runner devserver4_k8s_1 · image " +
+	pipelinetest.BackupImageShort + " · variables BRANCH=testing META=iam · include_setup shows it]"
+
+func kb(n int) string {
+	return fmt.Sprintf("%.1f KB", float64(n)/1024)
+}
+
+func logRanges(fixture *pipelinetest.Fixture) []string {
 	var ranges []string
 	for _, req := range fixture.Requests() {
 		if strings.HasSuffix(req.Path, "/log") {
 			ranges = append(ranges, req.Range)
 		}
 	}
-	if strings.Join(ranges, ",") != "bytes=-12000" {
-		t.Fatalf("log requests used ranges %v", ranges)
-	}
-	mustContain(t, markdown(t, result.Markdown),
-		"## #2090 FAILED",
-		`### Step "backup": FAILED (last `+jsonInt(step.Bytes)+" of "+jsonInt(len(pipelinetest.FailedLog))+" bytes)")
+	return ranges
 }
 
 func jsonInt(n int) string {
@@ -278,14 +274,11 @@ func TestLogTotalCapSpansBuilds(t *testing.T) {
 	if first.Bytes > 3000 || first.Bytes < 2900 {
 		t.Fatalf("first step shows %d bytes", first.Bytes)
 	}
-	var ranges []string
-	for _, req := range fixture.Requests() {
-		if strings.HasSuffix(req.Path, "/log") {
-			ranges = append(ranges, req.Range)
-		}
+	if first.Setup == nil {
+		t.Fatal("first step's setup was not cut")
 	}
-	if len(ranges) != 2 || ranges[0] != "bytes=-3000" || ranges[1] != "bytes=-50" {
-		t.Fatalf("ranges = %v, want the second log cut to the 50 bytes left", ranges)
+	if ranges := logRanges(fixture); len(ranges) != 2 || ranges[0] != "bytes=-35768" || ranges[1] != "bytes=-32818" {
+		t.Fatalf("ranges = %v, want the second log cut to the 50 bytes left, plus the setup allowance", ranges)
 	}
 	if second.Skipped != "" || second.Bytes > 50 {
 		t.Fatalf("second step = %+v", second)
@@ -310,13 +303,117 @@ func TestLogMaximumCapsFetchWholeSmallLogs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if step := result.Results[0].Steps[0]; step.Truncated || step.Log != pipelinetest.FailedLog {
+	if step := result.Results[0].Steps[0]; step.Truncated || step.Log != pipelinetest.FailedScript {
 		t.Fatalf("log truncated=%v, %d bytes", step.Truncated, step.Bytes)
 	}
-	for _, req := range fixture.Requests() {
-		if strings.HasSuffix(req.Path, "/log") && req.Range != "bytes=-2097152" {
-			t.Fatalf("log read sent Range %q, want the per-step maximum", req.Range)
+	if ranges := logRanges(fixture); strings.Join(ranges, ",") != "bytes=-2129920" {
+		t.Fatalf("log reads sent ranges %v, want the per-step maximum and the setup allowance", ranges)
+	}
+}
+
+func TestLogCutsRunnerSetupOnlyOnceTheScriptStarted(t *testing.T) {
+	full := pipeline.LogInput{TailBytes: pipeline.MaxTailBytes, MaxBytes: pipeline.MaxCallBytes}
+	for _, tc := range []struct {
+		name      string
+		build     string
+		step      string
+		in        pipeline.LogInput
+		log       string
+		suffixOf  string
+		setup     int
+		truncated bool
+	}{
+		{name: "setup before the script is cut", build: "2090", step: "backup", in: full, log: pipelinetest.FailedScript, setup: len(pipelinetest.BackupSetup)},
+		{name: "include_setup keeps it", build: "2090", step: "backup", in: pipeline.LogInput{TailBytes: pipeline.MaxTailBytes, IncludeSetup: true}, log: pipelinetest.FailedLog},
+		{name: "clone failure", build: "2091", step: "clone", log: pipelinetest.CloneLog},
+		{name: "image pull failure", build: "2091", step: "image", log: pipelinetest.ImageLog},
+		{name: "first command echoed only after another", build: "2091", step: "pipe", log: pipelinetest.PipeLog},
+		{name: "no script commands", build: "2090", step: "build", log: "build ok\n"},
+		{name: "cloud runner, script starts like a setup line", build: "2091", step: "cloud", log: pipelinetest.CloudScript, setup: len(pipelinetest.CloudSetup)},
+		{name: "log longer than the read", build: "2091", step: "long", suffixOf: pipelinetest.LongScript, truncated: true},
+		{name: "long log read whole", build: "2091", step: "long", in: full, log: pipelinetest.LongScript, setup: len(pipelinetest.BackupSetup)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env, _ := newEnv(t)
+			in := tc.in
+			in.RepoRef, in.Builds, in.Steps = ops.RepoRef{Repo: repo}, []string{tc.build}, []string{tc.step}
+			result, err := pipeline.Log.Call(context.Background(), env, in)
+			if err != nil {
+				t.Fatal(err)
+			}
+			step := result.Results[0].Steps[0]
+			switch {
+			case tc.suffixOf != "" && (!strings.HasSuffix(tc.suffixOf, step.Log) || step.Bytes == 0):
+				t.Errorf("log is not a tail of the script: %q", step.Log[:min(80, len(step.Log))])
+			case tc.suffixOf == "" && step.Log != tc.log:
+				t.Errorf("log = %q\nwant %q", step.Log[:min(200, len(step.Log))], tc.log[:min(200, len(tc.log))])
+			}
+			if step.Truncated != tc.truncated {
+				t.Errorf("truncated = %v, want %v", step.Truncated, tc.truncated)
+			}
+			omitted := 0
+			if step.Setup != nil {
+				omitted = step.Setup.OmittedBytes
+			}
+			if omitted != tc.setup {
+				t.Errorf("setup omitted %d bytes, want %d", omitted, tc.setup)
+			}
+			text := markdown(t, result.Markdown)
+			if got := strings.Contains(text, "[runner setup omitted: "); got != (tc.setup > 0) {
+				t.Errorf("summary line shown = %v:\n%s", got, text[:min(600, len(text))])
+			}
+		})
+	}
+}
+
+func TestLogSetupLineNamesRunnerImagesAndVariablesButNoSecuredValue(t *testing.T) {
+	env, _ := newEnv(t)
+	result, err := pipeline.Log.Call(context.Background(), env, pipeline.LogInput{
+		RepoRef: ops.RepoRef{Repo: repo}, Builds: []string{"2091"}, Steps: []string{"cloud"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	setup := result.Results[0].Steps[0].Setup
+	if setup == nil || setup.Runner != "cloud" || len(setup.Images) != 2 || setup.Images[0].Name != "build" || setup.Images[1].Name != "docker" {
+		t.Fatalf("setup = %+v", setup)
+	}
+	if len(setup.Variables) != 25 || setup.VariablesOmitted != 9 {
+		t.Fatalf("setup shows %d variables and omits %d, want 25 and 9", len(setup.Variables), setup.VariablesOmitted)
+	}
+	long := setup.Variables[0]
+	if !long.Truncated || len(long.Key) != 100 || len(long.Value) != 199 || !utf8.ValidString(long.Value) || !strings.HasPrefix(pipelinetest.LongValue, long.Value) {
+		t.Errorf("long variable: key %d bytes, value %d bytes, truncated %v, valid UTF-8 %v", len(long.Key), len(long.Value), long.Truncated, utf8.ValidString(long.Value))
+	}
+	for _, v := range setup.Variables[5:9] {
+		if !v.Secured || v.Value != "" {
+			t.Errorf("masked variable %+v is not secured", v)
 		}
+	}
+
+	data, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := markdown(t, result.Markdown)
+	for name, out := range map[string]string{"json": string(data), "markdown": text} {
+		for _, masked := range pipelinetest.MaskedForms {
+			if strings.Contains(out, masked) {
+				t.Errorf("%s shows the masked value %q:\n%s", name, masked, out)
+			}
+		}
+	}
+	mustContain(t, string(data), `{"key":"API_TOKEN","secured":true},{"key":"DB_PASSWORD","secured":true}`)
+	mustContain(t, text,
+		"```text\n[runner setup omitted: "+kb(len(pipelinetest.CloudSetup))+" · runner cloud · images build=docker.io/library/alpine@sha256:",
+		", docker=docker-public.packages.atlassian.com/",
+		" (truncated) TARGET=staging NOTE=\"back up · then [verify]\" MULTI=\"first line\" (truncated) EMPTY=\"\" API_TOKEN (secured) DB_PASSWORD (secured) SIGNING_KEY (secured) WRAPPED (secured) VAR_01=v1 ",
+		"VAR_16=v16 and 9 more · include_setup shows it]\n"+pipelinetest.CacheMiss+"\n+ umask 000\necho \"exporting $TARGET\"\n")
+	if len(setup.Notices) != 1 || setup.Notices[0] != pipelinetest.CacheMiss {
+		t.Errorf("notices = %q, want only the cache miss (not the commit subject)", setup.Notices)
+	}
+	if strings.Contains(text, "HEAD is now at") {
+		t.Errorf("a commit subject was kept as a notice:\n%s", text)
 	}
 }
 
