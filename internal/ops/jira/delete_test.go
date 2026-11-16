@@ -123,6 +123,39 @@ func TestWorklogDelete(t *testing.T) {
 	}
 }
 
+// An issue with no estimate gets adjustEstimate=leave, so deleting a
+// worklog does not invent a remaining estimate; otherwise auto puts the time
+// back, and a failed estimate read falls back to auto.
+func TestWorklogDeleteEstimate(t *testing.T) {
+	tests := []struct {
+		name  string
+		issue string
+		want  string
+	}{
+		{"no estimate", `{"key":"CSM-756","fields":{"timetracking":{}}}`, "adjustEstimate=leave"},
+		{"remaining estimate", `{"key":"CSM-756","fields":{"timetracking":{"remainingEstimateSeconds":3600}}}`, "adjustEstimate=auto"},
+		{"original estimate used up", `{"key":"CSM-756","fields":{"timetracking":{"originalEstimateSeconds":7200,"remainingEstimateSeconds":0}}}`, "adjustEstimate=auto"},
+		{"estimate unreadable", "", "adjustEstimate=auto"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fake := jiratest.New()
+			if tt.issue != "" {
+				fake.JSON("GET /rest/api/3/issue/CSM-756", http.StatusOK, tt.issue)
+			}
+			fake.JSON("GET "+worklogPath+"900", http.StatusOK, worklogJSON("900"))
+			fake.JSON("DELETE "+worklogPath+"900", http.StatusNoContent, "")
+			if _, err := invoke(t, fake, WorklogDelete, `{"issue":"CSM-756","ids":["900"]}`); err != nil {
+				t.Fatal(err)
+			}
+			deletes := fake.Find("DELETE " + worklogPath + "900")
+			if len(deletes) != 1 || deletes[0].Query != tt.want {
+				t.Fatalf("DELETE requests %+v, want one with %s", deletes, tt.want)
+			}
+		})
+	}
+}
+
 const commentPath = "/rest/api/3/issue/CSM-756/comment/15198"
 
 func TestCommentDelete(t *testing.T) {

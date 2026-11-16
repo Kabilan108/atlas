@@ -2,6 +2,7 @@ package jira
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -10,11 +11,30 @@ import (
 	"github.com/kabilan108/atlas/internal/ops"
 )
 
-// worklogDeleteEstimate is the adjustEstimate every worklog delete sends.
+// worklogDeleteEstimate picks the adjustEstimate for deletes on an issue.
 // jira_worklog_add logs with Jira's default, auto, which takes the time off
-// the remaining estimate; auto on a delete puts it back, so deleting a wrong
-// entry undoes logging it.
-const worklogDeleteEstimate = "auto"
+// the remaining estimate, so auto on a delete puts it back. An issue with no
+// estimate at all had nothing taken off, and auto would invent a remaining
+// estimate there, so those deletes leave it alone.
+func worklogDeleteEstimate(ctx context.Context, client *jiraapi.Client, key string) string {
+	issue, err := client.GetIssue(ctx, key, jiraapi.GetIssueOptions{Fields: []string{"timetracking"}})
+	if err != nil {
+		return "auto"
+	}
+	var tracking struct {
+		Original  int `json:"originalEstimateSeconds"`
+		Remaining int `json:"remainingEstimateSeconds"`
+	}
+	if raw, ok := issue.RawFields["timetracking"]; ok {
+		if err := json.Unmarshal(raw, &tracking); err != nil {
+			return "auto"
+		}
+	}
+	if tracking.Original == 0 && tracking.Remaining == 0 {
+		return "leave"
+	}
+	return "auto"
+}
 
 // WorklogDeleteInput is the input to jira_worklog_delete.
 type WorklogDeleteInput struct {
@@ -42,7 +62,7 @@ type WorklogDeleteResult struct {
 var WorklogDelete = &ops.Op[WorklogDeleteInput, *WorklogDeleteResult]{
 	Meta: ops.Meta{
 		Name: "jira_worklog_delete",
-		Description: "Delete worklogs from one Jira issue; Jira adds their time back to the remaining estimate. " +
+		Description: "Delete worklogs from one Jira issue; Jira adds their time back to the remaining estimate when the issue has one. " +
 			"Returns a status per ID with the worklog's author, start and time spent.",
 		Surfaces:    ops.Both,
 		Destructive: true,
@@ -63,13 +83,14 @@ func worklogDelete(ctx context.Context, env ops.Env, in WorklogDeleteInput) (*Wo
 	if err != nil {
 		return nil, err
 	}
+	estimate := worklogDeleteEstimate(ctx, client, key)
 	result := &WorklogDeleteResult{Key: key, Results: make([]WorklogDeleted, len(ids))}
 	failed := 0
 	var lastErr error
 	for i, id := range ids {
 		r := &result.Results[i]
 		r.ID = id
-		if err := deleteWorklog(ctx, client, key, r); err != nil {
+		if err := deleteWorklog(ctx, client, key, estimate, r); err != nil {
 			r.Status, r.Error = StatusFailed, err.Error()
 			failed++
 			lastErr = err
@@ -84,7 +105,7 @@ func worklogDelete(ctx context.Context, env ops.Env, in WorklogDeleteInput) (*Wo
 }
 
 // deleteWorklog reads r's worklog for the receipt, then deletes it.
-func deleteWorklog(ctx context.Context, client *jiraapi.Client, key string, r *WorklogDeleted) error {
+func deleteWorklog(ctx context.Context, client *jiraapi.Client, key, estimate string, r *WorklogDeleted) error {
 	const permission = "Delete Own Worklogs (Delete All Worklogs for someone else's)"
 	w, err := client.GetWorklog(ctx, key, r.ID)
 	if err != nil {
@@ -94,7 +115,7 @@ func deleteWorklog(ctx context.Context, client *jiraapi.Client, key string, r *W
 	if r.TimeSpent == "" {
 		r.TimeSpent = formatSeconds(w.TimeSpentSeconds)
 	}
-	if err := client.DeleteWorklog(ctx, key, r.ID, worklogDeleteEstimate); err != nil {
+	if err := client.DeleteWorklog(ctx, key, r.ID, estimate); err != nil {
 		return deleteError(err, "worklog "+r.ID, key, permission)
 	}
 	return nil
