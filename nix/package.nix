@@ -6,7 +6,7 @@
 }:
 buildGoModule rec {
   pname = "atlas";
-  version = "0.2.1";
+  version = "0.2.2";
   src = ../.;
   vendorHash = "sha256-g95LoEeBKIGuo1aPO05ZIsgVzDRTyEdNI630xifME2w=";
 
