@@ -139,6 +139,10 @@ func (d *BoundedDiff) Render(listing string) string {
 		changed, read = " Changed files:", "only its start was read, so the file list may be incomplete."
 	}
 	if d.path != "" && d.fullBytes == 0 {
+		if d.DownloadTruncated {
+			return fmt.Sprintf("No changes under %s in the first %d bytes of the diff, which is all atlas reads; they may lie past that.%s\n%s",
+				d.path, MaxDiffDownload, changed, listing)
+		}
 		return fmt.Sprintf("No changes under %s.%s\n%s", d.path, changed, listing)
 	}
 	text := d.Diff

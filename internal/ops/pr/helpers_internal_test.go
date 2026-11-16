@@ -352,3 +352,26 @@ func TestListTableEscapesReviewerNames(t *testing.T) {
 		t.Fatalf("row does not keep the header's columns:\n%s", text)
 	}
 }
+
+func TestBoundedDiffRenderAfterDownloadTruncation(t *testing.T) {
+	section := "diff --git a/a.go b/a.go\n--- a/a.go\n+++ b/a.go\n@@ -1 +1 @@\n-x\n+y\n"
+	body := &bitbucket.LimitedBody{Data: []byte(section + "diff --git a/b.go b/b"), Truncated: true}
+	tests := []struct {
+		name, path, listing, want string
+	}{
+		{"path past the read part", "z.go", "",
+			"No changes under z.go in the first 16777216 bytes of the diff, which is all atlas reads; they may lie past that.\n"},
+		{"path past the read part, with files", "z.go", "- a.go\n",
+			"No changes under z.go in the first 16777216 bytes of the diff, which is all atlas reads; they may lie past that. Changed files:\n- a.go\n"},
+		{"whole diff", "", "",
+			section + "\n[the diff is larger than 16777216 bytes; only its start was read. Pass path for one file.]\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			bounded, _ := BoundDiff(body, tt.path, false, DefaultDiffBytes)
+			if got := bounded.Render(tt.listing); got != tt.want {
+				t.Fatalf("Render() =\n%q\nwant\n%q", got, tt.want)
+			}
+		})
+	}
+}
