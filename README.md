@@ -96,8 +96,11 @@ environment variable overrides the file:
 
 ### Credentials
 
-Bitbucket and Jira each take their own API token. For each one, Atlas uses the
-first environment variable that is set, then falls back to the credentials file:
+Bitbucket and Jira each take their own API token. Environment variables are the
+primary way to supply them, and the credentials file is a fallback. To set the
+variables without storing tokens anywhere, see [1Password](#1password). For each
+token, Atlas uses the first environment variable that is set, then falls back to
+the credentials file:
 
 | Token | Environment | Credentials file key |
 |-------|-------------|----------------------|
@@ -152,6 +155,40 @@ atlas config set jira_cloud_id your-jira-cloud-id
 atlas config verify   # Bitbucket credentials
 atlas jira whoami     # Jira credentials
 ```
+
+#### 1Password
+
+`op run` from the [1Password CLI](https://developer.1password.com/docs/cli/)
+resolves secret references into the environment of the one command it starts.
+Nothing is written to disk. Put the references in an env file; it holds no
+secrets itself. Replace the vault, item, and field names with your own:
+
+```bash
+# ~/.config/atlas/op.env
+ATLAS_USERNAME=user@example.com
+ATLAS_BITBUCKET_TOKEN=op://Dev/atlas-bitbucket/credential
+ATLAS_JIRA_TOKEN=op://Dev/atlas-jira/credential
+```
+
+Run the CLI under `op run`, or alias it:
+
+```bash
+op run --env-file="$HOME/.config/atlas/op.env" -- atlas config verify
+alias atlas='op run --env-file="$HOME/.config/atlas/op.env" -- atlas'
+```
+
+Claude Code and Codex fill the Atlas headers from their own environment (see
+[Connecting an MCP Client](#connecting-an-mcp-client)), so start the client
+under `op run` and its header settings pick up the tokens:
+
+```bash
+op run --env-file="$HOME/.config/atlas/op.env" -- claude
+op run --env-file="$HOME/.config/atlas/op.env" -- codex
+```
+
+The client passes the tokens on to every process it starts, including an
+agent's shell commands. `op run` masks secret values in the command's stdout
+and stderr by default. Masking is best effort; `--no-masking` turns it off.
 
 ## Usage
 
