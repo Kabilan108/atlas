@@ -89,6 +89,25 @@ func TestBranchViewFailsForMissingBranch(t *testing.T) {
 	}
 }
 
+func TestRepoDiffParsesTheRange(t *testing.T) {
+	stat := "GET /2.0/repositories/acme/widgets/diffstat/" + repotest.FeatureHead + "..main?topic=true"
+	for _, spec := range []string{"main...feature/login", "main..feature/login"} {
+		out, reqs, err := runRepoCmd(t, "repo", "diff", spec, "-R", "widgets", "--stat")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(reqs) != 2 || reqs[1] != stat {
+			t.Fatalf("%s: requests = %v, want the branch lookup then %s", spec, reqs, stat)
+		}
+		if !strings.HasPrefix(out, "Changes in acme/widgets main...feature/login: 3 files") {
+			t.Fatalf("%s: stdout = %q", spec, out)
+		}
+	}
+	if _, _, err := runRepoCmd(t, "repo", "diff", "feature/login", "-R", "widgets"); err == nil || !strings.Contains(err.Error(), "<base>...<head>") {
+		t.Fatalf("err = %v, want a usage error naming <base>...<head>", err)
+	}
+}
+
 func TestRepoCommandsUseFlags(t *testing.T) {
 	tests := []struct {
 		args []string

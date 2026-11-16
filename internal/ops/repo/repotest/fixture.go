@@ -26,6 +26,37 @@ var Files = map[string]string{
 	"blob":    "\x00\x01binary",
 }
 
+// FeatureHead is the commit feature/login points at, which a ref with a
+// slash resolves to before it goes into a diff spec.
+const FeatureHead = "0f0e0d0c0b0a0908"
+
+// FeatureDiff is what feature/login changes since its merge base with main
+// (spec FeatureHead..main): an edit, a rename, and a new file.
+const FeatureDiff = "diff --git a/src/login.go b/src/login.go\n" +
+	"index 1111111..2222222 100644\n" +
+	"--- a/src/login.go\n" +
+	"+++ b/src/login.go\n" +
+	"@@ -8,3 +8,5 @@ func Login(user string) error {\n" +
+	" \tif user == \"\" {\n" +
+	"+\t\tlog(user)\n" +
+	"+\t\treturn errEmpty\n" +
+	" \t}\n" +
+	" }\n" +
+	"diff --git a/old.go b/new.go\n" +
+	"similarity index 100%\n" +
+	"rename from old.go\n" +
+	"rename to new.go\n" +
+	"diff --git a/docs/login.md b/docs/login.md\n" +
+	"new file mode 100644\n" +
+	"index 0000000..3333333\n" +
+	"--- /dev/null\n" +
+	"+++ b/docs/login.md\n" +
+	"@@ -0,0 +1 @@\n" +
+	"+# Login\n"
+
+// ManyFilesHead changes more files than repo_diff lists.
+const ManyFilesHead = "many"
+
 // Repos is every repository in acme, most recently updated first.
 var Repos = []string{"widgets", "gadgets", "legacy", "blob"}
 
@@ -109,6 +140,26 @@ func (f *Fixture) serveRepo(w http.ResponseWriter, r *http.Request, parts []stri
 		main["default_merge_strategy"] = "squash"
 		main["merge_strategies"] = []string{"merge_commit", "squash"}
 		writeJSON(w, main)
+	case rest == "refs/branches/feature/login":
+		writeJSON(w, branch("feature/login", FeatureHead, "Add login"))
+	case rest == "diffstat/"+FeatureHead+"..main":
+		writeJSON(w, page(
+			diffStat("modified", "src/login.go", "src/login.go", 2, 0),
+			diffStat("renamed", "old.go", "new.go", 0, 0),
+			diffStat("added", "", "docs/login.md", 1, 0),
+		))
+	case rest == "diff/"+FeatureHead+"..main":
+		w.Write([]byte(FeatureDiff))
+	case rest == "diffstat/main..main":
+		writeJSON(w, page())
+	case rest == "diffstat/"+ManyFilesHead+"..main":
+		var values []any
+		for i := range 501 {
+			values = append(values, diffStat("added", "", fmt.Sprintf("gen/%03d.go", i), 1, 0))
+		}
+		writeJSON(w, page(values...))
+	case rest == "diff/"+ManyFilesHead+"..main":
+		w.Write([]byte(FeatureDiff))
 	case strings.HasPrefix(rest, "commits"):
 		writeJSON(w, page(commit("a1b2c3d4e5f6a7b8", "Release 1.2.3"), commit("99887766554433", "Fix | pipes")))
 	case repo == Broken:
@@ -138,6 +189,17 @@ func commit(hash, message string) map[string]any {
 		"hash": hash, "message": message, "date": "2024-06-01T12:30:00+00:00",
 		"author": map[string]any{"raw": "Ada Lovelace <ada@example.org>"},
 	}
+}
+
+func diffStat(status, oldPath, newPath string, added, removed int) map[string]any {
+	stat := map[string]any{"type": "diffstat", "status": status, "lines_added": added, "lines_removed": removed}
+	if oldPath != "" {
+		stat["old"] = map[string]string{"path": oldPath, "type": "commit_file"}
+	}
+	if newPath != "" {
+		stat["new"] = map[string]string{"path": newPath, "type": "commit_file"}
+	}
+	return stat
 }
 
 func page(values ...any) map[string]any {

@@ -123,6 +123,7 @@ atlas pipeline run [-R <workspace/repo|repo>] [-b <branch>] [--commit <sha>] [-p
 atlas pipeline stop <build> [-R <workspace/repo|repo>] [--json]
 
 atlas repo list [--workspace <workspace>] [-q <text>] [-L <limit>] [--json]
+atlas repo diff <base>...<head> [-R <workspace/repo|repo>] [--path <path>] [--stat] [-n] [--json]
 atlas branch list [-R <workspace/repo|repo>] [-q <text>] [-L <limit>] [--json]
 atlas branch view <branch> [-R <workspace/repo|repo>] [--json]
 atlas commit list [<ref>] [-R <workspace/repo|repo>] [--base <ref>] [--path <path>] [-L <limit>] [--json]
@@ -519,6 +520,7 @@ A build is a build number (`2090` or `#2090`), a pipeline UUID, or a result URL.
 ## Repository Commands
 
 - `atlas repo list` lists repositories in a workspace, filtered by `--query`
+- `atlas repo diff <base>...<head>` shows what head (a branch, tag, or commit) changes since its merge base with base, as a pull request from head into base would show it, without needing one: a per-file summary from Bitbucket's diffstat, then the diff. `<base>..<head>` means the same. `--path` narrows the diff to a file or directory, `--stat` prints only the summary, and `-n` numbers the diff lines. The `repo_diff` tool caps the diff at `max_bytes` (default 60000) and says when it cut it short.
 - `atlas branch list` lists branches, most recent commit first; `atlas branch view <branch>` shows a branch's head commit and merge strategy and fails if it does not exist
 - `atlas commit list [<ref>]` lists commits on a ref (default: the main branch), newest first. `--base` excludes commits reachable from another ref; `--path` keeps commits touching a path.
 - `atlas file read <path>` prints a file at `--ref` (default: the main branch). With `--repos`, it reads the same path from each listed repository (`workspace/repo`, `repo`, or `workspace/*` for every repository) and prints one section per repository. A repository whose file could not be read is reported in its section, and the command exits 7.
@@ -662,7 +664,7 @@ On a loopback listener the server rejects any `Host` header that is neither loop
 
 - Pull requests: `pr_list`, `pr_status`, `pr_view`, `pr_diff`, `pr_checks`, `pr_create`, `pr_edit`, `pr_comment`, `pr_comment_delete`, `pr_approve`, `pr_unapprove`, `pr_request_changes`, `pr_clear_change_request`, `pr_review`, `pr_merge`, `pr_close`
 - Pipelines: `pipeline_list`, `pipeline_view`, `pipeline_log`, `pipeline_run`, `pipeline_stop`
-- Repositories: `repo_list`, `branch_list`, `branch_view`, `commit_list`, `file_read`
+- Repositories: `repo_list`, `repo_diff`, `branch_list`, `branch_view`, `commit_list`, `file_read`
 - Snippets: `snippet_list`, `snippet_view`, `snippet_create`, `snippet_edit`, `snippet_rename`, `snippet_delete`
 - Accounts: `whoami`, `user_search`, `jira_whoami`
 - Jira: `jira_search`, `jira_issue_view`, `jira_issue_create`, `jira_issue_edit`, `jira_assign`, `jira_transition_list`, `jira_transition`, `jira_comment`, `jira_internal_comment`, `jira_link`, `jira_worklog_list`, `jira_worklog_add`, `jira_attach`, `jira_fields`, `jira_projects`
