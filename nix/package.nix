@@ -44,7 +44,10 @@ buildGoModule rec {
     description = "Atlas CLI and MCP server for Bitbucket Cloud and Jira Cloud";
     homepage = "https://github.com/kabilan108/atlas";
     license = lib.licenses.asl20;
-    platforms = [ "x86_64-linux" ];
+    platforms = [
+      "x86_64-linux"
+      "aarch64-linux"
+    ];
     mainProgram = "atlas";
   };
 
