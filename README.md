@@ -360,10 +360,11 @@ commands that act on the local machine stay CLI-only: `pr checkout`,
 ## Connecting an MCP Client
 
 Every client ends up sending the three headers from [MCP Server](#mcp-server).
-What differs is where the values come from. In the office, Executor holds them.
-On your own machine, a script the client runs at connect time prints them.
+What differs is where the values come from. When an agent goes through
+Executor, Executor holds them. On your own machine, a script the client runs at
+connect time prints them.
 
-### Office Executor
+### Executor v1
 
 [Executor](https://executor.sh) is an MCP gateway that stores each user's
 secrets. Point your agent at the office Executor, not at Atlas. Executor
@@ -387,6 +388,173 @@ server whose three headers come from each user's secrets. Executor must be able
 to reach that URL. A container or another host can't reach `127.0.0.1`, so
 start `atlas mcp serve --addr` on an address Executor can reach, or put it
 behind a reverse proxy with `--allowed-host`.
+
+### Executor v2
+
+Executor v2, still in beta, doesn't register MCP servers. Integrations are
+apps: TypeScript source whose default export is `defineApp`, deployed into
+Executor. An Atlas app has three parts:
+
+- A provider, the account type. It lists the hosts its credentials may reach,
+  the fields a user enters, and a health check.
+- Tools, built from Atlas's MCP server with `mcpRouter`.
+- Approval rules, written in the app with `withApprovals`.
+
+The example below runs against `apps` `0.0.1-beta.138`, and Jira and Bitbucket
+calls succeed through it. Put the three files in one directory.
+
+`provider.ts`:
+
+```ts
+import { defineProvider, object, plain, secrets, string } from "apps"
+import { mcpHealth } from "apps/mcp"
+
+export const url = "http://127.0.0.1:8303/mcp"
+
+type Fields = { email: string; bitbucketToken: string; jiraToken: string }
+
+export const headers = (account: { fields: Fields }) => ({
+  "X-Atlas-Email": account.fields.email,
+  "X-Atlas-Bitbucket-Token": account.fields.bitbucketToken,
+  "X-Atlas-Jira-Token": account.fields.jiraToken,
+})
+
+export const provider = defineProvider({
+  name: "Atlas",
+  hosts: ["127.0.0.1:8303"],
+  auth: {
+    apiKey: secrets({
+      label: "Atlassian email and API tokens",
+      guide: "Atlas stores nothing; each call sends these as X-Atlas-* headers.",
+      fields: object({
+        email: plain(string({ minLength: 1, title: "Atlassian email" })),
+        bitbucketToken: string({ minLength: 1, title: "Bitbucket API token" }),
+        jiraToken: string({ minLength: 1, title: "Jira API token" }),
+      }),
+    }),
+  },
+  health: (check) => mcpHealth(check, { url, headers: headers(check.account) }),
+})
+```
+
+`index.ts`:
+
+```ts
+import { defineApp, withApprovals } from "apps"
+import { mcpRouter } from "apps/mcp"
+import { always } from "apps/operations/approval"
+import { headers, provider, url } from "./provider.ts"
+
+export default defineApp({ app: { accounts: { atlas: provider } } }, async ({ app, signal, cache }) => ({
+  tools: withApprovals(
+    await mcpRouter({ url, account: app.accounts.atlas, cache, headers: headers(app.accounts.atlas), signal }),
+    // Everyday Jira and Bitbucket writes run; merging, closing or approving a PR and deletes ask.
+    (_tool, name) => (/^(pr_merge|pr_close|pr_approve|\w+_delete)$/.test(name) ? always() : undefined),
+  ),
+}))
+```
+
+`package.json`:
+
+```json
+{ "name": "atlas", "private": true, "type": "module",
+  "dependencies": { "apps": "0.0.1-beta.138", "@modelcontextprotocol/sdk": "1.32.1" } }
+```
+
+An app can also pass `icons` to `defineApp`. The example leaves them out.
+
+#### What to change
+
+| Item | Change |
+|------|--------|
+| `url` in `provider.ts` | Atlas's `/mcp` URL as Executor reaches it |
+| `hosts` in `provider.ts` | The `host:port` of that URL. Executor sends the two tokens only to listed hosts, so a mismatch refuses every call. |
+| `apps` in `package.json` | The exact version your host runs, which `executor apps framework` prints |
+| Account scope in `index.ts` | One shared account, or one per user. See below. |
+
+Settle the provider before anyone connects an account. Changing its name,
+labels, or fields creates a new provider, and adding a host makes users
+reconnect.
+
+The example declares an app account, `app: { accounts: { atlas: provider } }`.
+Someone who can edit the app connects it once, and every caller uses those
+tokens. That fits a personal Executor. On a shared Executor each person should
+enter their own tokens, so declare a user account instead. Executor's docs pair
+user accounts with `.many()` and `accountRouter`:
+
+```ts
+import { accountRouter, defineApp, withApprovals } from "apps"
+import { mcpRouter } from "apps/mcp"
+import { always } from "apps/operations/approval"
+import { headers, provider, url } from "./provider.ts"
+
+export default defineApp({ user: { accounts: { atlas: provider.many() } } }, async ({ user, signal, cache }) => ({
+  tools: await accountRouter(
+    user?.accounts.atlas ?? [],
+    async (account) =>
+      withApprovals(
+        await mcpRouter({ url, account, cache, headers: headers(account), signal }),
+        (_tool, name) => (/^(pr_merge|pr_close|pr_approve|\w+_delete)$/.test(name) ? always() : undefined),
+      ),
+    { signal },
+  ),
+}))
+```
+
+Each caller then sees tools built from the accounts they linked, and each tool
+takes `{ accountId, input }`. `user` is undefined when Executor runs the app
+without a caller, hence the `?? []`. This form follows Executor's docs and
+hasn't been tested end to end.
+
+Executor must be able to reach `url`. Self-hosted Executor refuses plain HTTP
+and private addresses, loopback included, by default. For an Atlas on
+`127.0.0.1:8303`, set both of these on the Executor server:
+
+```sh
+EXECUTOR_URL_ALLOW_HTTP_ORIGINS='["http://127.0.0.1:8303"]'
+EXECUTOR_APPS_ALLOW_PRIVATE_FETCH=true
+```
+
+The first allows that exact origin, with no path or trailing slash. The second
+lets app code reach private addresses at all. Inside a container, `127.0.0.1` is
+the container itself, as with v1. Hosted Executor can't reach a private Atlas
+at all, so it needs a public URL. See
+[Self-host with Docker](https://executor.sh/docs/run/self-host#configure-it).
+
+#### Approvals
+
+Executor v2 has no organization-wide approval policy. Each app sets its own
+rules, and nothing is inferred from a tool looking read-only. In the examples,
+the `withApprovals` callback returns `always()` for the tools that should ask a
+person first. Returning `undefined` keeps the tool's own approval, and
+`mcpRouter` attaches none, so those tools run without asking.
+
+Atlas marks its tools read-only or destructive, so a rule can use those hints
+instead of names. This one, with `toolAnnotations` imported from `apps`, asks
+before more tools than the example does, including PR and issue edits,
+comments, and transitions:
+
+```ts
+(tool) => (toolAnnotations(tool)?.destructiveHint === true ? always() : undefined)
+```
+
+See [Tools and approvals](https://executor.sh/docs/concepts/tools-and-approvals).
+
+#### Deploy and connect
+
+Deploy the directory with the [Executor CLI](https://executor.sh/docs/run/cli),
+or have an agent deploy it through Executor's own MCP tools:
+
+```sh
+executor apps create --name Atlas --files ./atlas    # prints the app id
+executor apps deploy --app <app-id> --files ./atlas
+```
+
+Then open the app's **Accounts** tab in the dashboard and connect an account
+with your email and the two tokens, which need the scopes under
+[Credentials](#credentials). [Author an app](https://executor.sh/docs/author-an-app)
+and [Connect an account](https://executor.sh/docs/connect-an-account) cover the
+details.
 
 ### Claude Code or Codex, directly
 
