@@ -341,6 +341,32 @@ accepts loopback `Host` headers, which blocks DNS rebinding. Add
 `--allowed-host` for each name a reverse proxy on the same machine forwards. On
 any other address the server accepts every `Host` header.
 
+### Container Image
+
+Each release publishes `ghcr.io/kabilan108/atlas:<version>` for linux/amd64,
+for example `ghcr.io/kabilan108/atlas:0.2.2`. The release job's summary records
+the pushed digest. The image is built from the flake (`nix build .#image`
+writes a script that streams the image tarball) and contains the `atlas`
+binary and CA certificates. It runs as UID 65532, and its entrypoint is
+`atlas mcp serve --addr :8303`.
+
+```bash
+nix build .#image && ./result | docker load
+docker run --rm -p 8303:8303 ghcr.io/kabilan108/atlas:0.2.2
+```
+
+Arguments after the image name are appended to `mcp serve`, so
+`--workspace other` or a second `--addr` works. The environment variables in
+the table above work too.
+
+Because the container listens on all interfaces, a caller inside a Kubernetes
+cluster can use the Service DNS name, such as
+`http://atlas.<namespace>.svc.cluster.local:8303/mcp`, without
+`--allowed-host`. The Host check applies only to connections that arrive on a
+loopback address. You only need `ATLAS_MCP_ALLOWED_HOSTS` if something inside
+the pod, such as a service-mesh sidecar, forwards requests to `127.0.0.1`. Set
+it to the Service name in that case.
+
 The server has 53 tools:
 
 | Area | Tools |

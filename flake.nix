@@ -21,9 +21,11 @@
         system:
         let
           pkgs = import nixpkgs { inherit system; };
+          atlas = pkgs.callPackage ./nix/package.nix { };
         in
         {
-          default = pkgs.callPackage ./nix/package.nix { };
+          default = atlas;
+          image = pkgs.callPackage ./nix/image.nix { inherit atlas; };
         }
       );
 
