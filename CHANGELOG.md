@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.3 - 2026-11-26
+
+### Added
+
+- Publish the MCP server as a container image on every release: `ghcr.io/kabilan108/atlas:<version>` for linux/amd64. It runs `atlas mcp serve` on port 8303 as a non-root user, and in-cluster callers can use the Service DNS name without `--allowed-host`. Build it locally with `nix build .#image`.
+- Build the Nix package on aarch64-linux.
+
+### Changed
+
+- Document connecting Atlas to Executor v2.
+
 ## 0.2.2 - 2026-11-16
 
 ### Added
