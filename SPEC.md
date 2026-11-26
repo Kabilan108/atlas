@@ -660,6 +660,10 @@ A missing header fails the call with an authentication error naming the header. 
 
 On a loopback listener the server rejects any `Host` header that is neither loopback nor allowed, which blocks DNS rebinding. On other addresses it accepts every `Host`.
 
+### Container Image
+
+`nix build .#image` (`nix/image.nix`) builds a `dockerTools.streamLayeredImage` of the package with CA certificates. It runs as UID 65532 with entrypoint `atlas mcp serve --addr :8303`; arguments after the image are appended. The release workflow pushes it to `ghcr.io/kabilan108/atlas:<version>` (linux/amd64) before tagging, and writes the digest to the job summary and the `image_digest` job output.
+
 ### Limits
 
 - Request bodies are capped at 16 MiB, enough for `jira_attach`'s largest upload, and must arrive within 30s

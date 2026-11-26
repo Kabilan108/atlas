@@ -72,6 +72,9 @@ jobs:
     needs: check-version
     if: needs.check-version.outputs.should_release == 'true'
     runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.push_image.outputs.image }}
+      image_digest: ${{ steps.push_image.outputs.digest }}
 
     steps:
       - uses: actions/checkout@v4
@@ -89,6 +92,11 @@ jobs:
       - name: Build binary with Nix
         run: |
           nix build .#default -L
+
+      - name: Build container image with Nix
+        run: |
+          nix build .#image -L -o image-stream
+          ./image-stream > atlas-image.tar
 
       - name: Validate update metadata
         run: |
@@ -116,6 +124,31 @@ jobs:
             "${{ needs.check-version.outputs.current_version }}" \
             "${{ needs.check-version.outputs.latest_tag }}" > release-notes.md
           cat release-notes.md
+
+      - name: Push container image to GHCR
+        id: push_image
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          IMAGE="ghcr.io/kabilan108/atlas:${{ needs.check-version.outputs.current_version }}"
+          AUTHFILE="$RUNNER_TEMP/ghcr-auth.json"
+          skopeo() { nix run --inputs-from . nixpkgs#skopeo -- "$@"; }
+          echo "$GITHUB_TOKEN" | skopeo login ghcr.io --authfile "$AUTHFILE" \
+            --username "${{ github.actor }}" --password-stdin
+          # The runner has no /etc/containers/policy.json; the source is a local archive.
+          skopeo --insecure-policy copy --authfile "$AUTHFILE" --digestfile image-digest \
+            docker-archive:atlas-image.tar "docker://$IMAGE"
+          DIGEST=$(cat image-digest)
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Container image"
+            echo
+            echo "- Tag: \`$IMAGE\`"
+            echo "- Digest: \`$DIGEST\`"
+            echo "- Pull by digest: \`ghcr.io/kabilan108/atlas@$DIGEST\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          rm -f "$AUTHFILE"
 
       - name: Create and push tag
         run: |
